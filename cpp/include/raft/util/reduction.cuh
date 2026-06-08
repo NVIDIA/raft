@@ -53,6 +53,21 @@ DI T warpReduce(T val, ReduceLambda reduce_op)
 }
 
 /**
+ * @brief Warp-level reduction with raft::add_op
+ * @tparam T Value type to be reduced
+ * @param val input value
+ * @param reduce_op raft::add_op instance
+ * @return Reduction result. All lanes will have the valid result.
+ * @note Explicit overload to disambiguate from cub::detail::scan::warpReduce when
+ *       called with raft::add_op; avoids ambiguous template instantiation on CUDA 13.2+
+ */
+template <typename T>
+DI T warpReduce(T val, raft::add_op reduce_op)
+{
+  return logicalWarpReduce<WarpSize>(val, reduce_op);
+}
+
+/**
  * @brief Warp-level reduction
  * @tparam T Value type to be reduced
  * @param val input value
