@@ -69,7 +69,6 @@ TEST(MemoryTrackingResources, MismatchedRangeLabeling)
     {
       nvtx::range r{"1. expect 10 KB"};
       auto matrix = raft::make_host_vector<uint8_t>(tracked, 10 * 1024);
-      std::this_thread::sleep_for(5ms);
     }
     {
       // Deliberately huge & slow: allocating/freeing 10 GiB of host memory takes
@@ -77,14 +76,12 @@ TEST(MemoryTrackingResources, MismatchedRangeLabeling)
       // As a result this allocation's peak is mis-attributed to the NEXT range in
       // the CSV (the range-labeling race discussed in the file header). Source
       // attribution (host) stays correct; only the nvtx_range label is wrong.
-      nvtx::range r{"2. expect 1 GiB"};
-      auto vector = raft::make_host_vector<uint8_t>(tracked, 1 * 1024 * MiB);
-      std::this_thread::sleep_for(5ms);
+      nvtx::range r{"2. expect 10 GiB"};
+      auto vector = raft::make_host_vector<uint8_t>(tracked, 10 * 1024 * MiB);
     }
     {
       nvtx::range r{"3. expect 4 MiB"};
       auto matrix = raft::make_host_vector<uint8_t>(tracked, 4 * MiB);
-      std::this_thread::sleep_for(5ms);
     }
   }  // tracked destroyed here: stops the sampler and flushes the file
 
