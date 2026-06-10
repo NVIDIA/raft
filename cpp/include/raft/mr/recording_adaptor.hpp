@@ -16,7 +16,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
+#include <string>
 #include <type_traits>
+#include <unordered_map>
 #include <utility>
 
 namespace raft {
@@ -41,15 +44,61 @@ namespace mr {
  */
 template <typename Upstream>
 class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstream>, Upstream> {
+  // Thread-safe address -> responsible-range-path map.  Co-owned via shared_ptr
+  // for the same reason as stats_/queue_: this adaptor is copied when type-erased
+  // into an owning resource, and every copy must update the SAME map (and a copy
+  // must never fork the live-allocation set).
+  struct address_range_map {
+    std::mutex mtx;
+    std::unordered_map<void*, std::string> paths;
+  };
+
   Upstream upstream_;
   std::shared_ptr<resource_stats> stats_;
   std::shared_ptr<allocation_event_queue> queue_;
+  std::shared_ptr<address_range_map> alloc_map_;
   int source_id_;
 
+  // Remember the range path responsible for the allocated memory.
+  auto record_allocation(void* ptr) noexcept -> std::string
+  {
+    std::string path;
+    try {
+      path = raft::common::nvtx::thread_local_current_range()->get_path();
+      if (ptr != nullptr) {
+        std::lock_guard<std::mutex> lock(alloc_map_->mtx);
+        alloc_map_->paths[ptr] = path;
+      }
+    } catch (...) {
+    }
+    return path;
+  }
+
+  // Look up from the address to return the range path responsible for the deallocation.
+  // Also deletes it from the map to allow address reuse: a later allocation on this address
+  // starts a fresh entry tagged with its own range.
+  // Returns "" on a miss (e.g. memory allocated outside of the tracking range).
+  auto forget_allocation(void* ptr) noexcept -> std::string
+  {
+    std::string path;
+    try {
+      std::lock_guard<std::mutex> lock(alloc_map_->mtx);
+      auto it = alloc_map_->paths.find(ptr);
+      if (it != alloc_map_->paths.end()) {
+        path = std::move(it->second);
+        alloc_map_->paths.erase(it);
+      }
+    } catch (...) {
+    }
+    return path;
+  }
+
   // Build and enqueue an event from the current counter snapshot + NVTX range.
+  // `alloc_range` is the responsible range path (alloc-time), `signed_bytes` is
+  // the signed delta for this event (+alloc / -free).
   // noexcept: profiling bookkeeping must never disrupt the allocation path, so
   // any failure (e.g. bad_alloc while copying the range string) is swallowed.
-  void emit() noexcept
+  void emit(std::string alloc_range, std::int64_t signed_bytes) noexcept
   {
     try {
       allocation_event event;
@@ -61,6 +110,8 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
       auto range        = raft::common::nvtx::thread_local_current_range()->get();
       event.nvtx_range  = std::move(range.first);
       event.nvtx_depth  = range.second;
+      event.event_bytes = signed_bytes;
+      event.alloc_range = std::move(alloc_range);
       queue_->push(std::move(event));
     } catch (...) {
     }
@@ -73,6 +124,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
     : upstream_(std::move(upstream)),
       stats_(std::make_shared<resource_stats>()),
       queue_(std::move(queue)),
+      alloc_map_(std::make_shared<address_range_map>()),
       source_id_(source_id)
   {
   }
@@ -84,7 +136,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   {
     void* ptr = upstream_.allocate_sync(bytes, alignment);
     stats_->record_allocate(static_cast<std::int64_t>(bytes));
-    emit();
+    emit(record_allocation(ptr), static_cast<std::int64_t>(bytes));
     return ptr;
   }
 
@@ -94,7 +146,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   {
     upstream_.deallocate_sync(ptr, bytes, alignment);
     stats_->record_deallocate(static_cast<std::int64_t>(bytes));
-    emit();
+    emit(forget_allocation(ptr), -static_cast<std::int64_t>(bytes));
   }
 
   template <typename U = Upstream, std::enable_if_t<cuda::mr::resource<U>, int> = 0>
@@ -104,7 +156,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   {
     void* ptr = upstream_.allocate(stream, bytes, alignment);
     stats_->record_allocate(static_cast<std::int64_t>(bytes));
-    emit();
+    emit(record_allocation(ptr), static_cast<std::int64_t>(bytes));
     return ptr;
   }
 
@@ -116,7 +168,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   {
     upstream_.deallocate(stream, ptr, bytes, alignment);
     stats_->record_deallocate(static_cast<std::int64_t>(bytes));
-    emit();
+    emit(forget_allocation(ptr), -static_cast<std::int64_t>(bytes));
   }
 
   [[nodiscard]] bool operator==(recording_adaptor const& other) const noexcept

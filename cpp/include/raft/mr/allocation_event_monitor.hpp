@@ -36,7 +36,10 @@ struct allocation_event {
   std::int64_t total_alloc{0};                      //< cumulative bytes allocated (this source)
   std::int64_t total_freed{0};                      //< cumulative bytes freed (this source)
   std::size_t nvtx_depth{0};                        //< NVTX stack depth at event time
-  std::string nvtx_range;                           //< NVTX range name at event time
+  std::string nvtx_range;                           //< NVTX range name active at event time
+  std::int64_t event_bytes{0};                      //< signed bytes for THIS event (+alloc / -free)
+  std::string alloc_range;                          //< responsible range path "name#id > ..."
+                                                    //  captured at ALLOCATION time (empty if unknown)
   std::chrono::steady_clock::time_point timestamp{};//< when the event happened
 };
 
@@ -132,7 +135,7 @@ class allocation_event_monitor {
    */
   auto register_source(std::string name) -> int
   {
-    int id = static_cast<int>(source_names_.size());
+    int id = static_cast<int>(source_names_.size());  // TODO (huuanhhuyn) conflict id?
     source_names_.push_back(std::move(name));
     view_.emplace_back();
     return id;
@@ -168,7 +171,7 @@ class allocation_event_monitor {
       out_ << ',' << name << "_current," << name << "_peak," << name << "_total_alloc," << name
            << "_total_freed";
     }
-    out_ << ",nvtx_depth,nvtx_range\n";
+    out_ << ",nvtx_depth,nvtx_range,event_source,event_bytes,alloc_range\n";
     out_.flush();
   }
 
@@ -197,7 +200,13 @@ class allocation_event_monitor {
       // Each row is an instantaneous snapshot, so "_peak" == live "_current".
       out_ << ',' << v.current << ',' << v.current << ',' << v.total_alloc << ',' << v.total_freed;
     }
-    out_ << ',' << event.nvtx_depth << ",\"" << event.nvtx_range << "\"\n";
+    out_ << ',' << event.nvtx_depth << ",\"" << event.nvtx_range << "\"";
+
+    auto const* src_name = (event.source_id >= 0 &&
+                            event.source_id < static_cast<int>(source_names_.size()))
+                             ? source_names_[event.source_id].c_str()
+                             : "";
+    out_ << ',' << src_name << ',' << event.event_bytes << ",\"" << event.alloc_range << "\"\n";
   }
 
   std::ostream& out_;
