@@ -46,7 +46,10 @@ struct default_host_resource_holder {
   }
 };
 
-inline default_host_resource_holder default_host_resource_holder_{};
+// RAFT_EXPORT forces default ELF visibility so the dynamic linker deduplicates
+// this inline variable across all DSOs.  Without it, -fvisibility=hidden gives
+// each shared library a private copy, breaking cross-DSO set/get calls.
+RAFT_EXPORT inline default_host_resource_holder default_host_resource_holder_{};
 
 }  // namespace detail
 
@@ -56,7 +59,7 @@ inline default_host_resource_holder default_host_resource_holder_{};
  * Returns raft::mr::host_resource_ref pointing to the resource installed
  * via set_default_host_resource(), or new_delete_resource() if none was set.
  */
-inline auto get_default_host_resource() -> raft::mr::host_resource_ref
+RAFT_EXPORT inline auto get_default_host_resource() -> raft::mr::host_resource_ref
 {
   return detail::default_host_resource_holder_.get();
 }
@@ -70,7 +73,7 @@ inline auto get_default_host_resource() -> raft::mr::host_resource_ref
  * @param ref Non-owning reference to the resource to install.
  * @return The previous default host resource ref.
  */
-inline auto set_default_host_resource(raft::mr::host_resource_ref ref)
+RAFT_EXPORT inline auto set_default_host_resource(raft::mr::host_resource_ref ref)
   -> raft::mr::host_resource_ref
 {
   return detail::default_host_resource_holder_.set(ref);

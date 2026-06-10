@@ -76,7 +76,11 @@ struct nvtx_range_name_stack {
   std::shared_ptr<current_range> current_{std::make_shared<current_range>()};
 };
 
-inline thread_local nvtx_range_name_stack range_name_stack_instance{};
+// RAFT_EXPORT forces default ELF visibility so the dynamic linker deduplicates
+// this inline thread_local across all DSOs.  Without it, -fvisibility=hidden
+// gives each shared library a private TLS slot, so push_range calls from one
+// DSO are invisible to recording_adaptor::emit() compiled into another DSO.
+RAFT_EXPORT inline thread_local nvtx_range_name_stack range_name_stack_instance{};
 
 }  // namespace detail
 
@@ -85,7 +89,7 @@ inline thread_local nvtx_range_name_stack range_name_stack_instance{};
  * Pass the returned shared_ptr to another thread to read this thread's current NVTX range name at
  * any time.
  */
-inline auto thread_local_current_range() -> std::shared_ptr<const current_range>
+RAFT_EXPORT inline auto thread_local_current_range() -> std::shared_ptr<const current_range>
 {
   return detail::range_name_stack_instance.current();
 }
