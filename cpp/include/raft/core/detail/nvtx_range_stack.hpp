@@ -80,6 +80,7 @@ RAFT_EXPORT inline std::atomic<std::uint64_t> range_instance_counter{0};
 struct nvtx_range_name_stack {
   void push(const char* name)
   {
+    ensure_current();
     auto id = range_instance_counter.fetch_add(1, std::memory_order_relaxed) + 1;
     stack_.emplace_back(id, name ? name : "");
     current_->set(stack_.back().second.c_str(), stack_.size(), build_path());
@@ -87,15 +88,30 @@ struct nvtx_range_name_stack {
 
   void pop()
   {
+    ensure_current();
     if (!stack_.empty()) { stack_.pop_back(); }
     current_->set(stack_.empty() ? nullptr : stack_.back().second.c_str(),
                   stack_.size(),
                   build_path());
   }
 
-  [[nodiscard]] auto current() const -> std::shared_ptr<const current_range> { return current_; }
+  [[nodiscard]] auto current() const -> std::shared_ptr<const current_range>
+  {
+    ensure_current();
+    return current_;
+  }
 
  private:
+  // Lazily materialize current_ on the owning thread.  The thread_local instance is
+  // constant-initialized (current_ starts null); we allocate the current_range on the
+  // first method call rather than via a dynamic member initializer.  This avoids relying
+  // on cross-DSO dynamic initialization of the inline thread_local, which can leave the
+  // storage zero-initialized without the constructor having run -> null deref in push().
+  void ensure_current() const
+  {
+    if (!current_) { current_ = std::make_shared<current_range>(); }
+  }
+
   // Serialize the active stack as "name#id > name#id > ..." (outer -> inner).
   [[nodiscard]] auto build_path() const -> std::string
   {
