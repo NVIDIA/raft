@@ -9,6 +9,7 @@
 #include <raft/util/cuda_utils.cuh>
 
 #include <stdint.h>
+#include <type_traits>
 
 namespace raft {
 namespace util {
@@ -17,18 +18,25 @@ namespace util {
  * @brief Perform fast integer division and modulo using a known divisor
  * From Hacker's Delight, Second Edition, Chapter 10
  *
- * @note This currently only supports 32b signed integers
+ * @note 32b signed integer is supported. 
+ * @note 64b signed integers is supported for an input data up to 2^31
+ * because gpu-non-native int128 is avoided for performance.
  * @todo Extend support for signed divisors
  */
+template <typename IntT>
 struct FastIntDiv {
+  static_assert(std::is_same_v<IntT, int32_t> || std::is_same_v<IntT, int64_t>,
+                "FastIntDiv: IntT must be int32_t or int64_t");
+  using UIntT = std::make_unsigned_t<IntT>;
+
   /**
    * @defgroup HostMethods Ctor's that are accessible only from host
    * @{
    * @brief Host-only ctor's
    * @param _d the divisor
    */
-  FastIntDiv(int _d) : d(_d) { computeScalars(); }
-  FastIntDiv& operator=(int _d)
+  FastIntDiv(IntT _d) : d(_d) { computeScalars(); }
+  FastIntDiv& operator=(IntT _d)
   {
     d = _d;
     computeScalars();
@@ -53,9 +61,9 @@ struct FastIntDiv {
   /** @} */
 
   /** divisor */
-  int d;
+  IntT d;
   /** the term 'm' as found in the reference chapter */
-  unsigned m;
+  UIntT m;
   /** the term 'p' as found in the reference chapter */
   int p;
 
@@ -90,10 +98,11 @@ struct FastIntDiv {
  * @param divisor the denominator
  * @return the quotient
  */
-HDI int operator/(int n, const FastIntDiv& divisor)
+template <typename IntT>
+HDI IntT operator/(IntT n, const FastIntDiv<IntT>& divisor)
 {
   if (divisor.d == 1) return n;
-  int ret = (int64_t(divisor.m) * int64_t(n)) >> divisor.p;
+  IntT ret = (int64_t(divisor.m) * int64_t(n)) >> divisor.p;
   if (n < 0) ++ret;
   return ret;
 }
@@ -105,10 +114,11 @@ HDI int operator/(int n, const FastIntDiv& divisor)
  * @param divisor the denominator
  * @return the remainder
  */
-HDI int operator%(int n, const FastIntDiv& divisor)
+template <typename IntT>
+HDI IntT operator%(IntT n, const FastIntDiv<IntT>& divisor)
 {
-  int quotient  = n / divisor;
-  int remainder = n - quotient * divisor.d;
+  IntT quotient  = n / divisor;
+  IntT remainder = n - quotient * divisor.d;
   return remainder;
 }
 
