@@ -99,7 +99,7 @@ requirements:
       then: cuda-python >=12.9.2,<13.0
       else: cuda-python >=13.0.1,<14.0
   run_constraints:
-    - cupy >=13.6.0,!=14.0.0,!=14.1.0
+    - cupy >=14.0.1,!=14.1.0
   ignore_run_exports:
     from_package:
       - ${{ compiler("c") }}
