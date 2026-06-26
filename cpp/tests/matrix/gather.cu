@@ -236,6 +236,9 @@ const std::vector<GatherInputs<int>> inplace_inputs_i32 =
 const std::vector<GatherInputs<int64_t>> inplace_inputs_i64 =
   raft::util::itertools::product<GatherInputs<int64_t>>(
     {25, 2000}, {6, 31, 129}, {0, 1, 11}, {11, 999}, {0, 1, 2, 3, 6, 100}, {1234ULL});
+const std::vector<GatherInputs<int64_t>> inplace_inputs_i64_i32_max =
+  raft::util::itertools::product<GatherInputs<int64_t>>(
+    {1100000}, {2000}, {0}, {1100000}, {0}, {1234ULL});
 
 GATHER_TEST((GatherTest<false, false, false, float, uint32_t, int>), GatherTestFU32I32, inputs_i32);
 GATHER_TEST((GatherTest<false, true, false, float, uint32_t, int>),
@@ -265,4 +268,7 @@ GATHER_TEST((GatherTest<false, false, true, float, uint32_t, int64_t>),
 GATHER_TEST((GatherTest<false, false, true, float, int64_t, int64_t>),
             GatherInplaceTestFI64I64,
             inplace_inputs_i64);
+GATHER_TEST((GatherTest<false, false, true, float, int64_t, int64_t>),
+            GatherInplaceTestCI64I64,
+            inplace_inputs_i64_i32_max);  // slow test, 8GB allocation, reproduces https://github.com/rapidsai/raft/issues/3055
 }  // end namespace raft
