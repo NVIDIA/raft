@@ -17,7 +17,6 @@
 #include <rmm/device_uvector.hpp>
 
 #include <cuda_runtime.h>
-#include <thrust/iterator/zip_iterator.h>
 
 #include <nccl.h>
 #include <stdlib.h>

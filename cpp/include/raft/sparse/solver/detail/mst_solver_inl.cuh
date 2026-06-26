@@ -16,13 +16,13 @@
 #include <rmm/device_uvector.hpp>
 
 #include <cuda/functional>
+#include <cuda/iterator>
 #include <cuda/std/tuple>
 #include <thrust/copy.h>
 #include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 #include <thrust/fill.h>
 #include <thrust/host_vector.h>
-#include <thrust/iterator/zip_iterator.h>
 #include <thrust/reduce.h>
 #include <thrust/sequence.h>
 #include <thrust/sort.h>
@@ -196,8 +196,8 @@ alteration_t MST_solver<vertex_t, edge_t, weight_t, alteration_t>::alteration_ma
   auto new_end = thrust::unique(policy, tmp.begin(), tmp.end());
 
   // min(a[i+1]-a[i])/2
-  auto begin = thrust::make_zip_iterator(cuda::std::make_tuple(tmp.begin(), tmp.begin() + 1));
-  auto end   = thrust::make_zip_iterator(cuda::std::make_tuple(new_end - 1, new_end));
+  auto begin = cuda::make_zip_iterator(cuda::std::make_tuple(tmp.begin(), tmp.begin() + 1));
+  auto end   = cuda::make_zip_iterator(cuda::std::make_tuple(new_end - 1, new_end));
   auto init  = tmp.element(1, stream) - tmp.element(0, stream);
   auto max   = thrust::transform_reduce(
     policy, begin, end, alteration_functor<weight_t>(), init, cuda::minimum<weight_t>());
@@ -385,14 +385,14 @@ void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::append_src_dst_pair(
 
   // iterator to end of mst edges added to final output in previous iteration
   auto src_dst_zip_end =
-    thrust::make_zip_iterator(cuda::std::make_tuple(mst_src + curr_mst_edge_count,
-                                                    mst_dst + curr_mst_edge_count,
-                                                    mst_weights + curr_mst_edge_count));
+    cuda::make_zip_iterator(cuda::std::make_tuple(mst_src + curr_mst_edge_count,
+                                                  mst_dst + curr_mst_edge_count,
+                                                  mst_weights + curr_mst_edge_count));
 
   // iterator to new mst edges found
-  auto temp_src_dst_zip_begin = thrust::make_zip_iterator(
+  auto temp_src_dst_zip_begin = cuda::make_zip_iterator(
     cuda::std::make_tuple(temp_src.begin(), temp_dst.begin(), temp_weights.begin()));
-  auto temp_src_dst_zip_end = thrust::make_zip_iterator(
+  auto temp_src_dst_zip_end = cuda::make_zip_iterator(
     cuda::std::make_tuple(temp_src.end(), temp_dst.end(), temp_weights.end()));
 
   // copy new mst edges to final output
