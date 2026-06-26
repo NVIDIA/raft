@@ -342,4 +342,74 @@ TEST(Raft, HandleAssign)
   assert_handles_equal(handle, copied_handle);
 }
 
+TEST(Raft, LazyInitPropagates)
+{
+  raft::resources a;
+  raft::resources b(a);
+
+  // Neither a nor b has a CUDA stream factory yet
+  ASSERT_FALSE(a.has_resource_factory(resource::resource_type::CUDA_STREAM_VIEW));
+  ASSERT_FALSE(b.has_resource_factory(resource::resource_type::CUDA_STREAM_VIEW));
+
+  // Trigger lazy init on a
+  auto stream_a = resource::get_cuda_stream(a);
+
+  // b should see the same resource (Goal 1: lazy init propagates)
+  ASSERT_TRUE(b.has_resource_factory(resource::resource_type::CUDA_STREAM_VIEW));
+  auto stream_b = resource::get_cuda_stream(b);
+  ASSERT_EQ(stream_a, stream_b);
+}
+
+TEST(Raft, ExplicitSetRequiresNonConst)
+{
+  // Goal 2: add_resource_factory is non-const.
+  // This is a compile-time check -- the following must NOT compile:
+  //   const raft::resources r;
+  //   r.add_resource_factory(std::make_shared<resource::cuda_stream_resource_factory>());
+  // We verify the non-const overload works:
+  raft::resources r;
+  r.add_resource_factory(std::make_shared<resource::cuda_stream_resource_factory>());
+  ASSERT_TRUE(r.has_resource_factory(resource::resource_type::CUDA_STREAM_VIEW));
+}
+
+TEST(Raft, ExplicitSetDoesNotPropagate)
+{
+  raft::resources a;
+  raft::resources b(a);
+
+  // Trigger lazy init on both
+  auto stream_orig = resource::get_cuda_stream(a);
+  ASSERT_EQ(stream_orig, resource::get_cuda_stream(b));
+
+  // Explicit set on a -- creates a new cell
+  cudaStream_t raw_stream;
+  RAFT_CUDA_TRY(cudaStreamCreate(&raw_stream));
+  rmm::cuda_stream_view new_stream(raw_stream);
+  resource::set_cuda_stream(a, new_stream);
+
+  // a sees the new stream
+  ASSERT_EQ(new_stream, resource::get_cuda_stream(a));
+
+  // b still sees the old stream (Goal 3: explicit set does not propagate)
+  ASSERT_EQ(stream_orig, resource::get_cuda_stream(b));
+  ASSERT_NE(resource::get_cuda_stream(a), resource::get_cuda_stream(b));
+
+  RAFT_CUDA_TRY(cudaStreamDestroy(raw_stream));
+}
+
+TEST(Raft, ResourcesDefaultMovable)
+{
+  raft::resources a;
+  resource::get_cuda_stream(a);
+
+  // Move construct
+  raft::resources b(std::move(a));
+  ASSERT_TRUE(b.has_resource_factory(resource::resource_type::CUDA_STREAM_VIEW));
+
+  // Move assign
+  raft::resources c;
+  c = std::move(b);
+  ASSERT_TRUE(c.has_resource_factory(resource::resource_type::CUDA_STREAM_VIEW));
+}
+
 }  // namespace raft

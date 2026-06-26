@@ -76,7 +76,7 @@ inline void _init_nccl_comms(const resources& res)
 inline std::vector<ncclComm_t>& get_nccl_comms(const resources& res)
 {
   if (!res.has_resource_factory(resource_type::NCCL_COMM)) {
-    res.add_resource_factory(std::make_shared<nccl_comm_resource_factory>());
+    res.ensure_default_factory(std::make_shared<nccl_comm_resource_factory>());
     _init_nccl_comms(res);
   }
   return *res.get_resource<std::vector<ncclComm_t>>(resource_type::NCCL_COMM);

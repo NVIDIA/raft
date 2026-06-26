@@ -58,7 +58,7 @@ inline comms::comms_t const& get_comms(resources const& res)
   return *(*res.get_resource<std::shared_ptr<comms::comms_t>>(resource_type::COMMUNICATOR));
 }
 
-inline void set_comms(resources const& res, std::shared_ptr<comms::comms_t> communicator)
+inline void set_comms(resources& res, std::shared_ptr<comms::comms_t> communicator)
 {
   res.add_resource_factory(std::make_shared<comms_resource_factory>(communicator));
 }

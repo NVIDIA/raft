@@ -52,9 +52,7 @@ struct stream_view_resource_factory : public resource_factory {
  */
 inline raft::stream_view get_stream_view(resources const& res)
 {
-  if (!res.has_resource_factory(resource_type::STREAM_VIEW)) {
-    res.add_resource_factory(std::make_shared<stream_view_resource_factory>());
-  }
+  res.ensure_default_factory(std::make_shared<stream_view_resource_factory>());
   return *res.get_resource<raft::stream_view>(resource_type::STREAM_VIEW);
 };
 
@@ -64,7 +62,7 @@ inline raft::stream_view get_stream_view(resources const& res)
  * @param[in] res raft resources object for managing resources
  * @param[in] view raft stream view
  */
-inline void set_stream_view(resources const& res, raft::stream_view view)
+inline void set_stream_view(resources& res, raft::stream_view view)
 {
   res.add_resource_factory(std::make_shared<stream_view_resource_factory>(view));
 };

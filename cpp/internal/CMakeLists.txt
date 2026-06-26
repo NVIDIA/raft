@@ -10,5 +10,5 @@ if(BUILD_TESTS OR BUILD_PRIMS_BENCH)
   target_include_directories(
     raft_internal INTERFACE "$<BUILD_INTERFACE:${RAFT_SOURCE_DIR}/internal>"
   )
-  target_compile_features(raft_internal INTERFACE cxx_std_17 $<BUILD_INTERFACE:cuda_std_17>)
+  target_compile_features(raft_internal INTERFACE cxx_std_20 $<BUILD_INTERFACE:cuda_std_20>)
 endif()

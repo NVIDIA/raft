@@ -10,9 +10,7 @@
 #include <raft/core/error.hpp>  // RAFT_EXPECTS
 #include <raft/core/logger.hpp>
 
-#include <algorithm>
-#include <mutex>
-#include <string>
+#include <memory>
 #include <vector>
 
 namespace RAFT_EXPORT raft {
@@ -26,6 +24,16 @@ namespace RAFT_EXPORT raft {
  * accessor functions can then register and load resources as needed in order
  * to keep its usage somewhat opaque to end-users.
  *
+ * Copies of a resources handle share the underlying resource_cell objects.
+ * Lazy initialization (via get_resource / ensure_default_factory) stores into the
+ * shared cell's atomics, so all copies see the update.  Explicit modification
+ * (via add_resource_factory) replaces the shared_ptr<resource_cell> in the local
+ * vector, isolating the change from other copies.
+ *
+ * Thread safety: concurrent const operations on the same handle are safe
+ * (inner-cell atomics).  Concurrent const + non-const on the same handle
+ * requires external synchronization (standard C++ rules).
+ *
  * @code{.cpp}
  * #include <raft/core/resources.hpp>
  * #include <raft/core/resource/cuda_stream.hpp>
@@ -38,30 +46,17 @@ namespace RAFT_EXPORT raft {
  */
 class resources {
  public:
-  template <typename T>
-  using pair_res = std::pair<resource::resource_type, std::shared_ptr<T>>;
-
-  using pair_res_factory = pair_res<resource::resource_factory>;
-  using pair_resource    = pair_res<resource::resource>;
-
-  resources()
-    : factories_(resource::resource_type::LAST_KEY), resources_(resource::resource_type::LAST_KEY)
+  resources() : cells_(resource::resource_type::LAST_KEY)
   {
-    for (int i = 0; i < resource::resource_type::LAST_KEY; ++i) {
-      factories_.at(i) = std::make_pair(resource::resource_type::LAST_KEY,
-                                        std::make_shared<resource::empty_resource_factory>());
-      resources_.at(i) = std::make_pair(resource::resource_type::LAST_KEY,
-                                        std::make_shared<resource::empty_resource>());
+    for (auto& c : cells_) {
+      c = std::make_shared<resource::resource_cell>();
     }
   }
 
-  /**
-   * @brief Shallow copy of underlying resources instance.
-   * Note that this does not create any new resources.
-   */
-  resources(const resources& res) : factories_(res.factories_), resources_(res.resources_) {}
-  resources(resources&&)            = delete;
-  resources& operator=(resources&&) = delete;
+  resources(const resources&)            = default;
+  resources(resources&&)                 = default;
+  resources& operator=(const resources&) = default;
+  resources& operator=(resources&&)      = default;
   virtual ~resources() {}
 
   /**
@@ -72,34 +67,50 @@ class resources {
    */
   virtual bool has_resource_factory(resource::resource_type resource_type) const
   {
-    std::lock_guard<std::mutex> _(mutex_);
-    return factories_.at(resource_type).first != resource::resource_type::LAST_KEY;
+    return cells_[resource_type]->factory.load() != nullptr;
   }
 
   /**
-   * @brief Register a resource_factory with the current instance.
-   * This will overwrite any existing resource factories.
+   * @brief Register a resource_factory with the current instance (explicit set).
+   *
+   * Creates a new resource_cell with the given factory.  Other copies of this
+   * handle continue to point at the old cell, so the change does not propagate.
+   *
    * @param factory resource factory to register on the current instance
    */
-  void add_resource_factory(std::shared_ptr<resource::resource_factory> factory) const
+  void add_resource_factory(std::shared_ptr<resource::resource_factory> factory)
   {
-    std::lock_guard<std::mutex> _(mutex_);
-    resource::resource_type rtype = factory.get()->get_resource_type();
+    resource::resource_type rtype = factory->get_resource_type();
     RAFT_EXPECTS(rtype != resource::resource_type::LAST_KEY,
                  "LAST_KEY is a placeholder and not a valid resource factory type.");
-    factories_.at(rtype) = std::make_pair(rtype, factory);
-    // Clear the corresponding resource, so that on next `get_resource` the new factory is used
-    if (resources_.at(rtype).first != resource::resource_type::LAST_KEY) {
-      resources_.at(rtype) = std::make_pair(resource::resource_type::LAST_KEY,
-                                            std::make_shared<resource::empty_resource>());
-    }
+    auto new_cell = std::make_shared<resource::resource_cell>();
+    new_cell->factory.store(std::move(factory));
+    cells_[rtype] = std::move(new_cell);
+  }
+
+  /**
+   * @brief Register a default factory if none has been set yet (lazy default).
+   *
+   * CAS's the factory into the existing shared cell.  If another thread or copy
+   * already set a factory, this is a no-op.  Because the cell is shared, all
+   * copies see the registered default.
+   *
+   * @param factory default resource factory
+   */
+  void ensure_default_factory(std::shared_ptr<resource::resource_factory> factory) const
+  {
+    resource::resource_type rtype = factory->get_resource_type();
+    std::shared_ptr<resource::resource_factory> expected{};
+    cells_[rtype]->factory.compare_exchange_strong(expected, std::move(factory));
   }
 
   /**
    * @brief Retrieve a resource for the given resource_type and cast to given pointer type.
-   * Note that the resources are loaded lazily on-demand and resources which don't yet
-   * exist on the current instance will be created using the corresponding factory, if
-   * it exists.
+   *
+   * Resources are created lazily on first access using the registered factory.
+   * The created resource is stored atomically in the shared cell, so all copies
+   * of this handle that share the same cell see the resource.
+   *
    * @tparam res_t pointer type for which retrieved resource will be casted
    * @param resource_type resource type to retrieve
    * @return the given resource, if it exists.
@@ -107,24 +118,25 @@ class resources {
   template <typename res_t>
   res_t* get_resource(resource::resource_type resource_type) const
   {
-    std::lock_guard<std::mutex> _(mutex_);
-
-    if (resources_.at(resource_type).first == resource::resource_type::LAST_KEY) {
-      RAFT_EXPECTS(factories_.at(resource_type).first != resource::resource_type::LAST_KEY,
+    auto& cell = cells_[resource_type];
+    auto res   = cell->res.load();
+    if (!res) {
+      auto factory = cell->factory.load();
+      RAFT_EXPECTS(factory != nullptr,
                    "No resource factory has been registered for the given resource %d.",
                    resource_type);
-      resource::resource_factory* factory = factories_.at(resource_type).second.get();
-      resources_.at(resource_type)        = std::make_pair(
-        resource_type, std::shared_ptr<resource::resource>(factory->make_resource()));
+      auto new_res = std::shared_ptr<resource::resource>(factory->make_resource());
+      std::shared_ptr<resource::resource> expected{};
+      if (cell->res.compare_exchange_strong(expected, new_res)) {
+        res = new_res;
+      } else {
+        res = expected;
+      }
     }
-
-    resource::resource* res = resources_.at(resource_type).second.get();
     return reinterpret_cast<res_t*>(res->get_resource());
   }
 
  protected:
-  mutable std::mutex mutex_;
-  mutable std::vector<pair_res_factory> factories_;
-  mutable std::vector<pair_resource> resources_;
+  std::vector<std::shared_ptr<resource::resource_cell>> cells_;
 };
 }  // namespace RAFT_EXPORT raft

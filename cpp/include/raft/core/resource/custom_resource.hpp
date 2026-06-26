@@ -71,9 +71,7 @@ template <typename ResourceT>
 auto get_custom_resource(resources const& res) -> ResourceT*
 {
   static_assert(std::is_default_constructible_v<ResourceT>);
-  if (!res.has_resource_factory(resource_type::CUSTOM)) {
-    res.add_resource_factory(std::make_shared<custom_resource_factory>());
-  }
+  res.ensure_default_factory(std::make_shared<custom_resource_factory>());
   return res.get_resource<custom_resource>(resource_type::CUSTOM)->load<ResourceT>();
 };
 

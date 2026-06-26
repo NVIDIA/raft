@@ -57,10 +57,7 @@ class cusparse_resource_factory : public resource_factory {
  */
 inline cusparseHandle_t get_cusparse_handle(resources const& res)
 {
-  if (!res.has_resource_factory(resource_type::CUSPARSE_HANDLE)) {
-    rmm::cuda_stream_view stream = get_cuda_stream(res);
-    res.add_resource_factory(std::make_shared<cusparse_resource_factory>(stream));
-  }
+  res.ensure_default_factory(std::make_shared<cusparse_resource_factory>(get_cuda_stream(res)));
   return *res.get_resource<cusparseHandle_t>(resource_type::CUSPARSE_HANDLE);
 };
 

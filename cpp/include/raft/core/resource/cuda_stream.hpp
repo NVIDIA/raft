@@ -59,9 +59,7 @@ class cuda_stream_resource_factory : public resource_factory {
  */
 inline rmm::cuda_stream_view get_cuda_stream(resources const& res)
 {
-  if (!res.has_resource_factory(resource_type::CUDA_STREAM_VIEW)) {
-    res.add_resource_factory(std::make_shared<cuda_stream_resource_factory>());
-  }
+  res.ensure_default_factory(std::make_shared<cuda_stream_resource_factory>());
   return *res.get_resource<rmm::cuda_stream_view>(resource_type::CUDA_STREAM_VIEW);
 };
 
@@ -71,7 +69,7 @@ inline rmm::cuda_stream_view get_cuda_stream(resources const& res)
  * @param[in] res raft resources object for managing resources
  * @param[in] stream_view cuda stream view
  */
-inline void set_cuda_stream(resources const& res, rmm::cuda_stream_view stream_view)
+inline void set_cuda_stream(resources& res, rmm::cuda_stream_view stream_view)
 {
   res.add_resource_factory(std::make_shared<cuda_stream_resource_factory>(stream_view));
 };
