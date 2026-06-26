@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/math.cuh>
 
 namespace raft {
@@ -29,6 +30,7 @@ void argmax(raft::resources const& handle,
             raft::device_matrix_view<const math_t, matrix_idx_t, row_major> in,
             raft::device_vector_view<idx_t, matrix_idx_t> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(out.extent(0) == in.extent(0),
                "Size of output vector must equal number of rows in input matrix.");
   detail::argmax(in.data_handle(),

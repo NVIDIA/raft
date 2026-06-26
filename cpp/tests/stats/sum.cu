@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -76,17 +76,22 @@ class SumTest : public ::testing::TestWithParam<SumInputs<T>> {
 
     raft::update_device(data.data(), data_h.data(), len, stream);
 
-    if (params.rowMajor) {
-      using layout = raft::row_major;
-      sum(handle,
-          raft::make_device_matrix_view<const T, int, layout>(data.data(), rows, cols),
-          raft::make_device_vector_view(sum_act.data(), cols));
-    } else {
-      using layout = raft::col_major;
-      sum(handle,
-          raft::make_device_matrix_view<const T, int, layout>(data.data(), rows, cols),
-          raft::make_device_vector_view(sum_act.data(), cols));
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.rowMajor) {
+          using layout = raft::row_major;
+          sum(h,
+              raft::make_device_matrix_view<const T, int, layout>(data.data(), rows, cols),
+              raft::make_device_vector_view(sum_act.data(), cols));
+        } else {
+          using layout = raft::col_major;
+          sum(h,
+              raft::make_device_matrix_view<const T, int, layout>(data.data(), rows, cols),
+              raft::make_device_vector_view(sum_act.data(), cols));
+        }
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
     resource::sync_stream(handle, stream);
 
     double expected = double(params.rows) * params.value;

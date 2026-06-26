@@ -23,6 +23,7 @@ namespace detail {
  * @tparam along_rows whether to reduce along rows or columns
  * @tparam Type the data type
  * @tparam IdxType Integer type used to for addressing
+ * @param dry_run whether to run in dry-run mode
  * @param mu the output mean vector
  * @param data the input matrix
  * @param weights weight of size D if along_row is true, else of size N
@@ -31,16 +32,23 @@ namespace detail {
  * @param stream cuda stream to launch work on
  */
 template <bool row_major, bool along_rows, typename Type, typename IdxType = int>
-void weightedMean(
-  Type* mu, const Type* data, const Type* weights, IdxType D, IdxType N, cudaStream_t stream)
+void weightedMean(bool dry_run,
+                  Type* mu,
+                  const Type* data,
+                  const Type* weights,
+                  IdxType D,
+                  IdxType N,
+                  cudaStream_t stream)
 {
   // sum the weights & copy back to CPU
   auto weight_size = along_rows ? D : N;
   Type WS          = 0;
-  raft::stats::sum<false>(mu, weights, (IdxType)1, weight_size, stream);
-  raft::update_host(&WS, mu, 1, stream);
+  raft::linalg::detail::reduce<false, false>(
+    dry_run, mu, weights, (IdxType)1, weight_size, (Type)0, stream);
+  if (!dry_run) { raft::update_host(&WS, mu, 1, stream); }
 
-  raft::linalg::reduce<row_major, along_rows>(
+  raft::linalg::detail::reduce<row_major, along_rows>(
+    dry_run,
     mu,
     data,
     D,

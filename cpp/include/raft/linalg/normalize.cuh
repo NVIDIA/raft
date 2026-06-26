@@ -11,6 +11,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/norm_types.hpp>
 #include <raft/util/input_validation.hpp>
 
@@ -54,6 +55,7 @@ void row_normalize(raft::resources const& handle,
                    FinalLambda fin_op,
                    ElementType eps = ElementType(1e-8))
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(raft::is_row_or_column_major(in), "Input must be contiguous");
   RAFT_EXPECTS(raft::is_row_or_column_major(out), "Output must be contiguous");
   RAFT_EXPECTS(in.extent(0) == out.extent(0),

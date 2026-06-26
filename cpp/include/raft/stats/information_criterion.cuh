@@ -21,6 +21,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/stats/detail/batched/information_criterion.cuh>
 #include <raft/stats/stats_types.hpp>
@@ -89,6 +90,7 @@ void information_criterion_batched(raft::resources const& handle,
                                    idx_t n_params,
                                    idx_t n_samples)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(d_ic.size() == d_loglikelihood.size(), "Size mismatch");
   RAFT_EXPECTS(d_ic.is_exhaustive(), "d_ic must be contiguous");
   RAFT_EXPECTS(d_loglikelihood.is_exhaustive(), "d_loglikelihood must be contiguous");

@@ -9,6 +9,7 @@
 #include <raft/core/device_container_policy.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/mdarray.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <rmm/resource_ref.hpp>
@@ -164,7 +165,7 @@ auto make_device_scalar(raft::resources const& handle, ElementType const& v)
   using policy_t = typename device_scalar<ElementType, IndexType>::container_policy_type;
   policy_t policy{};
   auto scalar = device_scalar<ElementType, IndexType>{handle, extents, policy};
-  scalar(0)   = v;
+  if (!resource::get_dry_run_flag(handle)) { scalar(0) = v; }
   return scalar;
 }
 

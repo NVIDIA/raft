@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/dispersion.cuh>
 
 #include <optional>
@@ -46,7 +47,7 @@ DataT dispersion(const DataT* centroids,
                  cudaStream_t stream)
 {
   return detail::dispersion<DataT, IdxT, TPB>(
-    centroids, clusterSizes, globalCentroid, nClusters, nPoints, dim, stream);
+    false, centroids, clusterSizes, globalCentroid, nClusters, nPoints, dim, stream);
 }
 
 /**
@@ -89,7 +90,8 @@ value_t cluster_dispersion(
     RAFT_EXPECTS(global_centroid.value().is_exhaustive(), "global_centroid must be contiguous");
     global_centroid_ptr = global_centroid.value().data_handle();
   }
-  return detail::dispersion<value_t, idx_t>(centroids.data_handle(),
+  return detail::dispersion<value_t, idx_t>(resource::get_dry_run_flag(handle),
+                                            centroids.data_handle(),
                                             cluster_sizes.data_handle(),
                                             global_centroid_ptr,
                                             centroids.extent(0),

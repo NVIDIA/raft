@@ -7,6 +7,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/sparse/linalg/laplacian.cuh>
 #include <raft/spectral/detail/spectral_util.cuh>
@@ -57,22 +58,24 @@ void analyzePartition(raft::resources const& handle,
   vertex_t i;
   vertex_t n = csr_m.nrows_;
 
-  auto stream   = resource::get_cuda_stream(handle);
-  auto cublas_h = resource::get_cublas_handle(handle);
-
   weight_t partEdgesCut, clustersize;
 
-  // Device memory
+  // Device memory - allocate before dry-run check to track allocations
   spectral::matrix::vector_t<weight_t> part_i(handle, n);
   spectral::matrix::vector_t<weight_t> Lx(handle, n);
+
+  // Initialize Laplacian - allocate before dry-run check to track allocations
+  /// sparse_matrix_t<vertex_t, weight_t> A{handle, graph};
+  spectral::matrix::laplacian_matrix_t<vertex_t, weight_t, nnz_t> L{handle, csr_m};
+
+  if (resource::get_dry_run_flag(handle)) { return; }
+
+  auto stream   = resource::get_cuda_stream(handle);
+  auto cublas_h = resource::get_cublas_handle(handle);
 
   // Initialize cuBLAS
   RAFT_CUBLAS_TRY(
     raft::linalg::detail::cublassetpointermode(cublas_h, CUBLAS_POINTER_MODE_HOST, stream));
-
-  // Initialize Laplacian
-  /// sparse_matrix_t<vertex_t, weight_t> A{handle, graph};
-  spectral::matrix::laplacian_matrix_t<vertex_t, weight_t, nnz_t> L{handle, csr_m};
 
   // Initialize output
   cost    = 0;

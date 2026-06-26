@@ -7,7 +7,10 @@
 
 #pragma once
 
+#include <raft/core/copy.hpp>
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdarray.hpp>
+#include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/sparse/linalg/detail/cusparse_utils.hpp>
 #include <raft/sparse/linalg/detail/spmm.hpp>
 
@@ -53,16 +56,22 @@ void spmm(raft::resources const& handle,
   // WARNING: The following copy is working around a bug in cusparse which causes an alignment issue
   // and incorrect results. This bug is fixed in CUDA 12.5+ so this workaround shouldn't be removed
   // until that version is supported.
-  auto size = is_row_major ? (z.extent(0) - 1) * z.stride(0) + z.extent(1)
-                           : (z.extent(1) - 1) * z.stride(1) + z.extent(0);
-  rmm::device_uvector<ValueType> z_tmp(size, raft::resource::get_cuda_stream(handle));
-  raft::copy(z_tmp.data(), z.data_handle(), z_tmp.size(), raft::resource::get_cuda_stream(handle));
+  auto size  = is_row_major ? (z.extent(0) - 1) * z.stride(0) + z.extent(1)
+                            : (z.extent(1) - 1) * z.stride(1) + z.extent(0);
+  auto z_tmp = raft::make_device_mdarray<ValueType, IndexType>(
+    handle,
+    raft::resource::get_workspace_resource_ref(handle),
+    raft::make_extents<IndexType>(size));
+
+  raft::copy(handle,
+             z_tmp.view(),
+             raft::make_device_vector_view<const ValueType, IndexType>(z.data_handle(), size));
 
   auto z_tmp_view =
     is_row_major ? raft::make_device_strided_matrix_view<ValueType, IndexType, layout_c_contiguous>(
-                     z_tmp.data(), z.extent(0), z.extent(1), z.stride(0))
+                     z_tmp.data_handle(), z.extent(0), z.extent(1), z.stride(0))
                  : raft::make_device_strided_matrix_view<ValueType, IndexType, layout_f_contiguous>(
-                     z_tmp.data(), z.extent(0), z.extent(1), z.stride(1));
+                     z_tmp.data_handle(), z.extent(0), z.extent(1), z.stride(1));
 
   auto descr_x = detail::create_descriptor(x);
   auto descr_y = detail::create_descriptor(y);
@@ -72,7 +81,9 @@ void spmm(raft::resources const& handle,
 
   // WARNING: Do not remove the following copy unless you can, with certainty, say that
   // the underlying cuSPARSE issue affecting CUDA 12.2+ has been resolved.
-  raft::copy(z.data_handle(), z_tmp.data(), z_tmp.size(), raft::resource::get_cuda_stream(handle));
+  raft::copy(handle,
+             raft::make_device_vector_view<ValueType, IndexType>(z.data_handle(), size),
+             raft::make_const_mdspan(z_tmp.view()));
   RAFT_CUSPARSE_TRY_NO_THROW(cusparseDestroySpMat(descr_x));
   RAFT_CUSPARSE_TRY_NO_THROW(cusparseDestroyDnMat(descr_y));
   RAFT_CUSPARSE_TRY_NO_THROW(cusparseDestroyDnMat(descr_z));

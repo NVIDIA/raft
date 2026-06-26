@@ -1,7 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
+#include "../test_utils.cuh"
+
 #include <raft/core/device_coo_matrix.hpp>
 #include <raft/core/device_csr_matrix.hpp>
 #include <raft/core/resources.hpp>
@@ -69,82 +71,97 @@ void test_device_coo_sparsity_preserving_ref(S& mat, void* d)
 void test_device_coo_matrix()
 {
   raft::resources handle;
-  auto sparsity_owning = raft::make_device_coo_matrix<float, int, int, int>(handle, 5, 5);
+  execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      auto sparsity_owning = raft::make_device_coo_matrix<float, int, int, int>(h, 5, 5);
 
-  auto structure_view = sparsity_owning.structure_view();
+      auto structure_view = sparsity_owning.structure_view();
 
-  ASSERT_EQ(structure_view.get_n_cols(), 5);
-  ASSERT_EQ(structure_view.get_n_rows(), 5);
-  ASSERT_EQ(structure_view.get_nnz(), 0);
+      ASSERT_EQ(structure_view.get_n_cols(), 5);
+      ASSERT_EQ(structure_view.get_n_rows(), 5);
+      ASSERT_EQ(structure_view.get_nnz(), 0);
 
-  auto coord_struct = raft::make_device_coordinate_structure(handle, 5, 5, 5);
-  auto sparsity_preserving =
-    raft::make_device_coo_matrix<float, int, int>(handle, coord_struct.view());
+      auto coord_struct = raft::make_device_coordinate_structure(h, 5, 5, 5);
+      auto sparsity_preserving =
+        raft::make_device_coo_matrix<float, int, int>(h, coord_struct.view());
 
-  sparsity_owning.initialize_sparsity(5);
+      sparsity_owning.initialize_sparsity(5);
 
-  auto structure_view2 = sparsity_owning.structure_view();
+      auto structure_view2 = sparsity_owning.structure_view();
 
-  ASSERT_EQ(structure_view2.get_n_cols(), 5);
-  ASSERT_EQ(structure_view2.get_n_rows(), 5);
-  ASSERT_EQ(structure_view2.get_nnz(), 5);
+      ASSERT_EQ(structure_view2.get_n_cols(), 5);
+      ASSERT_EQ(structure_view2.get_n_rows(), 5);
+      ASSERT_EQ(structure_view2.get_nnz(), 5);
 
-  void* d_owning     = static_cast<void*>(sparsity_owning.get_elements().data());
-  void* d_preserving = static_cast<void*>(sparsity_preserving.get_elements().data());
+      void* d_owning     = static_cast<void*>(sparsity_owning.get_elements().data());
+      void* d_preserving = static_cast<void*>(sparsity_preserving.get_elements().data());
 
-  test_device_coo_owning_ref(sparsity_owning, d_owning);
-  test_device_coo_owning_ref(sparsity_preserving, d_preserving);
+      test_device_coo_owning_ref(sparsity_owning, d_owning);
+      test_device_coo_owning_ref(sparsity_preserving, d_preserving);
 
-  test_device_coo_sparsity_owning_ref(sparsity_owning, d_owning);
-  test_device_coo_sparsity_preserving_ref(sparsity_preserving, d_preserving);
+      test_device_coo_sparsity_owning_ref(sparsity_owning, d_owning);
+      test_device_coo_sparsity_preserving_ref(sparsity_preserving, d_preserving);
+    },
+    alloc_behavior::ARGUMENT_DRIVEN,
+    4 * 5 * sizeof(int) + 2 * 5 * sizeof(float));
 }
 
 void test_device_csr_matrix()
 {
   raft::resources handle;
-  auto sparsity_owning = raft::make_device_csr_matrix<float, int, int, int>(handle, 5, 5);
+  execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      auto sparsity_owning = raft::make_device_csr_matrix<float, int, int, int>(h, 5, 5);
 
-  auto comp_struct = raft::make_device_compressed_structure(handle, 5, 5, 5);
-  auto sparsity_preserving =
-    raft::make_device_csr_matrix<float, int, int>(handle, comp_struct.view());
+      auto comp_struct = raft::make_device_compressed_structure(h, 5, 5, 5);
+      auto sparsity_preserving =
+        raft::make_device_csr_matrix<float, int, int>(h, comp_struct.view());
 
-  auto structure_view = sparsity_owning.structure_view();
+      auto structure_view = sparsity_owning.structure_view();
 
-  ASSERT_EQ(structure_view.get_n_cols(), 5);
-  ASSERT_EQ(structure_view.get_n_rows(), 5);
-  ASSERT_EQ(structure_view.get_nnz(), 0);
+      ASSERT_EQ(structure_view.get_n_cols(), 5);
+      ASSERT_EQ(structure_view.get_n_rows(), 5);
+      ASSERT_EQ(structure_view.get_nnz(), 0);
 
-  sparsity_owning.initialize_sparsity(5);
+      sparsity_owning.initialize_sparsity(5);
 
-  auto structure_view2 = sparsity_owning.structure_view();
+      auto structure_view2 = sparsity_owning.structure_view();
 
-  ASSERT_EQ(structure_view2.get_n_cols(), 5);
-  ASSERT_EQ(structure_view2.get_n_rows(), 5);
-  ASSERT_EQ(structure_view2.get_nnz(), 5);
+      ASSERT_EQ(structure_view2.get_n_cols(), 5);
+      ASSERT_EQ(structure_view2.get_n_rows(), 5);
+      ASSERT_EQ(structure_view2.get_nnz(), 5);
 
-  void* d_owning     = static_cast<void*>(sparsity_owning.get_elements().data());
-  void* d_preserving = static_cast<void*>(sparsity_preserving.get_elements().data());
+      void* d_owning     = static_cast<void*>(sparsity_owning.get_elements().data());
+      void* d_preserving = static_cast<void*>(sparsity_preserving.get_elements().data());
 
-  test_device_csr_owning_ref(sparsity_owning, d_owning);
-  test_device_csr_owning_ref(sparsity_preserving, d_preserving);
+      test_device_csr_owning_ref(sparsity_owning, d_owning);
+      test_device_csr_owning_ref(sparsity_preserving, d_preserving);
 
-  test_device_csr_sparsity_owning_ref(sparsity_owning, d_owning);
-  test_device_csr_sparsity_preserving_ref(sparsity_preserving, d_preserving);
+      test_device_csr_sparsity_owning_ref(sparsity_owning, d_owning);
+      test_device_csr_sparsity_preserving_ref(sparsity_preserving, d_preserving);
+    },
+    alloc_behavior::ARGUMENT_DRIVEN,
+    2 * (5 + 1) * sizeof(int) + 2 * 5 * sizeof(int) + 2 * 5 * sizeof(float));
 }
 
 TEST(DeviceCoordinateStructure, Initialization)
 {
   raft::resources handle;
+  execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      auto uninitialized = raft::make_device_coordinate_structure(h, 5, 5, 0);
+      EXPECT_EQ(uninitialized.view().get_rows().size(), 0);
+      EXPECT_EQ(uninitialized.view().get_rows().data(), nullptr);
 
-  auto uninitialized = raft::make_device_coordinate_structure(handle, 5, 5, 0);
-  // Note: the behaviour of calling `view` on an uninitialized structure is
-  // undefined, this is testing an implementation detail.
-  EXPECT_EQ(uninitialized.view().get_rows().size(), 0);
-  EXPECT_EQ(uninitialized.view().get_rows().data(), nullptr);
-
-  auto initialized = raft::make_device_coordinate_structure(handle, 5, 5, 5);
-  EXPECT_EQ(initialized.view().get_rows().size(), 5);
-  EXPECT_NE(initialized.view().get_rows().data(), nullptr);
+      auto initialized = raft::make_device_coordinate_structure(h, 5, 5, 5);
+      EXPECT_EQ(initialized.view().get_rows().size(), 5);
+      EXPECT_NE(initialized.view().get_rows().data(), nullptr);
+    },
+    alloc_behavior::ARGUMENT_DRIVEN,
+    2 * 5 * sizeof(int));
 }
 
 TEST(DeviceSparseCOOMatrix, Basic) { test_device_coo_matrix(); }

@@ -13,6 +13,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <optional>
@@ -92,6 +93,7 @@ void permute(raft::resources const& handle,
              std::optional<raft::device_vector_view<IntType, IdxType>> permsOut,
              std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   static_assert(std::is_integral_v<IntType>,
                 "permute: The type of each element "
                 "of permsOut (if provided) must be an integral type.");
@@ -144,6 +146,7 @@ void permute(raft::resources const& handle,
              PermsOutType&& permsOut,
              OutType&& out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   // If PermsOutType is std::optional<device_vector_view<T, IdxType>>
   // for some T, then that type T need not be related to any of the
   // other template parameters.  Thus, we have to deduce it specially.

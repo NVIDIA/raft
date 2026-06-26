@@ -190,6 +190,7 @@ void getInputClassCardinality(
  * @brief Calculate workspace size for running contingency matrix calculations
  * @tparam T label type
  * @tparam OutT output matrix type
+ * @param dry_run: whether to run in dry-run mode (returns upper-bound estimate)
  * @param nSamples: number of elements in input array
  * @param groundTruth: device 1-d array for ground truth (num of rows)
  * @param stream: cuda stream for execution
@@ -197,13 +198,26 @@ void getInputClassCardinality(
  * @param maxLabel: Optional, max value in input array
  */
 template <typename T, typename OutT = int>
-size_t getContingencyMatrixWorkspaceSize(int nSamples,
+size_t getContingencyMatrixWorkspaceSize(bool dry_run,
+                                         int nSamples,
                                          const T* groundTruth,
                                          cudaStream_t stream,
                                          T minLabel = std::numeric_limits<T>::max(),
                                          T maxLabel = std::numeric_limits<T>::max())
 {
   size_t workspaceSize = 0;
+  if (dry_run) {
+    // Upper-bound estimate for dry-run mode:
+    // Worst case: each sample is a unique class, so outDimN = nSamples
+    // For SORT_AND_GATOMICS implementation:
+    // - tmpStagingMemorySize = alignTo(nSamples * sizeof(T), 256) * 2
+    // - CUB workspace: conservative upper bound of 4 * nSamples * sizeof(T)
+    auto tmpStagingMemorySize = raft::alignTo<size_t>(nSamples * sizeof(T), 256);
+    tmpStagingMemorySize *= 2;
+    size_t cubWorkspaceUpperBound = 4 * nSamples * sizeof(T);
+    workspaceSize                 = tmpStagingMemorySize + cubWorkspaceUpperBound;
+    return workspaceSize;
+  }
   // below is a redundant computation - can be avoided
   if (minLabel == std::numeric_limits<T>::max() || maxLabel == std::numeric_limits<T>::max()) {
     getInputClassCardinality<T>(groundTruth, nSamples, stream, minLabel, maxLabel);

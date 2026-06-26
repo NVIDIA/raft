@@ -13,6 +13,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <optional>
@@ -71,7 +72,8 @@ void make_blobs(DataT* out,
                 uint64_t seed                  = 0ULL,
                 GeneratorType type             = GenPC)
 {
-  detail::make_blobs_caller(out,
+  detail::make_blobs_caller(false,
+                            out,
                             labels,
                             n_rows,
                             n_cols,
@@ -157,7 +159,8 @@ void make_blobs(
   auto prm_centers     = centers.has_value() ? centers.value().data_handle() : nullptr;
   auto prm_cluster_std = cluster_std.has_value() ? cluster_std.value().data_handle() : nullptr;
 
-  detail::make_blobs_caller(out.data_handle(),
+  detail::make_blobs_caller(resource::get_dry_run_flag(handle),
+                            out.data_handle(),
                             labels.data_handle(),
                             (IdxT)out.extent(0),
                             (IdxT)out.extent(1),

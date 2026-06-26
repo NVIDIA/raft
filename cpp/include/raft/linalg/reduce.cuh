@@ -14,6 +14,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/types.hpp>
 #include <raft/util/input_validation.hpp>
 
@@ -72,7 +73,7 @@ void reduce(OutType* dots,
             FinalLambda final_op   = raft::identity_op())
 {
   detail::reduce<rowMajor, alongRows, InType, OutType, IdxType>(
-    dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
+    false, dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
 }
 
 /**
@@ -167,16 +168,18 @@ void reduce(raft::resources const& handle,
                  "Output should be equal to number of columns in Input");
   }
 
-  reduce<row_major, along_rows>(dots.data_handle(),
-                                data.data_handle(),
-                                data.extent(1),
-                                data.extent(0),
-                                init,
-                                resource::get_cuda_stream(handle),
-                                inplace,
-                                main_op,
-                                reduce_op,
-                                final_op);
+  detail::reduce<row_major, along_rows, InElementType, OutElementType, IdxType>(
+    resource::get_dry_run_flag(handle),
+    dots.data_handle(),
+    data.data_handle(),
+    data.extent(1),
+    data.extent(0),
+    init,
+    resource::get_cuda_stream(handle),
+    inplace,
+    main_op,
+    reduce_op,
+    final_op);
 }
 
 /** @} */  // end of group reduction

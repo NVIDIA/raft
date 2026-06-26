@@ -9,6 +9,7 @@
 #include <raft/core/mdarray.hpp>
 #include <raft/core/pinned_container_policy.hpp>
 #include <raft/core/pinned_mdspan.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <cstdint>
@@ -118,7 +119,7 @@ auto make_pinned_scalar(raft::resources const& handle, ElementType const& v)
   using policy_t = typename pinned_scalar<ElementType>::container_policy_type;
   policy_t policy{};
   auto scalar = pinned_scalar<ElementType>{handle, extents, policy};
-  scalar(0)   = v;
+  if (!resource::get_dry_run_flag(handle)) { scalar(0) = v; }
   return scalar;
 }
 

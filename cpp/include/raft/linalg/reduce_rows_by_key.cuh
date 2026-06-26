@@ -12,6 +12,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 namespace raft {
@@ -148,6 +149,7 @@ void reduce_rows_by_key(
   std::optional<raft::device_vector_view<const WeightType, IndexType>> d_weights = std::nullopt,
   bool reset_sums                                                                = true)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(d_A.extent(0) == d_A.extent(0) && d_sums.extent(1) == n_unique_keys,
                "Output is not of size ncols * n_unique_keys");
   RAFT_EXPECTS(d_keys.extent(0) == d_A.extent(1), "Keys is not of size nrows");

@@ -127,6 +127,29 @@ class device_uvector {
 
   void resize(size_type size) { data_.resize(size, data_.stream()); }
 
+  /**
+   * @brief Resize the internal buffer without copying old data.
+   *
+   * Unlike resize(), this never copies old data.
+   * Thus, unlike in resize(), there's no point in time where the old and the new buffers are both
+   * alive, and the peak memory usage is lower.
+   *
+   * Unlike resize(), this deallocates the old buffer even if the new size is smaller.
+   * This ensures the memory is released promptly.
+   */
+  void reallocate(size_type size)
+  {
+    if (size != data_.size()) {
+      auto stream = data_.stream();
+      auto mr     = data_.memory_resource();
+      // Resize and shrink rmm::device_uvector: force deallocation without copying old data
+      data_.resize(0, data_.stream());
+      data_.shrink_to_fit(data_.stream());
+      // Assign a new value after the old one is deallocated
+      data_ = rmm::device_uvector<T>(size, stream, mr);
+    }
+  }
+
   [[nodiscard]] auto data() noexcept -> pointer { return data_.data(); }
   [[nodiscard]] auto data() const noexcept -> const_pointer { return data_.data(); }
 };

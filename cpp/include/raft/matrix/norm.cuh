@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/matrix.cuh>
 
 namespace raft {
@@ -27,6 +28,7 @@ namespace matrix {
 template <typename m_t, typename idx_t>
 m_t l2_norm(raft::resources const& handle, raft::device_mdspan<const m_t, idx_t> in)
 {
+  if (resource::get_dry_run_flag(handle)) { return {}; }
   return detail::getL2Norm(handle, in.data_handle(), in.size(), resource::get_cuda_stream(handle));
 }
 

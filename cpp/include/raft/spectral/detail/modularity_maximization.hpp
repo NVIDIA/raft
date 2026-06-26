@@ -9,6 +9,7 @@
 #include <raft/core/logger_macros.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/linalg/normalize.cuh>
 #include <raft/spectral/detail/spectral_util.cuh>
@@ -47,6 +48,7 @@ void analyzeModularity(
   vertex_t const* __restrict__ clusters,
   weight_t& modularity)
 {
+  bool is_dry_run = resource::get_dry_run_flag(handle);
   RAFT_EXPECTS(clusters != nullptr, "Null clusters buffer.");
 
   vertex_t i;
@@ -61,10 +63,18 @@ void analyzeModularity(
   raft::spectral::matrix::vector_t<weight_t> Bx(handle, n);
 
   // Initialize cuBLAS
-  RAFT_CUBLAS_TRY(linalg::detail::cublassetpointermode(cublas_h, CUBLAS_POINTER_MODE_HOST, stream));
+  if (!is_dry_run) {
+    RAFT_CUBLAS_TRY(
+      linalg::detail::cublassetpointermode(cublas_h, CUBLAS_POINTER_MODE_HOST, stream));
+  }
 
   // Initialize Modularity
   raft::spectral::matrix::modularity_matrix_t<vertex_t, weight_t, nnz_t> B{handle, csr_m};
+
+  if (is_dry_run) {
+    // Early stopping because construct_indicator doesn't allocate anything.
+    return;
+  }
 
   // Initialize output
   modularity = 0;

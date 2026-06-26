@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -338,12 +338,18 @@ class MaskedMatmulTest
 
     if constexpr (bits_layout == BitsLayout::Bitmap) {
       auto mask = raft::core::bitmap_view<const bits_t, index_t>(bits_d.data(), params.m, params.n);
-      raft::sparse::linalg::masked_matmul(handle, A, B, mask, C);
+      raft::execute_with_dry_run_check(
+        handle,
+        [&](raft::resources const& h) { raft::sparse::linalg::masked_matmul(h, A, B, mask, C); },
+        raft::alloc_behavior::ARGUMENT_DRIVEN,
+        c_data_d.size() * sizeof(output_t));
     } else if constexpr (bits_layout == BitsLayout::Bitset) {
       auto mask = raft::core::bitset_view<const bits_t, index_t>(bits_d.data(), params.n);
-      raft::sparse::linalg::masked_matmul(handle, A, B, mask, C);
-    } else {
-      GTEST_SKIP() << "Unsupported BitsLayout!";
+      raft::execute_with_dry_run_check(
+        handle,
+        [&](raft::resources const& h) { raft::sparse::linalg::masked_matmul(h, A, B, mask, C); },
+        raft::alloc_behavior::ARGUMENT_DRIVEN,
+        c_data_d.size() * sizeof(output_t));
     }
 
     resource::sync_stream(handle);

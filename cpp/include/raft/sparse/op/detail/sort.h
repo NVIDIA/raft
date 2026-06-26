@@ -12,6 +12,7 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 
+#include <rmm/device_uvector.hpp>
 #include <rmm/exec_policy.hpp>
 
 #include <cuda/std/tuple>
@@ -50,6 +51,8 @@ struct TupleComp {
  * @brief Sorts the arrays that comprise the coo matrix
  * by row and then by column.
  *
+ * @param dry_run when true, allocates a best-effort workspace estimate
+ *                without launching kernels (for memory tracking)
  * @param m number of rows in coo matrix
  * @param n number of cols in coo matrix
  * @param nnz number of non-zeros
@@ -59,8 +62,18 @@ struct TupleComp {
  * @param stream: cuda stream to use
  */
 template <typename T, typename IdxT = int, typename nnz_t>
-void coo_sort(IdxT m, IdxT n, nnz_t nnz, IdxT* rows, IdxT* cols, T* vals, cudaStream_t stream)
+void coo_sort(
+  bool dry_run, IdxT m, IdxT n, nnz_t nnz, IdxT* rows, IdxT* cols, T* vals, cudaStream_t stream)
 {
+  if (dry_run) {
+    // Best-effort upper bound for thrust::sort_by_key workspace.
+    // Double-buffer estimate for large inputs; minimum 4096 for small inputs
+    // where per-allocation alignment overhead dominates.
+    auto sort_data_bytes = static_cast<std::size_t>(nnz) * (sizeof(IdxT) * 2 + sizeof(T));
+    rmm::device_uvector<char> sort_ws_est(std::max(sort_data_bytes * 2, std::size_t{4096}), stream);
+    return;
+  }
+
   auto coo_indices = thrust::make_zip_iterator(cuda::std::make_tuple(rows, cols));
 
   // get all the colors in contiguous locations so we can map them to warps.
@@ -77,7 +90,7 @@ template <typename T, typename IdxT = int, typename nnz_t>
 void coo_sort(COO<T, IdxT, nnz_t>* const in, cudaStream_t stream)
 {
   coo_sort<T, IdxT, nnz_t>(
-    in->n_rows, in->n_cols, in->nnz, in->rows(), in->cols(), in->vals(), stream);
+    false, in->n_rows, in->n_cols, in->nnz, in->rows(), in->cols(), in->vals(), stream);
 }
 
 /**

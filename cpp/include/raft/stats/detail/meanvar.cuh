@@ -184,8 +184,15 @@ RAFT_KERNEL meanvar_kernel_fill(T* mean, T* var, const mean_var<T>* aggr, I D, b
 }
 
 template <typename T, typename I = int, int BlockSize = 256>
-void meanvar(
-  T* mean, T* var, const T* data, I D, I N, bool sample, bool rowMajor, cudaStream_t stream)
+void meanvar(bool dry_run,
+             T* mean,
+             T* var,
+             const T* data,
+             I D,
+             I N,
+             bool sample,
+             bool rowMajor,
+             cudaStream_t stream)
 {
   if (rowMajor) {
     static_assert(BlockSize >= WarpSize, "Block size must be not smaller than the warp size.");
@@ -202,20 +209,25 @@ void meanvar(
     // Global memory: one mean_var<T> for each column
     //                one lock per all blocks working on the same set of columns
     rmm::device_buffer buf(sizeof(mean_var<T>) * D + sizeof(int) * gs.x, stream);
-    RAFT_CUDA_TRY(cudaMemsetAsync(buf.data(), 0, buf.size(), stream));
-    mean_var<T>* mvs = static_cast<mean_var<T>*>(buf.data());
-    int* locks       = static_cast<int*>(static_cast<void*>(mvs + D));
+    if (!dry_run) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(buf.data(), 0, buf.size(), stream));
+      mean_var<T>* mvs = static_cast<mean_var<T>*>(buf.data());
+      int* locks       = static_cast<int*>(static_cast<void*>(mvs + D));
 
-    const uint64_t len = uint64_t(D) * uint64_t(N);
-    ASSERT(len <= uint64_t(std::numeric_limits<I>::max()), "N * D does not fit the indexing type");
-    meanvar_kernel_rowmajor<T, I, BlockSize><<<gs, bs, 0, stream>>>(data, mvs, locks, len, D);
-    meanvar_kernel_fill<T, I>
-      <<<raft::ceildiv<I>(D, BlockSize), BlockSize, 0, stream>>>(mean, var, mvs, D, sample);
+      const uint64_t len = uint64_t(D) * uint64_t(N);
+      ASSERT(len <= uint64_t(std::numeric_limits<I>::max()),
+             "N * D does not fit the indexing type");
+      meanvar_kernel_rowmajor<T, I, BlockSize><<<gs, bs, 0, stream>>>(data, mvs, locks, len, D);
+      meanvar_kernel_fill<T, I>
+        <<<raft::ceildiv<I>(D, BlockSize), BlockSize, 0, stream>>>(mean, var, mvs, D, sample);
+    }
   } else {
-    meanvar_kernel_colmajor<T, I, BlockSize>
-      <<<D, BlockSize, 0, stream>>>(mean, var, data, D, N, sample);
+    if (!dry_run) {
+      meanvar_kernel_colmajor<T, I, BlockSize>
+        <<<D, BlockSize, 0, stream>>>(mean, var, data, D, N, sample);
+    }
   }
-  RAFT_CHECK_CUDA(stream);
+  if (!dry_run) { RAFT_CHECK_CUDA(stream); }
 }
 
 };  // namespace stats::detail

@@ -66,41 +66,46 @@ class StdDevTest : public ::testing::TestWithParam<StdDevInputs<T>> {
   {
     int rows = params.rows, cols = params.cols;
 
-    if (params.rowMajor) {
-      using layout_t = raft::row_major;
-      mean(handle,
-           raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
-           raft::make_device_vector_view<T, int>(mean_act.data(), cols));
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.rowMajor) {
+          using layout_t = raft::row_major;
+          mean(h,
+               raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
+               raft::make_device_vector_view<T, int>(mean_act.data(), cols));
 
-      stddev(handle,
-             raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
-             raft::make_device_vector_view<const T, int>(mean_act.data(), cols),
-             raft::make_device_vector_view<T, int>(stddev_act.data(), cols),
-             params.sample);
+          stddev(h,
+                 raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
+                 raft::make_device_vector_view<const T, int>(mean_act.data(), cols),
+                 raft::make_device_vector_view<T, int>(stddev_act.data(), cols),
+                 params.sample);
 
-      vars(handle,
-           raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
-           raft::make_device_vector_view<const T, int>(mean_act.data(), cols),
-           raft::make_device_vector_view<T, int>(vars_act.data(), cols),
-           params.sample);
-    } else {
-      using layout_t = raft::col_major;
-      mean(handle,
-           raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
-           raft::make_device_vector_view<T>(mean_act.data(), cols));
+          vars(h,
+               raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
+               raft::make_device_vector_view<const T, int>(mean_act.data(), cols),
+               raft::make_device_vector_view<T, int>(vars_act.data(), cols),
+               params.sample);
+        } else {
+          using layout_t = raft::col_major;
+          mean(h,
+               raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
+               raft::make_device_vector_view<T>(mean_act.data(), cols));
 
-      stddev(handle,
-             raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
-             raft::make_device_vector_view<const T, int>(mean_act.data(), cols),
-             raft::make_device_vector_view<T, int>(stddev_act.data(), cols),
-             params.sample);
+          stddev(h,
+                 raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
+                 raft::make_device_vector_view<const T, int>(mean_act.data(), cols),
+                 raft::make_device_vector_view<T, int>(stddev_act.data(), cols),
+                 params.sample);
 
-      vars(handle,
-           raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
-           raft::make_device_vector_view<const T, int>(mean_act.data(), cols),
-           raft::make_device_vector_view<T, int>(vars_act.data(), cols),
-           params.sample);
-    }
+          vars(h,
+               raft::make_device_matrix_view<const T, int, layout_t>(data, rows, cols),
+               raft::make_device_vector_view<const T, int>(mean_act.data(), cols),
+               raft::make_device_vector_view<T, int>(vars_act.data(), cols),
+               params.sample);
+        }
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
     T scalar = T(1);
     raft::matrix::weighted_sqrt(
       handle,

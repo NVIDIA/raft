@@ -116,29 +116,18 @@ rmm::device_uvector<value_idx> get_cluster_counts(raft::resources const& handle,
 
   rmm::device_uvector<value_idx> cluster_counts(n_labels, stream);
 
-  rmm::device_uvector<char> workspace(1, stream);
+  // Query workspace size for countLabels (can run in dry-run)
+  size_t countLabels_ws_size = 0;
+  raft::stats::detail::countLabels<value_idx, label_idx>(
+    y, nullptr, n_rows, n_labels, nullptr, countLabels_ws_size, stream);
+  rmm::device_uvector<char> workspace(countLabels_ws_size, stream);
 
-  raft::stats::detail::countLabels(y, cluster_counts.data(), n_rows, n_labels, workspace, stream);
+  if (resource::get_dry_run_flag(handle)) { return cluster_counts; }
+
+  raft::stats::detail::countLabels(
+    y, cluster_counts.data(), n_rows, n_labels, workspace.data(), countLabels_ws_size, stream);
 
   return cluster_counts;
-}
-
-template <typename value_t, typename value_idx>
-rmm::device_uvector<value_t> get_pairwise_distance(raft::resources const& handle,
-                                                   const value_t* left_begin,
-                                                   const value_t* right_begin,
-                                                   value_idx& n_left_rows,
-                                                   value_idx& n_right_rows,
-                                                   value_idx& n_cols,
-                                                   raft::distance::DistanceType metric,
-                                                   cudaStream_t stream)
-{
-  rmm::device_uvector<value_t> distances(n_left_rows * n_right_rows, stream);
-
-  raft::distance::pairwise_distance(
-    handle, left_begin, right_begin, distances.data(), n_left_rows, n_right_rows, n_cols, metric);
-
-  return distances;
 }
 
 template <typename value_t, typename value_idx, typename label_idx>
@@ -178,6 +167,8 @@ value_t silhouette_score(
   ASSERT(n_labels >= 2 && n_labels <= (n_rows - 1),
          "silhouette Score not defined for the given number of labels!");
 
+  bool is_dry_run = resource::get_dry_run_flag(handle);
+
   rmm::device_uvector<value_idx> cluster_counts = get_cluster_counts(handle, y, n_rows, n_labels);
 
   auto stream = resource::get_cuda_stream(handle);
@@ -186,18 +177,23 @@ value_t silhouette_score(
   auto b_size = n_rows * n_labels;
 
   value_t *a_ptr, *b_ptr;
-  rmm::device_uvector<value_t> a(0, stream);
+  // since a and silhouette score per sample are same size, reusing
+  rmm::device_uvector<value_t> a((scores == nullptr || scores == NULL) ? n_rows : 0, stream);
   rmm::device_uvector<value_t> b(b_size, stream);
 
   b_ptr = b.data();
 
-  // since a and silhouette score per sample are same size, reusing
-  if (scores == nullptr || scores == NULL) {
-    a.resize(n_rows, stream);
+  if (a.size() > 0) {
     a_ptr = a.data();
   } else {
     a_ptr = scores;
   }
+
+  // Pre-allocate maximum distance buffer size (chunk * chunk) before dry-run guard
+  // to ensure allocation is tracked in dry-run mode and avoid reallocations in the loop
+  rmm::device_uvector<value_t> distances_buffer(chunk * chunk, stream);
+
+  if (is_dry_run) { return value_t{0}; }
 
   thrust::fill(policy, a_ptr, a_ptr + n_rows, 0);
 
@@ -223,8 +219,15 @@ value_t silhouette_score(
       auto n_left_rows  = (i + chunk) < n_rows ? chunk : (n_rows - i);
       auto n_right_rows = (j + chunk) < n_rows ? chunk : (n_rows - j);
 
-      rmm::device_uvector<value_t> distances = get_pairwise_distance(
-        handle, left_begin, right_begin, n_left_rows, n_right_rows, n_cols, metric, chunk_stream);
+      // Reuse pre-allocated buffer (size is at most chunk * chunk)
+      raft::distance::pairwise_distance(handle,
+                                        left_begin,
+                                        right_begin,
+                                        distances_buffer.data(),
+                                        n_left_rows,
+                                        n_right_rows,
+                                        n_cols,
+                                        metric);
 
       compute_chunked_a_b(handle,
                           a_ptr,
@@ -234,7 +237,7 @@ value_t silhouette_score(
                           y,
                           n_labels,
                           cluster_counts.data(),
-                          distances.data(),
+                          distances_buffer.data(),
                           n_left_rows,
                           n_right_rows,
                           chunk_stream);

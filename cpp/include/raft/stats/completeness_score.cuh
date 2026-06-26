@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/homogeneity_score.cuh>
 
 namespace raft {
@@ -35,7 +36,7 @@ double completeness_score(const T* truthClusterArray,
                           cudaStream_t stream)
 {
   return detail::homogeneity_score(
-    predClusterArray, truthClusterArray, size, lower_label_range, upper_label_range, stream);
+    false, predClusterArray, truthClusterArray, size, lower_label_range, upper_label_range, stream);
 }
 
 /**
@@ -65,7 +66,8 @@ double completeness_score(raft::resources const& handle,
   RAFT_EXPECTS(truth_cluster_array.size() == pred_cluster_array.size(), "Size mismatch");
   RAFT_EXPECTS(truth_cluster_array.is_exhaustive(), "truth_cluster_array must be contiguous");
   RAFT_EXPECTS(pred_cluster_array.is_exhaustive(), "pred_cluster_array must be contiguous");
-  return detail::homogeneity_score(pred_cluster_array.data_handle(),
+  return detail::homogeneity_score(resource::get_dry_run_flag(handle),
+                                   pred_cluster_array.data_handle(),
                                    truth_cluster_array.data_handle(),
                                    truth_cluster_array.extent(0),
                                    lower_label_range,

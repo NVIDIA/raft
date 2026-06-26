@@ -8,6 +8,8 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/sparse/op/detail/sort.h>
 
@@ -30,7 +32,33 @@ namespace op {
 template <typename T, typename IdxT = int, typename nnz_t>
 void coo_sort(IdxT m, IdxT n, nnz_t nnz, IdxT* rows, IdxT* cols, T* vals, cudaStream_t stream)
 {
-  detail::coo_sort(m, n, nnz, rows, cols, vals, stream);
+  detail::coo_sort(false, m, n, nnz, rows, cols, vals, stream);
+}
+
+/**
+ * @brief Sorts the arrays that comprise the coo matrix
+ * by row and then by column (dry-run aware).
+ *
+ * @param handle raft resources handle
+ * @param m number of rows in coo matrix
+ * @param n number of cols in coo matrix
+ * @param nnz number of non-zeros
+ * @param rows rows array from coo matrix
+ * @param cols cols array from coo matrix
+ * @param vals vals array from coo matrix
+ */
+template <typename T, typename IdxT = int, typename nnz_t>
+void coo_sort(
+  raft::resources const& handle, IdxT m, IdxT n, nnz_t nnz, IdxT* rows, IdxT* cols, T* vals)
+{
+  detail::coo_sort(resource::get_dry_run_flag(handle),
+                   m,
+                   n,
+                   nnz,
+                   rows,
+                   cols,
+                   vals,
+                   resource::get_cuda_stream(handle));
 }
 
 /**
@@ -42,8 +70,7 @@ void coo_sort(IdxT m, IdxT n, nnz_t nnz, IdxT* rows, IdxT* cols, T* vals, cudaSt
 template <typename T, typename IdxT = int, typename nnz_t>
 void coo_sort(COO<T, IdxT, nnz_t>* const in, cudaStream_t stream)
 {
-  coo_sort<T, IdxT, nnz_t>(
-    in->n_rows, in->n_cols, in->nnz, in->rows(), in->cols(), in->vals(), stream);
+  detail::coo_sort(in, stream);
 }
 
 /**

@@ -347,15 +347,20 @@ void test_factory_methods()
   }
   {
     raft::resources handle;
-    // device mdarray
-    auto d_matrix = make_device_matrix<float>(handle, n, n);
-    ASSERT_EQ(d_matrix.extent(0), n);
-    ASSERT_EQ(d_matrix.extent(1), n);
-    static_assert(d_matrix.rank() == 2);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        auto d_matrix = make_device_matrix<float>(h, n, n);
+        ASSERT_EQ(d_matrix.extent(0), n);
+        ASSERT_EQ(d_matrix.extent(1), n);
+        static_assert(d_matrix.rank() == 2);
 
-    auto d_vec = make_device_vector<float>(handle, n);
-    static_assert(d_vec.rank() == 1);
-    ASSERT_EQ(d_vec.extent(0), n);
+        auto d_vec = make_device_vector<float>(h, n);
+        static_assert(d_vec.rank() == 1);
+        ASSERT_EQ(d_vec.extent(0), n);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      n * (n + 1) * sizeof(float));
   }
 
   {

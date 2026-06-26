@@ -499,7 +499,8 @@ template <typename ThickPolicy,
           typename MainLambda   = raft::identity_op,
           typename ReduceLambda = raft::add_op,
           typename FinalLambda  = raft::identity_op>
-void coalescedReductionThick(OutType* dots,
+void coalescedReductionThick(bool dry_run,
+                             OutType* dots,
                              const InType* data,
                              IdxType D,
                              IdxType N,
@@ -517,6 +518,8 @@ void coalescedReductionThick(OutType* dots,
   dim3 blocks(N, ThickPolicy::BlocksPerRow, 1);
 
   rmm::device_uvector<OutType> buffer(N * ThickPolicy::BlocksPerRow, stream);
+
+  if (dry_run) { return; }
 
   /* We apply a two-step reduction:
    *  1. coalescedReductionThickKernel reduces the [N x D] input data to [N x BlocksPerRow]. It
@@ -551,7 +554,8 @@ template <typename InType,
           typename MainLambda   = raft::identity_op,
           typename ReduceLambda = raft::add_op,
           typename FinalLambda  = raft::identity_op>
-void coalescedReductionThickDispatcher(OutType* dots,
+void coalescedReductionThickDispatcher(bool dry_run,
+                                       OutType* dots,
                                        const InType* data,
                                        IdxType D,
                                        IdxType N,
@@ -565,7 +569,7 @@ void coalescedReductionThickDispatcher(OutType* dots,
   // Note: multiple elements per thread to take advantage of the sequential reduction and loop
   // unrolling
   coalescedReductionThick<ReductionThickPolicy<256, 64>, ReductionThinPolicy<32, 128, 1>>(
-    dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
+    dry_run, dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
 }
 
 // Primitive to perform reductions along the coalesced dimension of the matrix, i.e. reduce along
@@ -580,7 +584,8 @@ template <typename InType,
           typename MainLambda   = raft::identity_op,
           typename ReduceLambda = raft::add_op,
           typename FinalLambda  = raft::identity_op>
-void coalescedReduction(OutType* dots,
+void coalescedReduction(bool dry_run,
+                        OutType* dots,
                         const InType* data,
                         IdxType D,
                         IdxType N,
@@ -601,12 +606,16 @@ void coalescedReduction(OutType* dots,
    */
   const IdxType numSMs = raft::getMultiProcessorCount();
   if (D <= IdxType(512) || (N >= IdxType(16) * numSMs && D < IdxType(2048))) {
+    if (dry_run) { return; }
     coalescedReductionThinDispatcher(
       dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
   } else if (N < numSMs && D >= IdxType(1 << 17)) {
+    // Must call through to coalescedReductionThick even in dry-run so workspace
+    // allocations are recorded (coalescedReductionThick allocates before guarding).
     coalescedReductionThickDispatcher(
-      dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
+      dry_run, dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
   } else {
+    if (dry_run) { return; }
     coalescedReductionMediumDispatcher(
       dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
   }

@@ -8,10 +8,36 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
+#include <raft/core/resources.hpp>
 #include <raft/label/detail/classlabels.cuh>
 
 namespace raft {
 namespace label {
+
+/**
+ * Get unique class labels.
+ *
+ * The y array is assumed to store class labels. The unique values are selected
+ * from this array.
+ *
+ * @tparam value_t numeric type of the arrays with class labels
+ * @param [in] handle raft resources handle (dry-run aware)
+ * @param [inout] unique output unique labels
+ * @param [in] y device array of labels, size [n]
+ * @param [in] n number of labels
+ * @returns number of unique labels (upper bound in dry-run mode)
+ */
+template <typename value_t>
+int getUniquelabels(raft::resources const& handle,
+                    rmm::device_uvector<value_t>& unique,
+                    value_t* y,
+                    size_t n)
+{
+  return detail::getUniquelabels<value_t>(
+    resource::get_dry_run_flag(handle), unique, y, n, resource::get_cuda_stream(handle));
+}
 
 /**
  * Get unique class labels.

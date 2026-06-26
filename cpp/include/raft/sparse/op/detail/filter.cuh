@@ -9,6 +9,7 @@
 #include <raft/core/device_coo_matrix.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/host_mdspan.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/sparse/coo.hpp>
 #include <raft/sparse/detail/cusparse_wrappers.h>
 #include <raft/sparse/detail/utils.h>
@@ -213,6 +214,18 @@ void coo_remove_scalar(raft::resources const& handle,
 
   rmm::device_uvector<nnz_t> row_count_nz(in_n_rows, stream);
   rmm::device_uvector<nnz_t> row_count(in_n_rows, stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound on non-dry-run compliant and data-dependent code below (thrust calls, unknown
+    // out_nnz <= in_nnz)
+    out.initialize_sparsity(in_nnz);
+    rmm::device_uvector<nnz_t> ex_scan(in_n_rows, stream);
+    rmm::device_uvector<nnz_t> cur_ex_scan(in_n_rows, stream);
+    // Upper bound for thrust workspace (reduce + 2x exclusive_scan)
+    rmm::device_uvector<char> thrust_ws(3 * (static_cast<size_t>(in_n_rows) * sizeof(nnz_t) + 4096),
+                                        stream);
+    return;
+  }
 
   RAFT_CUDA_TRY(
     cudaMemsetAsync(row_count_nz.data(), 0, static_cast<nnz_t>(in_n_rows) * sizeof(nnz_t), stream));

@@ -97,11 +97,23 @@ class EigTest : public ::testing::TestWithParam<EigInputs<T>> {
     auto eig_vals_jacobi_view =
       raft::make_device_vector_view<T, std::uint32_t>(eig_vals_jacobi.data(), params.n_row);
 
-    eig_dc(handle, cov_matrix_view, eig_vectors_view, eig_vals_view);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        eig_dc(h, cov_matrix_view, eig_vectors_view, eig_vals_view);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      sizeof(int));
 
     T tol      = 1.e-7;
     int sweeps = 15;
-    eig_jacobi(handle, cov_matrix_view, eig_vectors_jacobi_view, eig_vals_jacobi_view, tol, sweeps);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        eig_jacobi(h, cov_matrix_view, eig_vectors_jacobi_view, eig_vals_jacobi_view, tol, sweeps);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      sizeof(int));
 
     // test code for comparing two methods
     len = params.n * params.n;
@@ -158,10 +170,16 @@ TEST(Raft, EigStream)
   auto eig_vals_stream = raft::make_device_vector<float, std::uint32_t>(handle, n_rows);
   uniform(handle, r, cov_matrix_stream.data_handle(), n_rows * n_rows, float(-1.0), float(1.0));
 
-  raft::linalg::eig_dc(handle,
-                       raft::make_const_mdspan(cov_matrix_stream.view()),
-                       eig_vectors_stream.view(),
-                       eig_vals_stream.view());
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      raft::linalg::eig_dc(h,
+                           raft::make_const_mdspan(cov_matrix_stream.view()),
+                           eig_vectors_stream.view(),
+                           eig_vals_stream.view());
+    },
+    raft::alloc_behavior::ARGUMENT_DRIVEN,
+    sizeof(int));
   raft::resource::sync_stream(handle, raft::resource::get_cuda_stream(handle));
 }
 

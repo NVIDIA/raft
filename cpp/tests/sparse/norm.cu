@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -52,7 +52,12 @@ class CSRRowNormTest : public ::testing::TestWithParam<CSRRowNormInputs<Type_f, 
     raft::update_device(data.data(), params.data.data(), nnz, stream);
     raft::update_device(verify.data(), params.verify.data(), n_rows, stream);
 
-    linalg::rowNormCsr(handle, indptr.data(), data.data(), nnz, n_rows, result.data(), params.norm);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        linalg::rowNormCsr(h, indptr.data(), data.data(), nnz, n_rows, result.data(), params.norm);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
 
     ASSERT_TRUE(

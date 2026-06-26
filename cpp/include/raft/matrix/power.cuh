@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/math.cuh>
 
 namespace raft {
@@ -34,6 +35,7 @@ void weighted_power(raft::resources const& handle,
                     raft::device_matrix_view<math_t, idx_t, layout> out,
                     math_t scalar)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.size() == out.size(), "Size of input and output matrices must be equal");
   detail::power(
     in.data_handle(), out.data_handle(), scalar, in.size(), resource::get_cuda_stream(handle));
@@ -53,6 +55,7 @@ void weighted_power(raft::resources const& handle,
                     raft::device_matrix_view<math_t, idx_t, layout> inout,
                     math_t scalar)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   detail::power(inout.data_handle(), scalar, inout.size(), resource::get_cuda_stream(handle));
 }
 
@@ -67,6 +70,7 @@ void weighted_power(raft::resources const& handle,
 template <typename math_t, typename idx_t, typename layout>
 void power(raft::resources const& handle, raft::device_matrix_view<math_t, idx_t, layout> inout)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   detail::power<math_t>(inout.data_handle(), inout.size(), resource::get_cuda_stream(handle));
 }
 
@@ -85,6 +89,7 @@ void power(raft::resources const& handle,
            raft::device_matrix_view<const math_t, idx_t, layout> in,
            raft::device_matrix_view<math_t, idx_t, layout> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.size() == out.size(), "Input and output matrices must be same size.");
   detail::power<math_t>(
     in.data_handle(), out.data_handle(), in.size(), resource::get_cuda_stream(handle));

@@ -10,6 +10,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/entropy.cuh>
 
 namespace raft {
@@ -34,7 +35,7 @@ double entropy(const T* clusterArray,
                const T upperLabelRange,
                cudaStream_t stream)
 {
-  return detail::entropy(clusterArray, size, lowerLabelRange, upperLabelRange, stream);
+  return detail::entropy(false, clusterArray, size, lowerLabelRange, upperLabelRange, stream);
 }
 
 /**
@@ -61,7 +62,8 @@ double entropy(raft::resources const& handle,
                const value_t upper_label_range)
 {
   RAFT_EXPECTS(cluster_array.is_exhaustive(), "cluster_array must be contiguous");
-  return detail::entropy(cluster_array.data_handle(),
+  return detail::entropy(resource::get_dry_run_flag(handle),
+                         cluster_array.data_handle(),
                          cluster_array.extent(0),
                          lower_label_range,
                          upper_label_range,

@@ -9,6 +9,7 @@
 #include <raft/core/host_container_policy.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/mdarray.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <cstdint>
@@ -224,7 +225,7 @@ auto make_host_scalar(raft::resources const& res, ElementType const& v)
   using policy_t = typename host_scalar<ElementType, IndexType>::container_policy_type;
   policy_t policy;
   auto scalar = host_scalar<ElementType, IndexType>{res, extents, policy};
-  scalar(0)   = v;
+  if (!resource::get_dry_run_flag(res)) { scalar(0) = v; }
   return scalar;
 }
 

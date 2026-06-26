@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/scores.cuh>
 
 namespace raft {
@@ -28,7 +29,7 @@ namespace stats {
 template <typename math_t>
 float accuracy(const math_t* predictions, const math_t* ref_predictions, int n, cudaStream_t stream)
 {
-  return detail::accuracy_score(predictions, ref_predictions, n, stream);
+  return detail::accuracy_score(false, predictions, ref_predictions, n, stream);
 }
 
 /**
@@ -54,7 +55,8 @@ float accuracy(raft::resources const& handle,
   RAFT_EXPECTS(predictions.is_exhaustive(), "predictions must be contiguous");
   RAFT_EXPECTS(ref_predictions.is_exhaustive(), "ref_predictions must be contiguous");
 
-  return detail::accuracy_score(predictions.data_handle(),
+  return detail::accuracy_score(resource::get_dry_run_flag(handle),
+                                predictions.data_handle(),
                                 ref_predictions.data_handle(),
                                 predictions.extent(0),
                                 resource::get_cuda_stream(handle));

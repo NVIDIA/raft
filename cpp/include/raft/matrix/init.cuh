@@ -9,6 +9,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/map.cuh>
 #include <raft/matrix/detail/math.cuh>
 
@@ -36,6 +37,7 @@ void fill(raft::resources const& handle,
           raft::device_mdspan<math_t, extents, layout> out,
           raft::host_scalar_view<math_t> scalar)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(raft::is_row_or_column_major(out), "Data layout not supported");
   RAFT_EXPECTS(in.size() == out.size(), "Input and output matrices must be the same size.");
   RAFT_EXPECTS(scalar.data_handle() != nullptr, "Empty scalar");
@@ -60,6 +62,7 @@ void fill(raft::resources const& handle,
           raft::device_mdspan<math_t, extents, layout> inout,
           math_t scalar)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   linalg::map(handle, inout, raft::const_op{scalar});
 }
 

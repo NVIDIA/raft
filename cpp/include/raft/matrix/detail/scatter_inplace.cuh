@@ -6,6 +6,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdarray.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/linalg/map.cuh>
 #include <raft/util/cuda_dev_essentials.cuh>
@@ -64,11 +65,13 @@ void scatterInplaceImpl(
   // re-assign batch_size for default case
   if (batch_size == 0 || batch_size > n) batch_size = n;
 
+  auto scratch_space = raft::make_device_vector<MatrixT, IndexT>(handle, m * batch_size);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
+
   auto exec_policy = resource::get_thrust_policy(handle);
 
   IndexT n_batches = raft::ceildiv(n, batch_size);
-
-  auto scratch_space = raft::make_device_vector<MatrixT, IndexT>(handle, m * batch_size);
 
   for (IndexT bid = 0; bid < n_batches; bid++) {
     IndexT batch_offset   = bid * batch_size;

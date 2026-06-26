@@ -12,6 +12,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 
 namespace raft {
 namespace linalg {
@@ -91,6 +92,7 @@ void map_reduce(raft::resources const& handle,
                 ReduceLambda op,
                 Args... args)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   mapReduce<InValueType, MapOp, ReduceLambda, IndexType, 256, OutValueType, Args...>(
     out.data_handle(),
     in.extent(0),

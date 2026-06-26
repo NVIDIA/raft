@@ -12,6 +12,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 namespace raft {
@@ -82,6 +83,7 @@ void reduce_cols_by_key(
   IndexType nkeys = 0,
   bool reset_sums = true)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   if (nkeys > 0) {
     RAFT_EXPECTS(out.extent(1) == nkeys, "Output doesn't have nkeys columns");
   } else {

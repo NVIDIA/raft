@@ -11,6 +11,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/stats/detail/scores.cuh>
 
@@ -40,8 +41,14 @@ void regression_metrics(const T* predictions,
                         double& mean_squared_error,
                         double& median_abs_error)
 {
-  detail::regression_metrics(
-    predictions, ref_predictions, n, stream, mean_abs_error, mean_squared_error, median_abs_error);
+  detail::regression_metrics(false,
+                             predictions,
+                             ref_predictions,
+                             n,
+                             stream,
+                             mean_abs_error,
+                             mean_squared_error,
+                             median_abs_error);
 }
 
 /**
@@ -80,7 +87,8 @@ void regression_metrics(raft::resources const& handle,
                "mean_squared_error view must not be empty");
   RAFT_EXPECTS(median_abs_error.data_handle() != nullptr,
                "median_abs_error view must not be empty");
-  detail::regression_metrics(predictions.data_handle(),
+  detail::regression_metrics(resource::get_dry_run_flag(handle),
+                             predictions.data_handle(),
                              ref_predictions.data_handle(),
                              predictions.extent(0),
                              resource::get_cuda_stream(handle),

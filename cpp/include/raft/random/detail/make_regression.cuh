@@ -10,6 +10,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/add.cuh>
 #include <raft/linalg/gemm.cuh>
@@ -53,25 +54,34 @@ static void _make_low_rank_matrix(raft::resources const& handle,
                                   raft::random::RngState& r,
                                   cudaStream_t stream)
 {
-  IdxT n = std::min(n_rows, n_cols);
+  bool is_dry_run = resource::get_dry_run_flag(handle);
+  IdxT n          = std::min(n_rows, n_cols);
 
   // Generate random (ortho normal) vectors with QR decomposition
   rmm::device_uvector<DataT> rd_mat_0(n_rows * n, stream);
   rmm::device_uvector<DataT> rd_mat_1(n_cols * n, stream);
-  normal(r, rd_mat_0.data(), n_rows * n, (DataT)0.0, (DataT)1.0, stream);
-  normal(r, rd_mat_1.data(), n_cols * n, (DataT)0.0, (DataT)1.0, stream);
+  if (!is_dry_run) {
+    normal(r, rd_mat_0.data(), n_rows * n, (DataT)0.0, (DataT)1.0, stream);
+    normal(r, rd_mat_1.data(), n_cols * n, (DataT)0.0, (DataT)1.0, stream);
+  }
   rmm::device_uvector<DataT> q0(n_rows * n, stream);
   rmm::device_uvector<DataT> q1(n_cols * n, stream);
-  raft::linalg::qrGetQ(handle, rd_mat_0.data(), q0.data(), n_rows, n, stream);
-  raft::linalg::qrGetQ(handle, rd_mat_1.data(), q1.data(), n_cols, n, stream);
+  if (!is_dry_run) {
+    raft::linalg::qrGetQ(handle, rd_mat_0.data(), q0.data(), n_rows, n, stream);
+    raft::linalg::qrGetQ(handle, rd_mat_1.data(), q1.data(), n_cols, n, stream);
+  }
 
   // Build the singular profile by assembling signal and noise components
   rmm::device_uvector<DataT> singular_vec(n, stream);
-  _singular_profile_kernel<<<raft::ceildiv<IdxT>(n, 256), 256, 0, stream>>>(
-    singular_vec.data(), n, tail_strength, effective_rank);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  if (!is_dry_run) {
+    _singular_profile_kernel<<<raft::ceildiv<IdxT>(n, 256), 256, 0, stream>>>(
+      singular_vec.data(), n, tail_strength, effective_rank);
+    RAFT_CUDA_TRY(cudaPeekAtLastError());
+  }
   rmm::device_uvector<DataT> singular_mat(n * n, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(singular_mat.data(), 0, n * n * sizeof(DataT), stream));
+  if (!is_dry_run) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(singular_mat.data(), 0, n * n * sizeof(DataT), stream));
+  }
 
   raft::matrix::set_diagonal(handle,
                              make_device_vector_view<const DataT, IdxT>(singular_vec.data(), n),
@@ -152,55 +162,41 @@ void make_regression_caller(raft::resources const& handle,
                             uint64_t seed                    = 0ULL,
                             raft::random::GeneratorType type = raft::random::GenPC)
 {
-  n_informative = std::min(n_informative, n_cols);
+  bool is_dry_run = resource::get_dry_run_flag(handle);
+  n_informative   = std::min(n_informative, n_cols);
 
   raft::random::RngState r(seed, type);
 
   if (effective_rank < 0) {
     // Randomly generate a well conditioned input set
-    normal(r, out, n_rows * n_cols, (DataT)0.0, (DataT)1.0, stream);
+    if (!is_dry_run) { normal(r, out, n_rows * n_cols, (DataT)0.0, (DataT)1.0, stream); }
   } else {
     // Randomly generate a low rank, fat tail input set
     _make_low_rank_matrix(handle, out, n_rows, n_cols, effective_rank, tail_strength, r, stream);
   }
 
   // Use the right output buffer for the values
-  rmm::device_uvector<DataT> tmp_values(0, stream);
-  DataT* _values;
-  if (shuffle) {
-    tmp_values.resize(n_rows * n_targets, stream);
-    _values = tmp_values.data();
-  } else {
-    _values = values;
-  }
+  rmm::device_uvector<DataT> tmp_values(shuffle ? n_rows * n_targets : 0, stream);
+  DataT* _values = shuffle ? tmp_values.data() : values;
   // Create a column-major matrix of output values only if it has more
   // than 1 column
-  rmm::device_uvector<DataT> values_col(0, stream);
-  DataT* _values_col;
-  if (n_targets > 1) {
-    values_col.resize(n_rows * n_targets, stream);
-    _values_col = values_col.data();
-  } else {
-    _values_col = _values;
-  }
+  rmm::device_uvector<DataT> values_col(n_targets > 1 ? n_rows * n_targets : 0, stream);
+  DataT* _values_col = n_targets > 1 ? values_col.data() : _values;
 
   // Use the right buffer for the coefficients
-  rmm::device_uvector<DataT> tmp_coef(0, stream);
-  DataT* _coef;
-  if (coef != nullptr && !shuffle) {
-    _coef = coef;
-  } else {
-    tmp_coef.resize(n_cols * n_targets, stream);
-    _coef = tmp_coef.data();
-  }
+  rmm::device_uvector<DataT> tmp_coef((coef != nullptr && !shuffle) ? 0 : n_cols * n_targets,
+                                      stream);
+  DataT* _coef = tmp_coef.size() == 0 ? coef : tmp_coef.data();
 
   // Generate a ground truth model with only n_informative features
-  uniform(r, _coef, n_informative * n_targets, (DataT)1.0, (DataT)100.0, stream);
-  if (coef && n_informative != n_cols) {
-    RAFT_CUDA_TRY(cudaMemsetAsync(_coef + n_informative * n_targets,
-                                  0,
-                                  (n_cols - n_informative) * n_targets * sizeof(DataT),
-                                  stream));
+  if (!is_dry_run) {
+    uniform(r, _coef, n_informative * n_targets, (DataT)1.0, (DataT)100.0, stream);
+    if (coef && n_informative != n_cols) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(_coef + n_informative * n_targets,
+                                    0,
+                                    (n_cols - n_informative) * n_targets * sizeof(DataT),
+                                    stream));
+    }
   }
 
   // Compute the output values
@@ -226,15 +222,16 @@ void make_regression_caller(raft::resources const& handle,
     raft::linalg::transpose(handle, _values_col, _values, n_rows, n_targets, stream);
   }
 
-  if (bias != 0.0) {
-    // Add bias
-    raft::linalg::addScalar(_values, _values, bias, n_rows * n_targets, stream);
+  if (!is_dry_run) {
+    if (bias != 0.0) {
+      // Add bias
+      raft::linalg::addScalar(_values, _values, bias, n_rows * n_targets, stream);
+    }
   }
 
-  rmm::device_uvector<DataT> white_noise(0, stream);
-  if (noise != 0.0) {
+  rmm::device_uvector<DataT> white_noise(noise != 0.0 ? n_rows * n_targets : 0, stream);
+  if (noise != 0.0 && !is_dry_run) {
     // Add white noise
-    white_noise.resize(n_rows * n_targets, stream);
     normal(r, white_noise.data(), n_rows * n_targets, (DataT)0.0, noise, stream);
     raft::linalg::add(_values, _values, white_noise.data(), n_rows * n_targets, stream);
   }
@@ -244,26 +241,28 @@ void make_regression_caller(raft::resources const& handle,
     rmm::device_uvector<IdxT> perms_samples(n_rows, stream);
     rmm::device_uvector<IdxT> perms_features(n_cols, stream);
 
-    constexpr IdxT Nthreads = 256;
+    if (!is_dry_run) {
+      constexpr IdxT Nthreads = 256;
 
-    // Shuffle the samples from out to tmp_out
-    raft::random::permute<DataT, IdxT, IdxT>(
-      perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream);
-    IdxT nblks_rows = raft::ceildiv<IdxT>(n_rows, Nthreads);
-    _gather2d_kernel<<<nblks_rows, Nthreads, 0, stream>>>(
-      values, _values, perms_samples.data(), n_rows, n_targets);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
-
-    // Shuffle the features from tmp_out to out
-    raft::random::permute<DataT, IdxT, IdxT>(
-      perms_features.data(), out, tmp_out.data(), n_rows, n_cols, false, stream);
-
-    // Shuffle the coefficients accordingly
-    if (coef != nullptr) {
-      IdxT nblks_cols = raft::ceildiv<IdxT>(n_cols, Nthreads);
-      _gather2d_kernel<<<nblks_cols, Nthreads, 0, stream>>>(
-        coef, _coef, perms_features.data(), n_cols, n_targets);
+      // Shuffle the samples from out to tmp_out
+      raft::random::permute<DataT, IdxT, IdxT>(
+        perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream);
+      IdxT nblks_rows = raft::ceildiv<IdxT>(n_rows, Nthreads);
+      _gather2d_kernel<<<nblks_rows, Nthreads, 0, stream>>>(
+        values, _values, perms_samples.data(), n_rows, n_targets);
       RAFT_CUDA_TRY(cudaPeekAtLastError());
+
+      // Shuffle the features from tmp_out to out
+      raft::random::permute<DataT, IdxT, IdxT>(
+        perms_features.data(), out, tmp_out.data(), n_rows, n_cols, false, stream);
+
+      // Shuffle the coefficients accordingly
+      if (coef != nullptr) {
+        IdxT nblks_cols = raft::ceildiv<IdxT>(n_cols, Nthreads);
+        _gather2d_kernel<<<nblks_cols, Nthreads, 0, stream>>>(
+          coef, _coef, perms_features.data(), n_cols, n_targets);
+        RAFT_CUDA_TRY(cudaPeekAtLastError());
+      }
     }
   }
 }

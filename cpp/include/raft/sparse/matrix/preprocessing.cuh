@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_coo_matrix.hpp>
 #include <raft/core/device_csr_matrix.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/sparse/convert/coo.cuh>
 #include <raft/sparse/matrix/detail/preprocessing.cuh>
 
@@ -118,13 +119,15 @@ void encode_bm25(raft::resources const& handle,
   auto nnz      = csr_in.structure_view().get_nnz();
   auto indptr   = csr_in.structure_view().get_indptr();
 
-  auto rows = raft::make_device_vector<IndexType, int64_t>(handle, nnz);
-  raft::sparse::convert::csr_to_coo(
-    indptr.data(), (int)indptr.size(), rows.data_handle(), (int)nnz, stream);
-
+  auto rows         = raft::make_device_vector<IndexType, int64_t>(handle, nnz);
   int fullFeatCount = 0;
   auto featIdCount  = raft::make_device_vector<IndexType, int64_t>(handle, num_cols);
   auto rowFeatCnts  = raft::make_device_vector<IndexType, int64_t>(handle, num_rows);
+
+  if (!resource::get_dry_run_flag(handle)) {
+    raft::sparse::convert::csr_to_coo(
+      indptr.data(), (int)indptr.size(), rows.data_handle(), (int)nnz, stream);
+  }
   detail::fit_bm25<ValueType, IndexType>(handle,
                                          rows.data_handle(),
                                          columns.data(),

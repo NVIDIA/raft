@@ -13,6 +13,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/core/types.hpp>
 #include <raft/util/input_validation.hpp>
@@ -57,7 +58,7 @@ void matrixVectorOp(MatT* out,
                     Lambda op,
                     cudaStream_t stream)
 {
-  detail::matrixVectorOp<rowMajor, bcastAlongRows>(out, matrix, vec, D, N, op, stream);
+  detail::matrixVectorOp<rowMajor, bcastAlongRows>(false, out, matrix, vec, D, N, op, stream);
 }
 
 /**
@@ -101,7 +102,8 @@ void matrixVectorOp(MatT* out,
                     Lambda op,
                     cudaStream_t stream)
 {
-  detail::matrixVectorOp<rowMajor, bcastAlongRows>(out, matrix, vec1, vec2, D, N, op, stream);
+  detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+    false, out, matrix, vec1, vec2, D, N, op, stream);
 }
 
 /**
@@ -157,13 +159,14 @@ void matrix_vector_op(raft::resources const& handle,
                  "Size mismatch between matrix and vector");
   }
 
-  matrixVectorOp<rowMajor, bcastAlongRows>(out.data_handle(),
-                                           matrix.data_handle(),
-                                           vec.data_handle(),
-                                           out.extent(1),
-                                           out.extent(0),
-                                           op,
-                                           resource::get_cuda_stream(handle));
+  detail::matrixVectorOp<rowMajor, bcastAlongRows>(resource::get_dry_run_flag(handle),
+                                                   out.data_handle(),
+                                                   matrix.data_handle(),
+                                                   vec.data_handle(),
+                                                   out.extent(1),
+                                                   out.extent(0),
+                                                   op,
+                                                   resource::get_cuda_stream(handle));
 }
 
 /**
@@ -222,14 +225,15 @@ void matrix_vector_op(raft::resources const& handle,
                  "Size mismatch between matrix and vector");
   }
 
-  matrixVectorOp<rowMajor, bcastAlongRows>(out.data_handle(),
-                                           matrix.data_handle(),
-                                           vec1.data_handle(),
-                                           vec2.data_handle(),
-                                           out.extent(1),
-                                           out.extent(0),
-                                           op,
-                                           resource::get_cuda_stream(handle));
+  detail::matrixVectorOp<rowMajor, bcastAlongRows>(resource::get_dry_run_flag(handle),
+                                                   out.data_handle(),
+                                                   matrix.data_handle(),
+                                                   vec1.data_handle(),
+                                                   vec2.data_handle(),
+                                                   out.extent(1),
+                                                   out.extent(0),
+                                                   op,
+                                                   resource::get_cuda_stream(handle));
 }
 
 /** @} */  // end of group matrix_vector_op

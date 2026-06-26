@@ -4,13 +4,18 @@
  */
 #pragma once
 
+#include <raft/core/copy.cuh>
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/host_mdarray.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/label/classlabels.cuh>
 #include <raft/linalg/map_reduce.cuh>
 #include <raft/stats/histogram.cuh>
+
+#include <rmm/device_uvector.hpp>
 
 #include <thrust/reduce.h>
 
@@ -36,7 +41,12 @@ void get_uniques_counts(raft::resources const& handle,
                         raft::device_vector_view<IndexType, int64_t> keys_out,
                         raft::device_vector_view<ValueType, int64_t> counts_out)
 {
-  cudaStream_t stream = raft::resource::get_cuda_stream(handle);
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound for thrust::reduce_by_key internal workspace
+    rmm::device_uvector<char> reduce_ws(static_cast<size_t>(nnz) * sizeof(IndexType) + 4096,
+                                        resource::get_cuda_stream(handle));
+    return;
+  }
   thrust::reduce_by_key(raft::resource::get_thrust_policy(handle),
                         rows,
                         rows + nnz,
@@ -66,27 +76,26 @@ void fit_tfidf(raft::resources const& handle,
                raft::device_vector_view<IndexType, int64_t> idFeatCount,
                int& fullFeatCount)
 {
-  cudaStream_t stream = raft::resource::get_cuda_stream(handle);
-
-  // Use RAFT's histogram function to count occurrences of each column index
-  // This replaces the countLabels function from kmeans_common.cuh
-  raft::stats::histogram(
-    raft::stats::HistTypeAuto,                           // Let RAFT choose the best algorithm
-    idFeatCount.data_handle(),                           // output bins (counts per feature)
-    num_cols,                                            // number of bins (one per column/feature)
-    columns,                                             // input data (column indices)
-    nnz,                                                 // number of data points
-    1,                                                   // single batch
-    stream,                                              // CUDA stream
-    raft::stats::IdentityBinner<IndexType, IndexType>()  // column indices map directly to bins
-  );
-
-  // get total number of words
-  auto batchIdLen = raft::make_host_scalar<ValueType>(0);
+  auto batchIdLen = raft::make_host_scalar<ValueType>(handle, 0);
   auto values_mat = raft::make_device_scalar<ValueType>(handle, 0);
-  raft::linalg::mapReduce<ValueType>(
-    values_mat.data_handle(), nnz, 0.0f, raft::identity_op(), raft::add_op(), stream, values);
-  raft::copy(batchIdLen.data_handle(), values_mat.data_handle(), values_mat.size(), stream);
+
+  raft::stats::histogram(
+    handle,
+    raft::stats::HistTypeAuto,
+    raft::make_device_matrix_view<const IndexType, IndexType, raft::col_major>(columns, nnz, 1),
+    raft::make_device_matrix_view<int, IndexType, raft::col_major>(
+      idFeatCount.data_handle(), num_cols, 1),
+    raft::stats::IdentityBinner<IndexType, IndexType>());
+
+  raft::linalg::map_reduce(handle,
+                           raft::make_device_vector_view<const ValueType, IndexType>(values, nnz),
+                           values_mat.view(),
+                           ValueType{0},
+                           raft::identity_op(),
+                           raft::add_op());
+
+  raft::copy(handle, batchIdLen.view(), raft::make_const_mdspan(values_mat.view()));
+  if (resource::get_dry_run_flag(handle)) { return; }
   fullFeatCount += (int)batchIdLen(0);
 }
 
@@ -120,16 +129,15 @@ void fit_bm25(raft::resources const& handle,
 {
   cudaStream_t stream = raft::resource::get_cuda_stream(handle);
 
-  // Count unique row indices using raft::label::getUniquelabels
-  // This replaces the get_n_components function from cross_component_nn.cuh
   rmm::device_uvector<IndexType> temp_unique_rows(0, stream);
-  int uniq_cnt  = raft::label::getUniquelabels(temp_unique_rows, rows, nnz, stream);
-  auto row_keys = raft::make_device_vector<IndexType>(handle, uniq_cnt);
-  auto row_cnts = raft::make_device_vector<ValueType>(handle, uniq_cnt);
+  int uniq_cnt   = raft::label::getUniquelabels(handle, temp_unique_rows, rows, nnz);
+  auto row_keys  = raft::make_device_vector<IndexType>(handle, uniq_cnt);
+  auto row_cnts  = raft::make_device_vector<ValueType>(handle, uniq_cnt);
+  auto dummy_vec = raft::make_device_vector<IndexType>(handle, uniq_cnt);
+
   get_uniques_counts<IndexType, ValueType, int64_t>(
     handle, rows, columns, values, nnz, row_keys.view(), row_cnts.view());
 
-  auto dummy_vec = raft::make_device_vector<IndexType>(handle, uniq_cnt);
   raft::linalg::map(
     handle,
     dummy_vec.view(),

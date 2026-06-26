@@ -13,6 +13,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 namespace raft {
@@ -63,7 +64,7 @@ void coalescedReduction(OutType* dots,
                         FinalLambda final_op   = raft::identity_op())
 {
   detail::coalescedReduction<InType, OutType, IdxType>(
-    dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
+    false, dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
 }
 
 /**
@@ -121,30 +122,32 @@ void coalesced_reduction(raft::resources const& handle,
     RAFT_EXPECTS(static_cast<IdxType>(dots.size()) == data.extent(0),
                  "Output should be equal to number of rows in Input");
 
-    coalescedReduction(dots.data_handle(),
-                       data.data_handle(),
-                       data.extent(1),
-                       data.extent(0),
-                       init,
-                       resource::get_cuda_stream(handle),
-                       inplace,
-                       main_op,
-                       reduce_op,
-                       final_op);
+    detail::coalescedReduction(resource::get_dry_run_flag(handle),
+                               dots.data_handle(),
+                               data.data_handle(),
+                               data.extent(1),
+                               data.extent(0),
+                               init,
+                               resource::get_cuda_stream(handle),
+                               inplace,
+                               main_op,
+                               reduce_op,
+                               final_op);
   } else if constexpr (std::is_same_v<LayoutPolicy, raft::col_major>) {
     RAFT_EXPECTS(static_cast<IdxType>(dots.size()) == data.extent(1),
                  "Output should be equal to number of columns in Input");
 
-    coalescedReduction(dots.data_handle(),
-                       data.data_handle(),
-                       data.extent(0),
-                       data.extent(1),
-                       init,
-                       resource::get_cuda_stream(handle),
-                       inplace,
-                       main_op,
-                       reduce_op,
-                       final_op);
+    detail::coalescedReduction(resource::get_dry_run_flag(handle),
+                               dots.data_handle(),
+                               data.data_handle(),
+                               data.extent(0),
+                               data.extent(1),
+                               init,
+                               resource::get_cuda_stream(handle),
+                               inplace,
+                               main_op,
+                               reduce_op,
+                               final_op);
   }
 }
 

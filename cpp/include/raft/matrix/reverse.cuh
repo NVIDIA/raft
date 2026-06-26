@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/matrix.cuh>
 #include <raft/util/input_validation.hpp>
 
@@ -29,6 +30,7 @@ template <typename m_t, typename idx_t, typename layout_t>
 void col_reverse(raft::resources const& handle,
                  raft::device_matrix_view<m_t, idx_t, layout_t> inout)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(raft::is_row_or_column_major(inout), "Unsupported matrix layout");
   if (raft::is_col_major(inout)) {
     detail::colReverse(
@@ -49,6 +51,7 @@ template <typename m_t, typename idx_t, typename layout_t>
 void row_reverse(raft::resources const& handle,
                  raft::device_matrix_view<m_t, idx_t, layout_t> inout)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(raft::is_row_or_column_major(inout), "Unsupported matrix layout");
   if (raft::is_col_major(inout)) {
     detail::rowReverse(

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -43,8 +43,10 @@ class AddTest : public ::testing::TestWithParam<AddInputs<InT, OutT>> {
     auto in1_view = raft::make_device_vector_view<const InT>(in1.data(), in1.size());
     auto in2_view = raft::make_device_vector_view<const InT>(in2.data(), in2.size());
 
-    add(handle, in1_view, in2_view, out_view);
-    resource::sync_stream(handle, stream);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) { add(h, in1_view, in2_view, out_view); },
+      raft::alloc_behavior::NO_ALLOCATIONS);
   }
 
   void compare()

@@ -13,12 +13,12 @@
 #include <raft/random/rng_device.cuh>
 #include <raft/random/rng_state.hpp>
 #include <raft/util/cudart_utils.hpp>
-#include <raft/util/detail/cub_wrappers.cuh>
 #include <raft/util/scatter.cuh>
 
 #include <rmm/device_scalar.hpp>
 
 #include <cub/device/device_merge_sort.cuh>
+#include <cub/device/device_radix_sort.cuh>
 #include <cub/device/device_scan.cuh>
 #include <cub/device/device_select.cuh>
 #include <cuda_fp16.h>
@@ -251,7 +251,8 @@ void call_sample_with_replacement_kernel(DeviceState<GenType> const& dev_state,
 }
 
 template <typename OutType, typename WeightType, typename IndexType = OutType>
-std::enable_if_t<std::is_integral_v<OutType>> discrete(RngState& rng_state,
+std::enable_if_t<std::is_integral_v<OutType>> discrete(bool dry_run,
+                                                       RngState& rng_state,
                                                        OutType* ptr,
                                                        const WeightType* weights,
                                                        IndexType sampledLen,
@@ -264,6 +265,9 @@ std::enable_if_t<std::is_integral_v<OutType>> discrete(RngState& rng_state,
   cub::DeviceScan::InclusiveSum(
     nullptr, temp_storage_bytes, weights, weights_csum.data(), len, stream);
   rmm::device_uvector<uint8_t> temp_storage(temp_storage_bytes, stream);
+
+  if (dry_run) { return; }
+
   cub::DeviceScan::InclusiveSum(
     temp_storage.data(), temp_storage_bytes, weights, weights_csum.data(), len, stream);
 
@@ -280,7 +284,8 @@ std::enable_if_t<std::is_integral_v<OutType>> discrete(RngState& rng_state,
 
 /** Note the memory space requirements are O(4*len) */
 template <typename DataT, typename WeightsT, typename IdxT = int>
-void sampleWithoutReplacement(RngState& rng_state,
+void sampleWithoutReplacement(bool dry_run,
+                              RngState& rng_state,
                               DataT* out,
                               IdxT* outIdx,
                               const DataT* in,
@@ -301,13 +306,37 @@ void sampleWithoutReplacement(RngState& rng_state,
   params.inIdxPtr = inIdxPtr;
   params.wts      = wts;
 
+  // Query workspace size for sortPairs before dry-run check to track allocation
+  size_t workspace_size = 0;
+  cub::DeviceRadixSort::SortPairs(nullptr,
+                                  workspace_size,
+                                  expWts.data(),
+                                  sortedWts.data(),
+                                  inIdxPtr,
+                                  outIdxBuff.data(),
+                                  (int)len,
+                                  0,
+                                  sizeof(WeightsT) * 8,
+                                  stream);
+  rmm::device_uvector<char> workspace(workspace_size, stream);
+
+  if (dry_run) { return; }
+
   RAFT_CALL_RNG_FUNC(rng_state, call_rng_kernel<1>, rng_state, stream, expWts.data(), len, params);
 
   ///@todo: use a more efficient partitioning scheme instead of full sort
   // sort the array and pick the top sampledLen items
   IdxT* outIdxPtr = outIdxBuff.data();
-  rmm::device_uvector<char> workspace(0, stream);
-  sortPairs(workspace, expWts.data(), sortedWts.data(), inIdxPtr, outIdxPtr, (int)len, stream);
+  cub::DeviceRadixSort::SortPairs(workspace.data(),
+                                  workspace_size,
+                                  expWts.data(),
+                                  sortedWts.data(),
+                                  inIdxPtr,
+                                  outIdxPtr,
+                                  (int)len,
+                                  0,
+                                  sizeof(WeightsT) * 8,
+                                  stream);
   if (outIdx != nullptr) {
     RAFT_CUDA_TRY(cudaMemcpyAsync(
       outIdx, outIdxPtr, sizeof(IdxT) * sampledLen, cudaMemcpyDeviceToDevice, stream));
@@ -364,20 +393,18 @@ auto excess_subsample(raft::resources const& res, RngState& state, IdxT N, IdxT 
   // There is a variance of n_excess_samples, we take 10% more elements.
   n_excess_samples += std::max<IdxT>(0.1 * n_samples, 100);
 
+  bool dry_run = resource::get_dry_run_flag(res);
+  auto stream  = resource::get_cuda_stream(res);
+
   while (true) {
     // n_excess_sampless will be larger than N around k = 0.64*N. When we reach N, then instead of
     // doing rejection sampling, we simply shuffle the range [0..N-1] using N random numbers.
     n_excess_samples = std::min<IdxT>(n_excess_samples, N);
     auto rnd_idx     = raft::make_device_vector<IdxT, IdxT>(res, n_excess_samples);
+    auto linear_idx  = raft::make_device_vector<IdxT, IdxT>(res, rnd_idx.size());
 
-    auto linear_idx = raft::make_device_vector<IdxT, IdxT>(res, rnd_idx.size());
-    raft::linalg::map_offset(res, linear_idx.view(), identity_op());
-
-    uniformInt(res, state, rnd_idx.data_handle(), rnd_idx.size(), IdxT(0), IdxT(N));
-
-    // Sort indices according to rnd keys
+    // Workspace size queries (safe with nullptr)
     size_t workspace_size = 0;
-    auto stream           = resource::get_cuda_stream(res);
     cub::DeviceMergeSort::SortPairs(nullptr,
                                     workspace_size,
                                     rnd_idx.data_handle(),
@@ -385,7 +412,30 @@ auto excess_subsample(raft::resources const& res, RngState& state, IdxT N, IdxT 
                                     rnd_idx.size(),
                                     raft::less_op{},
                                     stream);
+
+    auto keys_out   = raft::make_device_vector<IdxT, IdxT>(res, rnd_idx.size());
+    auto values_out = raft::make_device_vector<IdxT, IdxT>(res, rnd_idx.size());
+    rmm::device_scalar<IdxT> num_selected(stream);
+    size_t worksize2 = 0;
+    cub::DeviceSelect::UniqueByKey(nullptr,
+                                   worksize2,
+                                   rnd_idx.data_handle(),
+                                   linear_idx.data_handle(),
+                                   keys_out.data_handle(),
+                                   values_out.data_handle(),
+                                   num_selected.data(),
+                                   rnd_idx.size(),
+                                   stream);
+
+    workspace_size = std::max(workspace_size, worksize2);
     auto workspace = raft::make_device_vector<char, IdxT>(res, workspace_size);
+
+    if (dry_run) { return raft::make_device_vector<IdxT, IdxT>(res, n_samples); }
+
+    raft::linalg::map_offset(res, linear_idx.view(), identity_op());
+    uniformInt(res, state, rnd_idx.data_handle(), rnd_idx.size(), IdxT(0), IdxT(N));
+
+    // Sort indices according to rnd keys
     cub::DeviceMergeSort::SortPairs(workspace.data_handle(),
                                     workspace_size,
                                     rnd_idx.data_handle(),
@@ -404,25 +454,6 @@ auto excess_subsample(raft::resources const& res, RngState& state, IdxT N, IdxT 
     }
     // Else we do a rejection sampling (or excess sampling): we generated more random indices than
     // needed and reject the duplicates.
-    auto keys_out   = raft::make_device_vector<IdxT, IdxT>(res, rnd_idx.size());
-    auto values_out = raft::make_device_vector<IdxT, IdxT>(res, rnd_idx.size());
-    rmm::device_scalar<IdxT> num_selected(stream);
-    size_t worksize2 = 0;
-    cub::DeviceSelect::UniqueByKey(nullptr,
-                                   worksize2,
-                                   rnd_idx.data_handle(),
-                                   linear_idx.data_handle(),
-                                   keys_out.data_handle(),
-                                   values_out.data_handle(),
-                                   num_selected.data(),
-                                   rnd_idx.size(),
-                                   stream);
-
-    if (worksize2 > workspace.size()) {
-      workspace      = raft::make_device_vector<char, IdxT>(res, worksize2);
-      workspace_size = workspace.size();
-    }
-
     cub::DeviceSelect::UniqueByKey(workspace.data_handle(),
                                    workspace_size,
                                    rnd_idx.data_handle(),

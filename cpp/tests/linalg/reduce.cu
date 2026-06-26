@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -45,7 +45,8 @@ template <typename InType,
           typename MainLambda,
           typename ReduceLambda,
           typename FinalLambda>
-void reduceLaunch(OutType* dots,
+void reduceLaunch(const raft::resources& handle,
+                  OutType* dots,
                   const InType* data,
                   IdxType cols,
                   IdxType rows,
@@ -53,7 +54,6 @@ void reduceLaunch(OutType* dots,
                   bool alongRows,
                   OutType init,
                   bool inplace,
-                  cudaStream_t stream,
                   MainLambda main_op,
                   ReduceLambda reduce_op,
                   FinalLambda final_op)
@@ -64,9 +64,6 @@ void reduceLaunch(OutType* dots,
   auto input_view_row_major = raft::make_device_matrix_view(data, rows, cols);
   auto input_view_col_major =
     raft::make_device_matrix_view<const InType, IdxType, raft::col_major>(data, rows, cols);
-
-  raft::resources handle;
-  resource::set_cuda_stream(handle, stream);
 
   if (rowMajor and alongRows) {
     reduce<Apply::ALONG_ROWS>(
@@ -215,30 +212,35 @@ class ReduceTest : public ::testing::TestWithParam<ReduceInputs<InType, OutType,
                    reduce_op,
                    fin_op);
 
-    reduceLaunch(dots_act.data(),
-                 data.data(),
-                 cols,
-                 rows,
-                 params.rowMajor,
-                 params.alongRows,
-                 params.init,
-                 false,
-                 stream,
-                 main_op,
-                 reduce_op,
-                 fin_op);
-    reduceLaunch(dots_act.data(),
-                 data.data(),
-                 cols,
-                 rows,
-                 params.rowMajor,
-                 params.alongRows,
-                 params.init,
-                 true,
-                 stream,
-                 main_op,
-                 reduce_op,
-                 fin_op);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        reduceLaunch(h,
+                     dots_act.data(),
+                     data.data(),
+                     cols,
+                     rows,
+                     params.rowMajor,
+                     params.alongRows,
+                     params.init,
+                     false,
+                     main_op,
+                     reduce_op,
+                     fin_op);
+        reduceLaunch(h,
+                     dots_act.data(),
+                     data.data(),
+                     cols,
+                     rows,
+                     params.rowMajor,
+                     params.alongRows,
+                     params.init,
+                     true,
+                     main_op,
+                     reduce_op,
+                     fin_op);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
 
     resource::sync_stream(handle, stream);
   }
@@ -320,19 +322,19 @@ REDUCE_TEST((ReduceTest<float, float, int64_t>), ReduceTestFFI64, inputsff_i64);
 
 const std::vector<ReduceInputs<float, float, int>> inputsff_thick_i32 =
   raft::util::itertools::product<ReduceInputs<float, float, int>>(
-    {0.0001f}, {3, 9}, {17771, 33333, 100000}, {true}, {true}, {0.0f}, {1234ULL});
+    {0.0001f}, {3, 9}, {17771, 33333, 200000}, {true}, {true}, {0.0f}, {1234ULL});
 const std::vector<ReduceInputs<double, double, int>> inputsdd_thick_i32 =
   raft::util::itertools::product<ReduceInputs<double, double, int>>(
-    {0.000001}, {3, 9}, {17771, 33333, 100000}, {true}, {true}, {0.0}, {1234ULL});
+    {0.000001}, {3, 9}, {17771, 33333, 200000}, {true}, {true}, {0.0}, {1234ULL});
 const std::vector<ReduceInputs<float, double, int>> inputsfd_thick_i32 =
   raft::util::itertools::product<ReduceInputs<float, double, int>>(
-    {0.000001}, {3, 9}, {17771, 33333, 100000}, {true}, {true}, {0.0f}, {1234ULL});
+    {0.000001}, {3, 9}, {17771, 33333, 200000}, {true}, {true}, {0.0f}, {1234ULL});
 const std::vector<ReduceInputs<float, float, uint32_t>> inputsff_thick_u32 =
   raft::util::itertools::product<ReduceInputs<float, float, uint32_t>>(
-    {0.0001f}, {3u, 9u}, {17771u, 33333u, 100000u}, {true}, {true}, {0.0f}, {1234ULL});
+    {0.0001f}, {3u, 9u}, {17771u, 33333u, 200000u}, {true}, {true}, {0.0f}, {1234ULL});
 const std::vector<ReduceInputs<float, float, int64_t>> inputsff_thick_i64 =
   raft::util::itertools::product<ReduceInputs<float, float, int64_t>>(
-    {0.0001f}, {3, 9}, {17771, 33333, 100000}, {true}, {true}, {0.0f}, {1234ULL});
+    {0.0001f}, {3, 9}, {17771, 33333, 200000}, {true}, {true}, {0.0f}, {1234ULL});
 
 REDUCE_TEST((ReduceTest<float, float, int>), ReduceTestFFI32Thick, inputsff_thick_i32);
 REDUCE_TEST((ReduceTest<double, double, int>), ReduceTestDDI32Thick, inputsdd_thick_i32);

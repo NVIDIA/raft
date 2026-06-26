@@ -1,12 +1,15 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "../test_utils.cuh"
 
 #include <raft/core/bitset.cuh>
+#include <raft/core/copy.cuh>
 #include <raft/core/device_mdarray.hpp>
+#include <raft/core/host_mdarray.hpp>
+#include <raft/core/host_mdspan.hpp>
 #include <raft/linalg/init.cuh>
 #include <raft/random/rng.cuh>
 
@@ -183,16 +186,6 @@ class BitsetTest : public testing::TestWithParam<test_spec_bitset> {
     update_host(mask_cpu.data(), mask_device.data_handle(), mask_device.extent(0), stream);
     resource::sync_stream(res, stream);
 
-    // calculate the results
-    auto my_bitset = raft::core::bitset<bitset_t, index_t>(
-      res, raft::make_const_mdspan(mask_device.view()), index_t(spec.bitset_len));
-    update_host(bitset_result.data(), my_bitset.data(), bitset_result.size(), stream);
-
-    // calculate the reference
-    create_cpu_bitset(bitset_ref, mask_cpu);
-    resource::sync_stream(res, stream);
-    ASSERT_TRUE(hostVecMatch(bitset_ref, bitset_result, raft::Compare<bitset_t>()));
-
     auto query_device     = raft::make_device_vector<index_t, index_t>(res, spec.query_len);
     auto result_device    = raft::make_device_vector<uint8_t, index_t>(res, spec.query_len);
     auto query_cpu        = std::vector<index_t>(spec.query_len);
@@ -200,140 +193,208 @@ class BitsetTest : public testing::TestWithParam<test_spec_bitset> {
     auto result_ref_nbits = std::vector<uint8_t>(spec.query_len);
     auto result_ref       = std::vector<uint8_t>(spec.query_len);
 
-    // Create queries and verify the test results
-    raft::random::uniformInt(res, rng, query_device.view(), index_t(0), index_t(spec.bitset_len));
-    update_host(query_cpu.data(), query_device.data_handle(), query_device.extent(0), stream);
-    my_bitset.test(res, raft::make_const_mdspan(query_device.view()), result_device.view());
-    update_host(result_cpu.data(), result_device.data_handle(), result_device.extent(0), stream);
-    test_cpu_bitset(bitset_ref, query_cpu, result_ref);
-    resource::sync_stream(res, stream);
-    ASSERT_TRUE(hostVecMatch(result_cpu, result_ref, Compare<uint8_t>()));
+    auto eval_n_elements =
+      bitset_view<bitset_t, index_t>::eval_n_elements(spec.bitset_len * spec.repeat_times);
+    auto repeat_device = raft::make_device_vector<bitset_t, index_t>(res, eval_n_elements);
 
-    // Add more sample to the bitset and re-test
-    raft::random::uniformInt(res, rng, mask_device.view(), index_t(0), index_t(spec.bitset_len));
-    update_host(mask_cpu.data(), mask_device.data_handle(), mask_device.extent(0), stream);
-    resource::sync_stream(res, stream);
-    my_bitset.set(res, mask_device.view());
-    update_host(bitset_result.data(), my_bitset.data(), bitset_result.size(), stream);
+    // Verify dry-run compliance of bitset construction.
+    // The entire bitset lifetime must be within the dry-run scope to prevent
+    // its device_buffer from outliving the temporary resource wrapper.
+    raft::execute_with_dry_run_check(
+      res,
+      [&](raft::resources const& h) {
+        raft::core::bitset<bitset_t, index_t> my_bitset(
+          h, raft::make_const_mdspan(mask_device.view()), index_t(spec.bitset_len));
 
-    add_cpu_bitset(bitset_ref, mask_cpu);
-    resource::sync_stream(res, stream);
-    ASSERT_TRUE(hostVecMatch(bitset_ref, bitset_result, raft::Compare<bitset_t>()));
+        raft::copy(h,
+                   raft::make_host_vector_view(bitset_result.data(), bitset_result.size()),
+                   my_bitset.to_mdspan());
 
-    // Reinterpret the bitset as uint8_t, uint32 then uint64_t
-    {
-      // Test CPU logic
-      test_cpu_bitset(bitset_ref, query_cpu, result_ref);
-      uint8_t* bitset_cpu_uint8 = (uint8_t*)std::malloc(sizeof(bitset_t) * bitset_ref.size());
-      std::memcpy(bitset_cpu_uint8, bitset_ref.data(), sizeof(bitset_t) * bitset_ref.size());
-      test_cpu_bitset_nbits(bitset_cpu_uint8, query_cpu, result_ref_nbits, sizeof(bitset_t) * 8);
-      ASSERT_TRUE(hostVecMatch(result_ref, result_ref_nbits, raft::Compare<uint8_t>()));
-      std::free(bitset_cpu_uint8);
-
-      // Test GPU uint8_t, uint32_t, uint64_t
-      auto my_bitset_view_uint8_t = raft::core::bitset_view<uint8_t, uint32_t>(
-        reinterpret_cast<uint8_t*>(my_bitset.data()), my_bitset.size(), sizeof(bitset_t) * 8);
-      raft::linalg::map(
-        res,
-        result_device.view(),
-        [my_bitset_view_uint8_t] __device__(index_t query) {
-          return my_bitset_view_uint8_t.test(query);
-        },
-        raft::make_const_mdspan(query_device.view()));
-      update_host(result_cpu.data(), result_device.data_handle(), result_device.extent(0), stream);
-      resource::sync_stream(res, stream);
-      ASSERT_TRUE(hostVecMatch(result_ref, result_cpu, Compare<uint8_t>()));
-
-      auto my_bitset_view_uint32_t = raft::core::bitset_view<uint32_t, uint32_t>(
-        reinterpret_cast<uint32_t*>(my_bitset.data()), my_bitset.size(), sizeof(bitset_t) * 8);
-      raft::linalg::map(
-        res,
-        result_device.view(),
-        [my_bitset_view_uint32_t] __device__(index_t query) {
-          return my_bitset_view_uint32_t.test(query);
-        },
-        raft::make_const_mdspan(query_device.view()));
-      update_host(result_cpu.data(), result_device.data_handle(), result_device.extent(0), stream);
-      resource::sync_stream(res, stream);
-      ASSERT_TRUE(hostVecMatch(result_ref, result_cpu, Compare<uint8_t>()));
-
-      auto my_bitset_view_uint64_t = raft::core::bitset_view<uint64_t, uint32_t>(
-        reinterpret_cast<uint64_t*>(my_bitset.data()), my_bitset.size(), sizeof(bitset_t) * 8);
-      raft::linalg::map(
-        res,
-        result_device.view(),
-        [my_bitset_view_uint64_t] __device__(index_t query) {
-          return my_bitset_view_uint64_t.test(query);
-        },
-        raft::make_const_mdspan(query_device.view()));
-      update_host(result_cpu.data(), result_device.data_handle(), result_device.extent(0), stream);
-      resource::sync_stream(res, stream);
-      ASSERT_TRUE(hostVecMatch(result_ref, result_cpu, Compare<uint8_t>()));
-    }
-
-    // test sparsity, repeat and eval_n_elements
-    {
-      auto my_bitset_view  = my_bitset.view();
-      auto sparsity_result = my_bitset_view.sparsity(res);
-      auto sparsity_ref    = sparsity_cpu_bitset(bitset_ref, size_t(spec.bitset_len));
-      ASSERT_EQ(sparsity_result, sparsity_ref);
-
-      auto eval_n_elements =
-        bitset_view<bitset_t, index_t>::eval_n_elements(spec.bitset_len * spec.repeat_times);
-      ASSERT_EQ(bitset_repeat_ref.size(), eval_n_elements);
-
-      auto repeat_device = raft::make_device_vector<bitset_t, index_t>(res, eval_n_elements);
-      RAFT_CUDA_TRY(cudaMemsetAsync(
-        repeat_device.data_handle(), 0, eval_n_elements * sizeof(bitset_t), stream));
-      repeat_cpu_bitset(
-        bitset_ref, size_t(spec.bitset_len), size_t(spec.repeat_times), bitset_repeat_ref);
-
-      my_bitset_view.repeat(res, index_t(spec.repeat_times), repeat_device.data_handle());
-
-      ASSERT_EQ(bitset_repeat_ref.size(), repeat_device.size());
-      update_host(
-        bitset_repeat_result.data(), repeat_device.data_handle(), repeat_device.size(), stream);
-      ASSERT_EQ(bitset_repeat_ref.size(), bitset_repeat_result.size());
-
-      index_t errors                        = 0;
-      static constexpr index_t len_per_item = sizeof(bitset_t) * 8;
-      bitset_t tail_len = (index_t(spec.bitset_len * spec.repeat_times) % len_per_item);
-      bitset_t tail_mask =
-        tail_len ? (bitset_t)((bitset_t{1} << tail_len) - bitset_t{1}) : ~bitset_t{0};
-      for (index_t i = 0; i < bitset_repeat_ref.size(); i++) {
-        if (i == bitset_repeat_ref.size() - 1) {
-          errors += (bitset_repeat_ref[i] & tail_mask) != (bitset_repeat_result[i] & tail_mask);
-        } else {
-          errors += (bitset_repeat_ref[i] != bitset_repeat_result[i]);
+        // calculate the reference
+        create_cpu_bitset(bitset_ref, mask_cpu);
+        resource::sync_stream(h, stream);
+        if (!resource::get_dry_run_flag(h)) {
+          ASSERT_TRUE(hostVecMatch(bitset_ref, bitset_result, raft::Compare<bitset_t>()));
         }
-      }
-      ASSERT_EQ(errors, 0);
 
-      // recheck the sparsity after repeat
-      sparsity_result =
-        sparsity_cpu_bitset(bitset_repeat_result, size_t(spec.bitset_len * spec.repeat_times));
-      ASSERT_EQ(sparsity_result, sparsity_ref);
-    }
+        // Create queries and verify the test results
+        raft::random::uniformInt(h, rng, query_device.view(), index_t(0), index_t(spec.bitset_len));
+        raft::copy(h,
+                   raft::make_host_vector_view(query_cpu.data(), query_device.extent(0)),
+                   raft::make_const_mdspan(query_device.view()));
+        my_bitset.test(h, raft::make_const_mdspan(query_device.view()), result_device.view());
+        raft::copy(h,
+                   raft::make_host_vector_view(result_cpu.data(), result_device.extent(0)),
+                   raft::make_const_mdspan(result_device.view()));
+        test_cpu_bitset(bitset_ref, query_cpu, result_ref);
+        resource::sync_stream(h, stream);
+        if (!resource::get_dry_run_flag(h)) {
+          ASSERT_TRUE(hostVecMatch(result_cpu, result_ref, Compare<uint8_t>()));
+        }
 
-    // Flip the bitset and re-test
-    auto bitset_count = my_bitset.count(res);
-    my_bitset.flip(res);
-    ASSERT_EQ(my_bitset.count(res), spec.bitset_len - bitset_count);
-    update_host(bitset_result.data(), my_bitset.data(), bitset_result.size(), stream);
-    flip_cpu_bitset(bitset_ref);
-    resource::sync_stream(res, stream);
-    ASSERT_TRUE(hostVecMatch(bitset_ref, bitset_result, raft::Compare<bitset_t>()));
+        // Add more sample to the bitset and re-test
+        raft::random::uniformInt(h, rng, mask_device.view(), index_t(0), index_t(spec.bitset_len));
+        raft::copy(h,
+                   raft::make_host_vector_view(mask_cpu.data(), mask_device.extent(0)),
+                   raft::make_const_mdspan(mask_device.view()));
+        resource::sync_stream(h, stream);
+        my_bitset.set(h, mask_device.view());
+        raft::copy(h,
+                   raft::make_host_vector_view(bitset_result.data(), bitset_result.size()),
+                   my_bitset.to_mdspan());
 
-    // Test count() operations
-    my_bitset.reset(res, false);
-    ASSERT_EQ(my_bitset.any(res), false);
-    ASSERT_EQ(my_bitset.none(res), true);
-    raft::linalg::range(query_device.data_handle(), query_device.size(), stream);
-    my_bitset.set(res, raft::make_const_mdspan(query_device.view()), true);
-    bitset_count = my_bitset.count(res);
-    ASSERT_EQ(bitset_count, query_device.size());
-    ASSERT_EQ(my_bitset.any(res), true);
-    ASSERT_EQ(my_bitset.none(res), false);
+        add_cpu_bitset(bitset_ref, mask_cpu);
+        resource::sync_stream(h, stream);
+        if (!resource::get_dry_run_flag(h)) {
+          ASSERT_TRUE(hostVecMatch(bitset_ref, bitset_result, raft::Compare<bitset_t>()));
+        }
+
+        // Reinterpret the bitset as uint8_t, uint32 then uint64_t
+        {
+          // Test CPU logic
+          test_cpu_bitset(bitset_ref, query_cpu, result_ref);
+          auto bitset_cpu_uint8 =
+            raft::make_host_vector<uint8_t>(h, sizeof(bitset_t) * bitset_ref.size());
+          raft::copy(
+            h,
+            bitset_cpu_uint8.view(),
+            raft::make_host_vector_view(reinterpret_cast<const uint8_t*>(bitset_ref.data()),
+                                        bitset_cpu_uint8.extent(0)));
+          test_cpu_bitset_nbits(
+            bitset_cpu_uint8.data_handle(), query_cpu, result_ref_nbits, sizeof(bitset_t) * 8);
+          if (!resource::get_dry_run_flag(h)) {
+            ASSERT_TRUE(hostVecMatch(result_ref, result_ref_nbits, raft::Compare<uint8_t>()));
+          }
+
+          // Test GPU uint8_t, uint32_t, uint64_t
+          auto my_bitset_view_uint8_t = raft::core::bitset_view<uint8_t, uint32_t>(
+            reinterpret_cast<uint8_t*>(my_bitset.data()), my_bitset.size(), sizeof(bitset_t) * 8);
+          raft::linalg::map(
+            h,
+            result_device.view(),
+            [my_bitset_view_uint8_t] __device__(index_t query) {
+              return my_bitset_view_uint8_t.test(query);
+            },
+            raft::make_const_mdspan(query_device.view()));
+          raft::copy(h,
+                     raft::make_host_vector_view(result_cpu.data(), result_device.extent(0)),
+                     raft::make_const_mdspan(result_device.view()));
+          resource::sync_stream(h, stream);
+          if (!resource::get_dry_run_flag(h)) {
+            ASSERT_TRUE(hostVecMatch(result_ref, result_cpu, Compare<uint8_t>()));
+          }
+
+          auto my_bitset_view_uint32_t = raft::core::bitset_view<uint32_t, uint32_t>(
+            reinterpret_cast<uint32_t*>(my_bitset.data()), my_bitset.size(), sizeof(bitset_t) * 8);
+          raft::linalg::map(
+            h,
+            result_device.view(),
+            [my_bitset_view_uint32_t] __device__(index_t query) {
+              return my_bitset_view_uint32_t.test(query);
+            },
+            raft::make_const_mdspan(query_device.view()));
+          raft::copy(h,
+                     raft::make_host_vector_view(result_cpu.data(), result_device.extent(0)),
+                     raft::make_const_mdspan(result_device.view()));
+          resource::sync_stream(h, stream);
+          if (!resource::get_dry_run_flag(h)) {
+            ASSERT_TRUE(hostVecMatch(result_ref, result_cpu, Compare<uint8_t>()));
+          }
+
+          auto my_bitset_view_uint64_t = raft::core::bitset_view<uint64_t, uint32_t>(
+            reinterpret_cast<uint64_t*>(my_bitset.data()), my_bitset.size(), sizeof(bitset_t) * 8);
+          raft::linalg::map(
+            h,
+            result_device.view(),
+            [my_bitset_view_uint64_t] __device__(index_t query) {
+              return my_bitset_view_uint64_t.test(query);
+            },
+            raft::make_const_mdspan(query_device.view()));
+          raft::copy(h,
+                     raft::make_host_vector_view(result_cpu.data(), result_device.extent(0)),
+                     raft::make_const_mdspan(result_device.view()));
+          resource::sync_stream(h, stream);
+          if (!resource::get_dry_run_flag(h)) {
+            ASSERT_TRUE(hostVecMatch(result_ref, result_cpu, Compare<uint8_t>()));
+          }
+        }
+
+        // test sparsity, repeat and eval_n_elements
+        {
+          auto my_bitset_view  = my_bitset.view();
+          auto sparsity_result = my_bitset_view.sparsity(h);
+          auto sparsity_ref    = sparsity_cpu_bitset(bitset_ref, size_t(spec.bitset_len));
+          if (!resource::get_dry_run_flag(h)) { ASSERT_EQ(sparsity_result, sparsity_ref); }
+
+          ASSERT_EQ(bitset_repeat_ref.size(), eval_n_elements);
+
+          RAFT_CUDA_TRY(cudaMemsetAsync(
+            repeat_device.data_handle(), 0, eval_n_elements * sizeof(bitset_t), stream));
+          repeat_cpu_bitset(
+            bitset_ref, size_t(spec.bitset_len), size_t(spec.repeat_times), bitset_repeat_ref);
+
+          my_bitset_view.repeat(h, index_t(spec.repeat_times), repeat_device.data_handle());
+
+          ASSERT_EQ(bitset_repeat_ref.size(), repeat_device.size());
+          raft::copy(
+            h,
+            raft::make_host_vector_view(bitset_repeat_result.data(), repeat_device.extent(0)),
+            raft::make_const_mdspan(repeat_device.view()));
+          ASSERT_EQ(bitset_repeat_ref.size(), bitset_repeat_result.size());
+
+          if (!resource::get_dry_run_flag(h)) {
+            index_t errors                        = 0;
+            static constexpr index_t len_per_item = sizeof(bitset_t) * 8;
+            bitset_t tail_len = (index_t(spec.bitset_len * spec.repeat_times) % len_per_item);
+            bitset_t tail_mask =
+              tail_len ? (bitset_t)((bitset_t{1} << tail_len) - bitset_t{1}) : ~bitset_t{0};
+            for (index_t i = 0; i < bitset_repeat_ref.size(); i++) {
+              if (i == bitset_repeat_ref.size() - 1) {
+                errors +=
+                  (bitset_repeat_ref[i] & tail_mask) != (bitset_repeat_result[i] & tail_mask);
+              } else {
+                errors += (bitset_repeat_ref[i] != bitset_repeat_result[i]);
+              }
+            }
+            ASSERT_EQ(errors, 0);
+
+            // recheck the sparsity after repeat
+            sparsity_result = sparsity_cpu_bitset(bitset_repeat_result,
+                                                  size_t(spec.bitset_len * spec.repeat_times));
+            ASSERT_EQ(sparsity_result, sparsity_ref);
+          }
+        }
+
+        // Flip the bitset and re-test
+        auto bitset_count = my_bitset.count(h);
+        my_bitset.flip(h);
+        if (!resource::get_dry_run_flag(h)) {
+          ASSERT_EQ(my_bitset.count(h), spec.bitset_len - bitset_count);
+        }
+        raft::copy(h,
+                   raft::make_host_vector_view(bitset_result.data(), bitset_result.size()),
+                   my_bitset.to_mdspan());
+        flip_cpu_bitset(bitset_ref);
+        resource::sync_stream(h, stream);
+        if (!resource::get_dry_run_flag(h)) {
+          ASSERT_TRUE(hostVecMatch(bitset_ref, bitset_result, raft::Compare<bitset_t>()));
+        }
+
+        // Test count() operations
+        my_bitset.reset(h, false);
+        ASSERT_EQ(my_bitset.any(h), false);
+        ASSERT_EQ(my_bitset.none(h), true);
+        raft::linalg::range(query_device.data_handle(), query_device.size(), stream);
+        my_bitset.set(h, raft::make_const_mdspan(query_device.view()), true);
+        bitset_count = my_bitset.count(h);
+        if (!resource::get_dry_run_flag(h)) {
+          ASSERT_EQ(bitset_count, query_device.size());
+          ASSERT_EQ(my_bitset.any(h), true);
+          ASSERT_EQ(my_bitset.none(h), false);
+        }
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      raft::ceildiv(spec.bitset_len, uint64_t(bitset_element_size)) * sizeof(bitset_t));
   }
 };
 

@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/kl_divergence.cuh>
 
 namespace raft {
@@ -30,7 +31,7 @@ namespace stats {
 template <typename DataT>
 DataT kl_divergence(const DataT* modelPDF, const DataT* candidatePDF, int size, cudaStream_t stream)
 {
-  return detail::kl_divergence(modelPDF, candidatePDF, size, stream);
+  return detail::kl_divergence(false, modelPDF, candidatePDF, size, stream);
 }
 
 /**
@@ -58,7 +59,8 @@ value_t kl_divergence(raft::resources const& handle,
   RAFT_EXPECTS(modelPDF.size() == candidatePDF.size(), "Size mismatch");
   RAFT_EXPECTS(modelPDF.is_exhaustive(), "modelPDF must be contiguous");
   RAFT_EXPECTS(candidatePDF.is_exhaustive(), "candidatePDF must be contiguous");
-  return detail::kl_divergence(modelPDF.data_handle(),
+  return detail::kl_divergence(resource::get_dry_run_flag(handle),
+                               modelPDF.data_handle(),
                                candidatePDF.data_handle(),
                                modelPDF.extent(0),
                                resource::get_cuda_stream(handle));

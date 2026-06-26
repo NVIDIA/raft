@@ -105,6 +105,27 @@ requires cuda::mr::synchronous_resource_with<MR, cuda::mr::host_accessible>
     *this = std::move(new_container);
   }
 
+  /**
+   * @brief Resize the internal buffer without copying old data.
+   *
+   * Unlike resize(), this never copies old data.
+   * Thus, unlike in resize(), there's no point in time where the old and the new buffers are both
+   * alive, and the peak memory usage is lower.
+   *
+   * Unlike resize(), this deallocates the old buffer even if the new size is smaller.
+   * This ensures the memory is released promptly.
+   */
+  void reallocate(size_type count)
+  {
+    if (bytesize_ == sizeof(value_type) * count) { return; }
+    if (data_ != nullptr) {
+      mr_.deallocate_sync(data_, bytesize_);
+      data_ = nullptr;
+    }
+    auto tmp = host_container{count, mr_};
+    std::swap(tmp, *this);
+  }
+
   [[nodiscard]] auto data() noexcept -> pointer { return data_; }
   [[nodiscard]] auto data() const noexcept -> const_pointer { return data_; }
 };

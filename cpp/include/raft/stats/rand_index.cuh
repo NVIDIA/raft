@@ -10,6 +10,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/stats/detail/rand_index.cuh>
 
@@ -27,7 +28,7 @@ namespace stats {
 template <typename T>
 double rand_index(T* firstClusterArray, T* secondClusterArray, uint64_t size, cudaStream_t stream)
 {
-  return detail::compute_rand_index(firstClusterArray, secondClusterArray, size, stream);
+  return detail::compute_rand_index(false, firstClusterArray, secondClusterArray, size, stream);
 }
 
 /**
@@ -54,7 +55,8 @@ double rand_index(raft::resources const& handle,
                "Size mismatch between first_cluster_array and second_cluster_array");
   RAFT_EXPECTS(first_cluster_array.is_exhaustive(), "first_cluster_array must be contiguous");
   RAFT_EXPECTS(second_cluster_array.is_exhaustive(), "second_cluster_array must be contiguous");
-  return detail::compute_rand_index(first_cluster_array.data_handle(),
+  return detail::compute_rand_index(resource::get_dry_run_flag(handle),
+                                    first_cluster_array.data_handle(),
                                     second_cluster_array.data_handle(),
                                     second_cluster_array.extent(0),
                                     resource::get_cuda_stream(handle));

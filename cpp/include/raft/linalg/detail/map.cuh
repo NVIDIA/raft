@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/input_validation.hpp>
@@ -208,6 +209,7 @@ template <bool PassOffset,
           typename = raft::enable_if_input_device_mdspan<InTypes...>>
 void map(const raft::resources& res, OutType out, Func f, InTypes... ins)
 {
+  if (resource::get_dry_run_flag(res)) { return; }
   RAFT_EXPECTS(raft::is_row_or_column_major(out), "Output must be contiguous");
   (map_check_shape(out, ins), ...);
 

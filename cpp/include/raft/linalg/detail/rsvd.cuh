@@ -9,6 +9,7 @@
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/eig.cuh>
 #include <raft/linalg/gemm.cuh>
 #include <raft/linalg/qr.cuh>
@@ -86,6 +87,8 @@ void randomized_svd(const raft::resources& handle,
   auto h_workspace = raft::make_host_vector<char>(workspaceHost);
   auto devInfo     = raft::make_device_scalar<int>(handle, 0);
 
+  if (resource::get_dry_run_flag(handle)) { return; }
+
   RAFT_CUSOLVER_TRY(cusolverDnxgesvdr(cusolverH,
                                       jobu,
                                       jobv,
@@ -155,6 +158,7 @@ void rsvdFixedRank(raft::resources const& handle,
                    int max_sweeps,
                    cudaStream_t stream)
 {
+  bool is_dry_run              = resource::get_dry_run_flag(handle);
   cusolverDnHandle_t cusolverH = resource::get_cusolver_dn_handle(handle);
   cublasHandle_t cublasH       = resource::get_cublas_handle(handle);
 
@@ -172,7 +176,9 @@ void rsvdFixedRank(raft::resources const& handle,
 
   // Build temporary U, S, V matrices
   rmm::device_uvector<math_t> S_vec_tmp(l, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(S_vec_tmp.data(), 0, sizeof(math_t) * l, stream));
+  if (!is_dry_run) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(S_vec_tmp.data(), 0, sizeof(math_t) * l, stream));
+  }
 
   // build random matrix
   rmm::device_uvector<math_t> RN(n * l, stream);
@@ -188,9 +194,11 @@ void rsvdFixedRank(raft::resources const& handle,
   rmm::device_uvector<math_t> Z(n * l, stream);
   rmm::device_uvector<math_t> Yorth(m * l, stream);
   rmm::device_uvector<math_t> Zorth(n * l, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(Z.data(), 0, sizeof(math_t) * n * l, stream));
-  RAFT_CUDA_TRY(cudaMemsetAsync(Yorth.data(), 0, sizeof(math_t) * m * l, stream));
-  RAFT_CUDA_TRY(cudaMemsetAsync(Zorth.data(), 0, sizeof(math_t) * n * l, stream));
+  if (!is_dry_run) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(Z.data(), 0, sizeof(math_t) * n * l, stream));
+    RAFT_CUDA_TRY(cudaMemsetAsync(Yorth.data(), 0, sizeof(math_t) * m * l, stream));
+    RAFT_CUDA_TRY(cudaMemsetAsync(Zorth.data(), 0, sizeof(math_t) * n * l, stream));
+  }
 
   // power sampling scheme
   for (int j = 1; j < q; j++) {
@@ -237,30 +245,40 @@ void rsvdFixedRank(raft::resources const& handle,
 
   // orthogonalize on exit from loop to get Q
   rmm::device_uvector<math_t> Q(m * l, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(Q.data(), 0, sizeof(math_t) * m * l, stream));
+  if (!is_dry_run) { RAFT_CUDA_TRY(cudaMemsetAsync(Q.data(), 0, sizeof(math_t) * m * l, stream)); }
   raft::linalg::qrGetQ(handle, Y.data(), Q.data(), m, l, stream);
 
   // either QR of B^T method, or eigendecompose BB^T method
   if (!use_bbt) {
     // form Bt = Mt*Q : nxm * mxl = nxl
     rmm::device_uvector<math_t> Bt(n * l, stream);
-    RAFT_CUDA_TRY(cudaMemsetAsync(Bt.data(), 0, sizeof(math_t) * n * l, stream));
+    if (!is_dry_run) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(Bt.data(), 0, sizeof(math_t) * n * l, stream));
+    }
     raft::linalg::gemm(
       handle, M, m, n, Q.data(), Bt.data(), n, l, CUBLAS_OP_T, CUBLAS_OP_N, alpha, beta, stream);
 
     // compute QR factorization of Bt
     // M is mxn ; Q is mxn ; R is min(m,n) x min(m,n) */
     rmm::device_uvector<math_t> Qhat(n * l, stream);
-    RAFT_CUDA_TRY(cudaMemsetAsync(Qhat.data(), 0, sizeof(math_t) * n * l, stream));
+    if (!is_dry_run) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(Qhat.data(), 0, sizeof(math_t) * n * l, stream));
+    }
     rmm::device_uvector<math_t> Rhat(l * l, stream);
-    RAFT_CUDA_TRY(cudaMemsetAsync(Rhat.data(), 0, sizeof(math_t) * l * l, stream));
+    if (!is_dry_run) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(Rhat.data(), 0, sizeof(math_t) * l * l, stream));
+    }
     raft::linalg::qrGetQR(handle, Bt.data(), Qhat.data(), Rhat.data(), n, l, stream);
 
     // compute SVD of Rhat (lxl)
     rmm::device_uvector<math_t> Uhat(l * l, stream);
-    RAFT_CUDA_TRY(cudaMemsetAsync(Uhat.data(), 0, sizeof(math_t) * l * l, stream));
+    if (!is_dry_run) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(Uhat.data(), 0, sizeof(math_t) * l * l, stream));
+    }
     rmm::device_uvector<math_t> Vhat(l * l, stream);
-    RAFT_CUDA_TRY(cudaMemsetAsync(Vhat.data(), 0, sizeof(math_t) * l * l, stream));
+    if (!is_dry_run) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(Vhat.data(), 0, sizeof(math_t) * l * l, stream));
+    }
     if (use_jacobi)
       raft::linalg::svdJacobi(handle,
                               Rhat.data(),
@@ -351,9 +369,13 @@ void rsvdFixedRank(raft::resources const& handle,
 
     // compute eigendecomposition of BBt
     rmm::device_uvector<math_t> Uhat(l * l, stream);
-    RAFT_CUDA_TRY(cudaMemsetAsync(Uhat.data(), 0, sizeof(math_t) * l * l, stream));
+    if (!is_dry_run) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(Uhat.data(), 0, sizeof(math_t) * l * l, stream));
+    }
     rmm::device_uvector<math_t> Uhat_dup(l * l, stream);
-    RAFT_CUDA_TRY(cudaMemsetAsync(Uhat_dup.data(), 0, sizeof(math_t) * l * l, stream));
+    if (!is_dry_run) {
+      RAFT_CUDA_TRY(cudaMemsetAsync(Uhat_dup.data(), 0, sizeof(math_t) * l * l, stream));
+    }
 
     raft::matrix::upper_triangular(
       handle,
@@ -398,9 +420,13 @@ void rsvdFixedRank(raft::resources const& handle,
     // Sigma^{-1}[(p+1):l, (p+1):l] nxl * lxk * kxk = nxk
     if (gen_right_vec) {
       rmm::device_uvector<math_t> Sinv(k * k, stream);
-      RAFT_CUDA_TRY(cudaMemsetAsync(Sinv.data(), 0, sizeof(math_t) * k * k, stream));
+      if (!is_dry_run) {
+        RAFT_CUDA_TRY(cudaMemsetAsync(Sinv.data(), 0, sizeof(math_t) * k * k, stream));
+      }
       rmm::device_uvector<math_t> UhatSinv(l * k, stream);
-      RAFT_CUDA_TRY(cudaMemsetAsync(UhatSinv.data(), 0, sizeof(math_t) * l * k, stream));
+      if (!is_dry_run) {
+        RAFT_CUDA_TRY(cudaMemsetAsync(UhatSinv.data(), 0, sizeof(math_t) * l * k, stream));
+      }
       math_t scalar = 1.0;
       raft::matrix::reciprocal(
         handle,

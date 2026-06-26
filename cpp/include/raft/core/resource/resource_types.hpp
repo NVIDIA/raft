@@ -42,6 +42,7 @@ enum resource_type {
   MULTI_GPU,                 // resource that tracks resource of each device in multi-gpu world
   PINNED_MEMORY_RESOURCE,    // memory resource for pinned (page-locked) host allocations
   MANAGED_MEMORY_RESOURCE,   // resource for managed (unified) allocations
+  DRY_RUN_FLAG,              // dry-run mode flag for allocation profiling
 
   LAST_KEY  // reserved for the last key
 };

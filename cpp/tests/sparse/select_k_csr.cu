@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -287,8 +287,13 @@ class SelectKCsrTest : public ::testing::TestWithParam<SelectKCsrInputs<index_t>
     auto out_idx = raft::make_device_matrix_view<index_t, index_t, raft::row_major>(
       dst_indices_d.data(), params.n_rows, params.top_k);
 
-    raft::sparse::matrix::select_k(
-      handle, in_val, in_idx, out_val, out_idx, params.select_min, true);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        raft::sparse::matrix::select_k(
+          h, in_val, in_idx, out_val, out_idx, params.select_min, true);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
 
     ASSERT_TRUE(raft::devArrMatch<index_t>(dst_indices_expected_d.data(),
                                            out_idx.data_handle(),

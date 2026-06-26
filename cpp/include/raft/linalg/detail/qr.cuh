@@ -10,6 +10,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/matrix/triangular.cuh>
 
@@ -40,15 +41,26 @@ void qrGetQ_inplace(
 {
   RAFT_EXPECTS(n_rows >= n_cols, "QR decomposition expects n_rows >= n_cols.");
   cusolverDnHandle_t cusolver = resource::get_cusolver_dn_handle(handle);
+  auto is_dry_run             = resource::get_dry_run_flag(handle);
 
   rmm::device_uvector<math_t> tau(n_cols, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(tau.data(), 0, sizeof(math_t) * n_cols, stream));
+  if (!is_dry_run) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(tau.data(), 0, sizeof(math_t) * n_cols, stream));
+  }
 
   rmm::device_scalar<int> dev_info(stream);
-  int ws_size;
+  int ws_size_Dngeqrf;
+  int ws_size_Dnorgqr;
 
-  RAFT_CUSOLVER_TRY(cusolverDngeqrf_bufferSize(cusolver, n_rows, n_cols, Q, n_rows, &ws_size));
-  rmm::device_uvector<math_t> workspace(ws_size, stream);
+  RAFT_CUSOLVER_TRY(
+    cusolverDngeqrf_bufferSize(cusolver, n_rows, n_cols, Q, n_rows, &ws_size_Dngeqrf));
+  RAFT_CUSOLVER_TRY(cusolverDnorgqr_bufferSize(
+    cusolver, n_rows, n_cols, n_cols, Q, n_rows, tau.data(), &ws_size_Dnorgqr));
+
+  rmm::device_uvector<math_t> workspace(std::max(ws_size_Dngeqrf, ws_size_Dnorgqr), stream);
+
+  if (is_dry_run) { return; }
+
   RAFT_CUSOLVER_TRY(cusolverDngeqrf(cusolver,
                                     n_rows,
                                     n_cols,
@@ -56,13 +68,10 @@ void qrGetQ_inplace(
                                     n_rows,
                                     tau.data(),
                                     workspace.data(),
-                                    ws_size,
+                                    ws_size_Dngeqrf,
                                     dev_info.data(),
                                     stream));
 
-  RAFT_CUSOLVER_TRY(
-    cusolverDnorgqr_bufferSize(cusolver, n_rows, n_cols, n_cols, Q, n_rows, tau.data(), &ws_size));
-  workspace.resize(ws_size, stream);
   RAFT_CUSOLVER_TRY(cusolverDnorgqr(cusolver,
                                     n_rows,
                                     n_cols,
@@ -71,7 +80,7 @@ void qrGetQ_inplace(
                                     n_rows,
                                     tau.data(),
                                     workspace.data(),
-                                    ws_size,
+                                    ws_size_Dnorgqr,
                                     dev_info.data(),
                                     stream));
 }
@@ -84,7 +93,7 @@ void qrGetQ(raft::resources const& handle,
             int n_cols,
             cudaStream_t stream)
 {
-  raft::copy(Q, M, n_rows * n_cols, stream);
+  if (!resource::get_dry_run_flag(handle)) { raft::copy(Q, M, n_rows * n_cols, stream); }
   qrGetQ_inplace(handle, Q, n_rows, n_cols, stream);
 }
 
@@ -100,19 +109,32 @@ void qrGetQR(raft::resources const& handle,
   cusolverDnHandle_t cusolverH = resource::get_cusolver_dn_handle(handle);
 
   int m = n_rows, n = n_cols;
+  int R_full_nrows = m, R_full_ncols = n;
+  int Q_nrows = m, Q_ncols = n;
+  int Lwork_Dngeqrf, Lwork_Dnorgqr;
   rmm::device_uvector<math_t> R_full(m * n, stream);
   rmm::device_uvector<math_t> tau(std::min(m, n), stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(tau.data(), 0, sizeof(math_t) * std::min(m, n), stream));
-  int R_full_nrows = m, R_full_ncols = n;
-  RAFT_CUDA_TRY(
-    cudaMemcpyAsync(R_full.data(), M, sizeof(math_t) * m * n, cudaMemcpyDeviceToDevice, stream));
-
-  int Lwork;
   rmm::device_scalar<int> devInfo(stream);
 
   RAFT_CUSOLVER_TRY(cusolverDngeqrf_bufferSize(
-    cusolverH, R_full_nrows, R_full_ncols, R_full.data(), R_full_nrows, &Lwork));
-  rmm::device_uvector<math_t> workspace(Lwork, stream);
+    cusolverH, R_full_nrows, R_full_ncols, R_full.data(), R_full_nrows, &Lwork_Dngeqrf));
+  RAFT_CUSOLVER_TRY(cusolverDnorgqr_bufferSize(cusolverH,
+                                               Q_nrows,
+                                               Q_ncols,
+                                               std::min(Q_ncols, Q_nrows),
+                                               Q,
+                                               Q_nrows,
+                                               tau.data(),
+                                               &Lwork_Dnorgqr));
+
+  rmm::device_uvector<math_t> workspace(std::max(Lwork_Dngeqrf, Lwork_Dnorgqr), stream);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
+
+  RAFT_CUDA_TRY(cudaMemsetAsync(tau.data(), 0, sizeof(math_t) * std::min(m, n), stream));
+  RAFT_CUDA_TRY(
+    cudaMemcpyAsync(R_full.data(), M, sizeof(math_t) * m * n, cudaMemcpyDeviceToDevice, stream));
+
   RAFT_CUSOLVER_TRY(cusolverDngeqrf(cusolverH,
                                     R_full_nrows,
                                     R_full_ncols,
@@ -120,7 +142,7 @@ void qrGetQR(raft::resources const& handle,
                                     R_full_nrows,
                                     tau.data(),
                                     workspace.data(),
-                                    Lwork,
+                                    Lwork_Dngeqrf,
                                     devInfo.data(),
                                     stream));
 
@@ -131,11 +153,7 @@ void qrGetQR(raft::resources const& handle,
 
   RAFT_CUDA_TRY(
     cudaMemcpyAsync(Q, R_full.data(), sizeof(math_t) * m * n, cudaMemcpyDeviceToDevice, stream));
-  int Q_nrows = m, Q_ncols = n;
 
-  RAFT_CUSOLVER_TRY(cusolverDnorgqr_bufferSize(
-    cusolverH, Q_nrows, Q_ncols, std::min(Q_ncols, Q_nrows), Q, Q_nrows, tau.data(), &Lwork));
-  workspace.resize(Lwork, stream);
   RAFT_CUSOLVER_TRY(cusolverDnorgqr(cusolverH,
                                     Q_nrows,
                                     Q_ncols,
@@ -144,7 +162,7 @@ void qrGetQR(raft::resources const& handle,
                                     Q_nrows,
                                     tau.data(),
                                     workspace.data(),
-                                    Lwork,
+                                    Lwork_Dnorgqr,
                                     devInfo.data(),
                                     stream));
 }

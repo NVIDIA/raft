@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/math.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 
 #include <cub/warp/warp_reduce.cuh>
 #include <cuda_fp16.h>
@@ -95,6 +96,7 @@ void faster_dot_on_csr(raft::resources const& handle,
                        const value_idx dim)
 {
   if (nnz == 0 || n_rows == 0) return;
+  if (resource::get_dry_run_flag(handle)) { return; }  // No allocations below
 
   auto stream = resource::get_cuda_stream(handle);
 

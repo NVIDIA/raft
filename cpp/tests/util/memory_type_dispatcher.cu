@@ -1,9 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include "../test_utils.h"
+#include "../test_utils.cuh"
 
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
@@ -220,172 +220,176 @@ auto generate_input(raft::resources const& res)
 template <memory_type input_memory_type>
 void test_memory_type_dispatcher()
 {
-  auto res          = raft::device_resources{};
-  auto data         = generate_input<input_memory_type>(res);
-  auto data_float   = generate_input<input_memory_type, float>(res);
-  auto data_f       = generate_input<input_memory_type, double, layout_f_contiguous>(res);
-  auto data_f_float = generate_input<input_memory_type, float, layout_f_contiguous>(res);
+  execute_with_dry_run_check(
+    raft::device_resources{},
+    [&](raft::resources const& res) {
+      auto data         = generate_input<input_memory_type>(res);
+      auto data_float   = generate_input<input_memory_type, float>(res);
+      auto data_f       = generate_input<input_memory_type, double, layout_f_contiguous>(res);
+      auto data_f_float = generate_input<input_memory_type, float, layout_f_contiguous>(res);
 
-  EXPECT_EQ(memory_type_dispatcher(res, functor_h{}, data.view()),
-            functor_h::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_d{}, data.view()),
-            functor_d::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_m{}, data.view()),
-            functor_m::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_p{}, data.view()),
-            functor_p::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_hd{}, data.view()),
-            functor_hd::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_hm{}, data.view()),
-            functor_hm::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_hp{}, data.view()),
-            functor_hp::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_dm{}, data.view()),
-            functor_dm::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_dp{}, data.view()),
-            functor_dp::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_mp{}, data.view()),
-            functor_mp::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_hdm{}, data.view()),
-            functor_hdm::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_hdp{}, data.view()),
-            functor_hdp::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_dmp{}, data.view()),
-            functor_dmp::expected_output<input_memory_type>());
-  EXPECT_EQ(memory_type_dispatcher(res, functor_hdmp{}, data.view()),
-            functor_hdmp::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_h{}, data.view()),
+                functor_h::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_d{}, data.view()),
+                functor_d::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_m{}, data.view()),
+                functor_m::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_p{}, data.view()),
+                functor_p::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_hd{}, data.view()),
+                functor_hd::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_hm{}, data.view()),
+                functor_hm::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_hp{}, data.view()),
+                functor_hp::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_dm{}, data.view()),
+                functor_dm::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_dp{}, data.view()),
+                functor_dp::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_mp{}, data.view()),
+                functor_mp::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_hdm{}, data.view()),
+                functor_hdm::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_hdp{}, data.view()),
+                functor_hdp::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_dmp{}, data.view()),
+                functor_dmp::expected_output<input_memory_type>());
+      EXPECT_EQ(memory_type_dispatcher(res, functor_hdmp{}, data.view()),
+                functor_hdmp::expected_output<input_memory_type>());
 
-  // Functor expects double; input is float
-  auto out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_h{}, data_float.view());
-  EXPECT_EQ(out, functor_h::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_d{}, data_float.view());
-  EXPECT_EQ(out, functor_d::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_m{}, data_float.view());
-  EXPECT_EQ(out, functor_m::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_p{}, data_float.view());
-  EXPECT_EQ(out, functor_p::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hd{}, data_float.view());
-  EXPECT_EQ(out, functor_hd::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hm{}, data_float.view());
-  EXPECT_EQ(out, functor_hm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hp{}, data_float.view());
-  EXPECT_EQ(out, functor_hp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dm{}, data_float.view());
-  EXPECT_EQ(out, functor_dm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dp{}, data_float.view());
-  EXPECT_EQ(out, functor_dp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_mp{}, data_float.view());
-  EXPECT_EQ(out, functor_mp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdm{}, data_float.view());
-  EXPECT_EQ(out, functor_hdm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdp{}, data_float.view());
-  EXPECT_EQ(out, functor_hdp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dmp{}, data_float.view());
-  EXPECT_EQ(out, functor_dmp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdmp{}, data_float.view());
-  EXPECT_EQ(out, functor_hdmp::expected_output<input_memory_type>());
+      // Functor expects double; input is float
+      auto out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_h{}, data_float.view());
+      EXPECT_EQ(out, functor_h::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_d{}, data_float.view());
+      EXPECT_EQ(out, functor_d::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_m{}, data_float.view());
+      EXPECT_EQ(out, functor_m::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_p{}, data_float.view());
+      EXPECT_EQ(out, functor_p::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hd{}, data_float.view());
+      EXPECT_EQ(out, functor_hd::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hm{}, data_float.view());
+      EXPECT_EQ(out, functor_hm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hp{}, data_float.view());
+      EXPECT_EQ(out, functor_hp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dm{}, data_float.view());
+      EXPECT_EQ(out, functor_dm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dp{}, data_float.view());
+      EXPECT_EQ(out, functor_dp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_mp{}, data_float.view());
+      EXPECT_EQ(out, functor_mp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdm{}, data_float.view());
+      EXPECT_EQ(out, functor_hdm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdp{}, data_float.view());
+      EXPECT_EQ(out, functor_hdp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dmp{}, data_float.view());
+      EXPECT_EQ(out, functor_dmp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdmp{}, data_float.view());
+      EXPECT_EQ(out, functor_hdmp::expected_output<input_memory_type>());
 
-  // Functor expects C-contiguous; input is F-contiguous
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_h{}, data_f.view());
-  EXPECT_EQ(out, functor_h::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_d{}, data_f.view());
-  EXPECT_EQ(out, functor_d::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_m{}, data_f.view());
-  EXPECT_EQ(out, functor_m::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_p{}, data_f.view());
-  EXPECT_EQ(out, functor_p::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hd{}, data_f.view());
-  EXPECT_EQ(out, functor_hd::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hm{}, data_f.view());
-  EXPECT_EQ(out, functor_hm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hp{}, data_f.view());
-  EXPECT_EQ(out, functor_hp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dm{}, data_f.view());
-  EXPECT_EQ(out, functor_dm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dp{}, data_f.view());
-  EXPECT_EQ(out, functor_dp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_mp{}, data_f.view());
-  EXPECT_EQ(out, functor_mp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdm{}, data_f.view());
-  EXPECT_EQ(out, functor_hdm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdp{}, data_f.view());
-  EXPECT_EQ(out, functor_hdp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dmp{}, data_f.view());
-  EXPECT_EQ(out, functor_dmp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdmp{}, data_f.view());
-  EXPECT_EQ(out, functor_hdmp::expected_output<input_memory_type>());
+      // Functor expects C-contiguous; input is F-contiguous
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_h{}, data_f.view());
+      EXPECT_EQ(out, functor_h::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_d{}, data_f.view());
+      EXPECT_EQ(out, functor_d::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_m{}, data_f.view());
+      EXPECT_EQ(out, functor_m::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_p{}, data_f.view());
+      EXPECT_EQ(out, functor_p::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hd{}, data_f.view());
+      EXPECT_EQ(out, functor_hd::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hm{}, data_f.view());
+      EXPECT_EQ(out, functor_hm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hp{}, data_f.view());
+      EXPECT_EQ(out, functor_hp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dm{}, data_f.view());
+      EXPECT_EQ(out, functor_dm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dp{}, data_f.view());
+      EXPECT_EQ(out, functor_dp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_mp{}, data_f.view());
+      EXPECT_EQ(out, functor_mp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdm{}, data_f.view());
+      EXPECT_EQ(out, functor_hdm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdp{}, data_f.view());
+      EXPECT_EQ(out, functor_hdp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dmp{}, data_f.view());
+      EXPECT_EQ(out, functor_dmp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdmp{}, data_f.view());
+      EXPECT_EQ(out, functor_hdmp::expected_output<input_memory_type>());
 
-  // Functor expects C-contiguous double; input is F-contiguous float
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_h{}, data_f_float.view());
-  EXPECT_EQ(out, functor_h::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_d{}, data_f_float.view());
-  EXPECT_EQ(out, functor_d::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_m{}, data_f_float.view());
-  EXPECT_EQ(out, functor_m::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_p{}, data_f_float.view());
-  EXPECT_EQ(out, functor_p::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hd{}, data_f_float.view());
-  EXPECT_EQ(out, functor_hd::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hm{}, data_f_float.view());
-  EXPECT_EQ(out, functor_hm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hp{}, data_f_float.view());
-  EXPECT_EQ(out, functor_hp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dm{}, data_f_float.view());
-  EXPECT_EQ(out, functor_dm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dp{}, data_f_float.view());
-  EXPECT_EQ(out, functor_dp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_mp{}, data_f_float.view());
-  EXPECT_EQ(out, functor_mp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdm{}, data_f_float.view());
-  EXPECT_EQ(out, functor_hdm::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdp{}, data_f_float.view());
-  EXPECT_EQ(out, functor_hdp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_dmp{}, data_f_float.view());
-  EXPECT_EQ(out, functor_dmp::expected_output<input_memory_type>());
-  out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
-    res, functor_hdmp{}, data_f_float.view());
-  EXPECT_EQ(out, functor_hdmp::expected_output<input_memory_type>());
+      // Functor expects C-contiguous double; input is F-contiguous float
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_h{}, data_f_float.view());
+      EXPECT_EQ(out, functor_h::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_d{}, data_f_float.view());
+      EXPECT_EQ(out, functor_d::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_m{}, data_f_float.view());
+      EXPECT_EQ(out, functor_m::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_p{}, data_f_float.view());
+      EXPECT_EQ(out, functor_p::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hd{}, data_f_float.view());
+      EXPECT_EQ(out, functor_hd::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hm{}, data_f_float.view());
+      EXPECT_EQ(out, functor_hm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hp{}, data_f_float.view());
+      EXPECT_EQ(out, functor_hp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dm{}, data_f_float.view());
+      EXPECT_EQ(out, functor_dm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dp{}, data_f_float.view());
+      EXPECT_EQ(out, functor_dp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_mp{}, data_f_float.view());
+      EXPECT_EQ(out, functor_mp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdm{}, data_f_float.view());
+      EXPECT_EQ(out, functor_hdm::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdp{}, data_f_float.view());
+      EXPECT_EQ(out, functor_hdp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_dmp{}, data_f_float.view());
+      EXPECT_EQ(out, functor_dmp::expected_output<input_memory_type>());
+      out = memory_type_dispatcher<mdbuffer<double, matrix_extent<std::uint32_t>>>(
+        res, functor_hdmp{}, data_f_float.view());
+      EXPECT_EQ(out, functor_hdmp::expected_output<input_memory_type>());
+    },
+    alloc_behavior::ARGUMENT_DRIVEN);
 }
 
 }  // namespace dispatch_test

@@ -9,6 +9,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/math.cuh>
 
 namespace raft {
@@ -33,6 +34,7 @@ void sqrt(raft::resources const& handle,
           raft::device_matrix_view<const math_t, idx_t, layout> in,
           raft::device_matrix_view<math_t, idx_t, layout> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.size() == out.size(), "Input and output matrices must have same size.");
   detail::seqRoot(
     in.data_handle(), out.data_handle(), in.size(), resource::get_cuda_stream(handle));
@@ -49,6 +51,7 @@ void sqrt(raft::resources const& handle,
 template <typename math_t, typename idx_t, typename layout>
 void sqrt(raft::resources const& handle, raft::device_matrix_view<math_t, idx_t, layout> inout)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   detail::seqRoot(inout.data_handle(), inout.size(), resource::get_cuda_stream(handle));
 }
 
@@ -70,6 +73,7 @@ void weighted_sqrt(raft::resources const& handle,
                    raft::host_scalar_view<math_t> scalar,
                    bool set_neg_zero = false)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.size() == out.size(), "Input and output matrices must have same size.");
   detail::seqRoot(in.data_handle(),
                   out.data_handle(),
@@ -95,6 +99,7 @@ void weighted_sqrt(raft::resources const& handle,
                    raft::host_scalar_view<math_t> scalar,
                    bool set_neg_zero = false)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   detail::seqRoot(inout.data_handle(),
                   *(scalar.data_handle()),
                   inout.size(),

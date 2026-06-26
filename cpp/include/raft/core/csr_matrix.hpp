@@ -189,8 +189,8 @@ class compressed_structure
   void initialize_sparsity(NZType nnz) override
   {
     sparse_structure_type::initialize_sparsity(nnz);
-    c_indptr_.resize(this->get_n_rows() + 1);
-    c_indices_.resize(nnz);
+    c_indptr_.reallocate(this->get_n_rows() + 1);
+    c_indices_.reallocate(nnz);
   }
 
  protected:

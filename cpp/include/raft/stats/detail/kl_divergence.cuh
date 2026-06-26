@@ -48,15 +48,21 @@ struct KLDOp {
  * Divergence</a>
  *
  * @tparam DataT: Data type of the input array
+ * @param dry_run: whether to run in dry-run mode (skip CUDA work)
  * @param modelPDF: the model array of probability density functions of type DataT
  * @param candidatePDF: the candidate array of probability density functions of type DataT
  * @param size: the size of the data points of type int
  * @param stream: the cudaStream object
  */
 template <typename DataT>
-DataT kl_divergence(const DataT* modelPDF, const DataT* candidatePDF, int size, cudaStream_t stream)
+DataT kl_divergence(
+  bool dry_run, const DataT* modelPDF, const DataT* candidatePDF, int size, cudaStream_t stream)
 {
   rmm::device_scalar<DataT> d_KLDVal(stream);
+
+  if (dry_run) { return DataT{0}; }
+
+  // Note: No allocations below - only CUDA operations on pre-allocated memory
   RAFT_CUDA_TRY(cudaMemsetAsync(d_KLDVal.data(), 0, sizeof(DataT), stream));
 
   raft::linalg::mapThenSumReduce<DataT, KLDOp<DataT>, size_t, 256, const DataT*>(

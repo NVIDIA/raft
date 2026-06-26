@@ -97,23 +97,28 @@ class GemmLayoutTest : public ::testing::TestWithParam<GemmLayoutInputs<T>> {
     auto z_view_col_major =
       raft::make_device_matrix_view<T, int, raft::col_major>(Z, params.M, params.N);
 
-    if (params.xLayout && params.yLayout && params.zLayout) {
-      gemm(handle, x_view_col_major, y_view_col_major, z_view_col_major);
-    } else if (params.xLayout && params.yLayout && !params.zLayout) {
-      gemm(handle, x_view_col_major, y_view_col_major, z_view_row_major);
-    } else if (params.xLayout && !params.yLayout && params.zLayout) {
-      gemm(handle, x_view_col_major, y_view_row_major, z_view_col_major);
-    } else if (!params.xLayout && params.yLayout && params.zLayout) {
-      gemm(handle, x_view_row_major, y_view_col_major, z_view_col_major);
-    } else if (params.xLayout && !params.yLayout && !params.zLayout) {
-      gemm(handle, x_view_col_major, y_view_row_major, z_view_row_major);
-    } else if (!params.xLayout && params.yLayout && !params.zLayout) {
-      gemm(handle, x_view_row_major, y_view_col_major, z_view_row_major);
-    } else if (!params.xLayout && !params.yLayout && params.zLayout) {
-      gemm(handle, x_view_row_major, y_view_row_major, z_view_col_major);
-    } else if (!params.xLayout && !params.yLayout && !params.zLayout) {
-      gemm(handle, x_view_row_major, y_view_row_major, z_view_row_major);
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.xLayout && params.yLayout && params.zLayout) {
+          gemm(h, x_view_col_major, y_view_col_major, z_view_col_major);
+        } else if (params.xLayout && params.yLayout && !params.zLayout) {
+          gemm(h, x_view_col_major, y_view_col_major, z_view_row_major);
+        } else if (params.xLayout && !params.yLayout && params.zLayout) {
+          gemm(h, x_view_col_major, y_view_row_major, z_view_col_major);
+        } else if (!params.xLayout && params.yLayout && params.zLayout) {
+          gemm(h, x_view_row_major, y_view_col_major, z_view_col_major);
+        } else if (params.xLayout && !params.yLayout && !params.zLayout) {
+          gemm(h, x_view_col_major, y_view_row_major, z_view_row_major);
+        } else if (!params.xLayout && params.yLayout && !params.zLayout) {
+          gemm(h, x_view_row_major, y_view_col_major, z_view_row_major);
+        } else if (!params.xLayout && !params.yLayout && params.zLayout) {
+          gemm(h, x_view_row_major, y_view_row_major, z_view_col_major);
+        } else if (!params.xLayout && !params.yLayout && !params.zLayout) {
+          gemm(h, x_view_row_major, y_view_row_major, z_view_row_major);
+        }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
 
     resource::sync_stream(handle);
 

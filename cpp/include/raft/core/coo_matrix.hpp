@@ -180,8 +180,8 @@ class coordinate_structure : public coordinate_structure_t<RowType, ColType, NZT
   void initialize_sparsity(nnz_type nnz)
   {
     sparse_structure_type::initialize_sparsity(nnz);
-    c_rows_.resize(nnz);
-    c_cols_.resize(nnz);
+    c_rows_.reallocate(nnz);
+    c_cols_.reallocate(nnz);
   }
 
  protected:

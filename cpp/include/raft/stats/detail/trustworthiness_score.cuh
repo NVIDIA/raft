@@ -4,7 +4,9 @@
  */
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/distance/distance.cuh>
 #include <raft/matrix/col_wise_sort.cuh>
 #include <raft/spatial/knn/knn.cuh>
@@ -153,30 +155,15 @@ double trustworthiness_score(const raft::resources& h,
     raft::distance::pairwise_distance(
       h, &X[(n - toDo) * m], X, X_dist.data(), curBatchSize, n, m, distance_type);
 
-    size_t colSortWorkspaceSize = 0;
-    bool bAllocWorkspace        = false;
+    // Use dry-run compliant handle-based overload that manages workspace internally
+    auto dist_view = raft::make_device_matrix_view<const math_t, int, raft::row_major>(
+      X_dist.data(), curBatchSize, n);
+    auto ind_view =
+      raft::make_device_matrix_view<int, int, raft::row_major>(X_ind.data(), curBatchSize, n);
+    raft::matrix::sort_cols_per_row(h, dist_view, ind_view, std::nullopt);
 
-    raft::matrix::sort_cols_per_row(X_dist.data(),
-                                    X_ind.data(),
-                                    curBatchSize,
-                                    n,
-                                    bAllocWorkspace,
-                                    nullptr,
-                                    colSortWorkspaceSize,
-                                    stream);
-
-    if (bAllocWorkspace) {
-      rmm::device_uvector<char> sortColsWorkspace(colSortWorkspaceSize, stream);
-
-      raft::matrix::sort_cols_per_row(X_dist.data(),
-                                      X_ind.data(),
-                                      curBatchSize,
-                                      n,
-                                      bAllocWorkspace,
-                                      sortColsWorkspace.data(),
-                                      colSortWorkspaceSize,
-                                      stream);
-    }
+    // The workspace won't grow anymore
+    if (resource::get_dry_run_flag(h)) { return 0.0; }
 
     int work     = curBatchSize * n;
     int n_blocks = raft::ceildiv(work, N_THREADS);

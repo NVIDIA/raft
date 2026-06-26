@@ -9,6 +9,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <cublas_v2.h>
@@ -26,6 +27,7 @@ void axpy(raft::resources const& handle,
           const int incy,
           cudaStream_t stream)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   auto cublas_h = resource::get_cublas_handle(handle);
   cublas_device_pointer_mode<DevicePointerMode> pmode(cublas_h);
   RAFT_CUBLAS_TRY(cublasaxpy(cublas_h, n, alpha, x, incx, y, incy, stream));

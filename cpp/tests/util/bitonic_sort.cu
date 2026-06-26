@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -143,8 +143,13 @@ class BitonicTest : public testing::TestWithParam<test_spec> {  // NOLINT
     fill_random(arr_d);
     update_host(in.data(), arr_d.data(), arr_d.size(), stream);
 
-    // calculate the results
-    bitonic_launch<kMaxCapacity>::run(spec, arr_d.data(), stream);
+    // calculate the results (verify dry-run compliance of bitonic sort launch)
+    raft::execute_with_dry_run_check(
+      handle_,
+      [&](raft::resources const&) {
+        bitonic_launch<kMaxCapacity>::run(spec, arr_d.data(), stream);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     update_host(out.data(), arr_d.data(), arr_d.size(), stream);
 
     // make sure the results are available on host

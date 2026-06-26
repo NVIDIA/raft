@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -94,8 +94,14 @@ class SparseSymmetrizeTest
 
     raft::sparse::COO<value_t, value_idx, nnz_t> out(stream);
 
-    raft::sparse::linalg::symmetrize(
-      handle, coo_rows.data(), indices.data(), data.data(), m, n, coo_rows.size(), out);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        raft::sparse::linalg::symmetrize(
+          h, coo_rows.data(), indices.data(), data.data(), m, n, coo_rows.size(), out);
+      },
+      raft::alloc_behavior::DATA_DRIVEN,
+      nnz * 2 * (2 * sizeof(value_idx) + sizeof(value_t)));
 
     rmm::device_scalar<value_idx> sum(stream);
     sum.set_value_to_zero_async(stream);

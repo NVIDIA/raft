@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/core/types.hpp>
 #include <raft/matrix/detail/linewise_op.cuh>
@@ -62,6 +63,7 @@ void linewise_op(raft::resources const& handle,
                  Lambda op,
                  vec_t... vecs)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   constexpr auto is_rowmajor = std::is_same_v<layout, row_major>;
   constexpr auto is_colmajor = std::is_same_v<layout, col_major>;
 
@@ -97,6 +99,7 @@ void linewise_op(raft::resources const& handle,
                  Lambda op,
                  vec_t... vecs)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   constexpr auto is_rowmajor = std::is_same_v<layout, raft::layout_right_padded<m_t>>;
   constexpr auto is_colmajor = std::is_same_v<layout, raft::layout_left_padded<m_t>>;
 

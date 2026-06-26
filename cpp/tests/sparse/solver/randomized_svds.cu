@@ -5,20 +5,24 @@
 
 #include "../../test_utils.cuh"
 
+#include <raft/core/copy.hpp>
 #include <raft/core/device_csr_matrix.hpp>
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
+#include <raft/core/host_mdspan.hpp>
+#include <raft/core/mdspan.hpp>
+#include <raft/core/operators.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/linalg/gemm.cuh>
+#include <raft/linalg/gemv.cuh>
+#include <raft/linalg/map.cuh>
 #include <raft/linalg/svd.cuh>
 #include <raft/sparse/solver/detail/csr_linear_operator.cuh>
 #include <raft/sparse/solver/randomized_svds.cuh>
 #include <raft/util/cudart_utils.hpp>
-
-#include <rmm/device_uvector.hpp>
 
 #include <gtest/gtest.h>
 
@@ -26,6 +30,13 @@
 #include <vector>
 
 namespace raft::sparse::solver {
+
+// Loose extra space floor: one m×n dense buffer (ignores block_size, workspaces, optional outputs).
+template <typename ValueType>
+auto randomized_svds_loose_min_alloc(int m, int n)
+{
+  return sizeof(ValueType) * static_cast<std::size_t>(m) * static_cast<std::size_t>(n);
+}
 
 // ============================================================================
 // Golden data: 20x15 sparse matrix (nnz=120), generated with cupy seed=42
@@ -128,7 +139,13 @@ class RandomizedSvdsTest : public ::testing::Test {
     auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
     auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
 
-    sparse_randomized_svd(handle, config, csr_matrix, S.view(), U.view(), Vt.view());
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        sparse_randomized_svd(h, config, csr_matrix, S.view(), U.view(), Vt.view());
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      randomized_svds_loose_min_alloc<ValueType>(m, n));
 
     // Singular values must match golden ground truth
     ASSERT_TRUE(raft::devArrMatch<ValueType>(
@@ -250,7 +267,13 @@ class OptionalUVtTest : public ::testing::Test {
     config.seed          = 42;
 
     auto S = raft::make_device_vector<ValueType, uint32_t>(handle, k);
-    sparse_randomized_svd(handle, config, csr_matrix, S.view(), U_opt, Vt_opt);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        sparse_randomized_svd(h, config, csr_matrix, S.view(), U_opt, Vt_opt);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      randomized_svds_loose_min_alloc<ValueType>(m, n));
     raft::update_host(S_out, S.data_handle(), k, stream);
     resource::sync_stream(handle);
   }
@@ -404,7 +427,13 @@ struct ReconstructionErrorTest : public ::testing::Test {
     auto S  = raft::make_device_vector<ValueType, uint32_t>(handle, k);
     auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
     auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
-    sparse_randomized_svd(handle, config, csr_matrix, S.view(), U.view(), Vt.view());
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        sparse_randomized_svd(h, config, csr_matrix, S.view(), U.view(), Vt.view());
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      randomized_svds_loose_min_alloc<ValueType>(m, n));
 
     // Reconstruct: recon = U @ diag(S) @ Vt
     // First: US = U * S (scale columns of U by S)
@@ -495,43 +524,26 @@ struct mean_centered_operator {
              raft::device_matrix_view<const ValueType, uint32_t, raft::col_major> X,
              raft::device_matrix_view<ValueType, uint32_t, raft::col_major> Y) const
   {
-    auto stream = raft::resource::get_cuda_stream(handle);
-    auto cublas = raft::resource::get_cublas_handle(handle);
-    int bk      = X.extent(1);
+    auto bk = static_cast<uint32_t>(X.extent(1));
     base_op_.apply(handle, X, Y);
-    rmm::device_uvector<ValueType> corr(bk, stream);
-    rmm::device_uvector<ValueType> ones(m_, stream);
-    std::vector<ValueType> h(m_, 1);
-    raft::update_device(ones.data(), h.data(), m_, stream);
-    ValueType a1 = 1, a0 = 0, am1 = -1;
-    RAFT_CUBLAS_TRY(raft::linalg::detail::cublasgemv(cublas,
-                                                     CUBLAS_OP_T,
-                                                     n_,
-                                                     bk,
-                                                     &a1,
-                                                     X.data_handle(),
-                                                     n_,
-                                                     col_means_,
-                                                     1,
-                                                     &a0,
-                                                     corr.data(),
-                                                     1,
-                                                     stream));
-    RAFT_CUBLAS_TRY(raft::linalg::detail::cublasgemm(cublas,
-                                                     CUBLAS_OP_N,
-                                                     CUBLAS_OP_N,
-                                                     m_,
-                                                     bk,
-                                                     1,
-                                                     &am1,
-                                                     ones.data(),
-                                                     m_,
-                                                     corr.data(),
-                                                     1,
-                                                     &a1,
-                                                     Y.data_handle(),
-                                                     m_,
-                                                     stream));
+    auto corr = raft::make_device_vector<ValueType, uint32_t>(handle, bk);
+    auto ones = raft::make_device_vector<ValueType, uint32_t>(handle, m_);
+    raft::linalg::map(handle, ones.view(), raft::const_op{ValueType{1}});
+
+    ValueType neg_one = -1, one = 1;
+    // Same col-major buffer as X; row_major tag selects gemv transpose (mean^T @ X).
+    auto X_t = raft::make_device_matrix_view<const ValueType, uint32_t, raft::row_major>(
+      X.data_handle(), X.extent(0), X.extent(1));
+    raft::linalg::gemv(handle,
+                       X_t,
+                       raft::make_device_vector_view<const ValueType, uint32_t>(col_means_, n_),
+                       corr.view());
+    raft::linalg::gemm(handle,
+                       raft::reshape(ones.view(), raft::make_extents<uint32_t>(m_, 1)),
+                       raft::reshape(corr.view(), raft::make_extents<uint32_t>(1, bk)),
+                       Y,
+                       std::make_optional(raft::make_host_scalar_view(&neg_one)),
+                       std::make_optional(raft::make_host_scalar_view(&one)));
   }
 
   // Z = (A - 1*mean^T)^T @ X = A^T@X - mean * (1^T @ X)
@@ -539,43 +551,24 @@ struct mean_centered_operator {
                        raft::device_matrix_view<const ValueType, uint32_t, raft::col_major> X,
                        raft::device_matrix_view<ValueType, uint32_t, raft::col_major> Z) const
   {
-    auto stream = raft::resource::get_cuda_stream(handle);
-    auto cublas = raft::resource::get_cublas_handle(handle);
-    int bk      = X.extent(1);
+    auto bk = static_cast<uint32_t>(X.extent(1));
     base_op_.apply_transpose(handle, X, Z);
-    rmm::device_uvector<ValueType> sums(bk, stream);
-    rmm::device_uvector<ValueType> ones(m_, stream);
-    std::vector<ValueType> h(m_, 1);
-    raft::update_device(ones.data(), h.data(), m_, stream);
-    ValueType a1 = 1, a0 = 0, am1 = -1;
-    RAFT_CUBLAS_TRY(raft::linalg::detail::cublasgemv(cublas,
-                                                     CUBLAS_OP_T,
-                                                     m_,
-                                                     bk,
-                                                     &a1,
-                                                     X.data_handle(),
-                                                     m_,
-                                                     ones.data(),
-                                                     1,
-                                                     &a0,
-                                                     sums.data(),
-                                                     1,
-                                                     stream));
-    RAFT_CUBLAS_TRY(raft::linalg::detail::cublasgemm(cublas,
-                                                     CUBLAS_OP_N,
-                                                     CUBLAS_OP_N,
-                                                     n_,
-                                                     bk,
-                                                     1,
-                                                     &am1,
-                                                     col_means_,
-                                                     n_,
-                                                     sums.data(),
-                                                     1,
-                                                     &a1,
-                                                     Z.data_handle(),
-                                                     n_,
-                                                     stream));
+    auto sums = raft::make_device_vector<ValueType, uint32_t>(handle, bk);
+    auto ones = raft::make_device_vector<ValueType, uint32_t>(handle, m_);
+    raft::linalg::map(handle, ones.view(), raft::const_op{ValueType{1}});
+
+    ValueType neg_one = -1, one = 1;
+    // Same col-major buffer as X; row_major tag selects gemv transpose (ones^T @ X).
+    auto X_t = raft::make_device_matrix_view<const ValueType, uint32_t, raft::row_major>(
+      X.data_handle(), X.extent(0), X.extent(1));
+    raft::linalg::gemv(handle, X_t, raft::make_const_mdspan(ones.view()), sums.view());
+    raft::linalg::gemm(handle,
+                       raft::reshape(raft::make_device_vector_view(col_means_, n_),
+                                     raft::make_extents<uint32_t>(n_, 1)),
+                       raft::reshape(sums.view(), raft::make_extents<uint32_t>(1, bk)),
+                       Z,
+                       std::make_optional(raft::make_host_scalar_view(&neg_one)),
+                       std::make_optional(raft::make_host_scalar_view(&one)));
   }
 };
 
@@ -663,7 +656,13 @@ class MeanCenteredOperatorTest : public ::testing::Test {
     auto S  = raft::make_device_vector<ValueType, uint32_t>(handle, k);
     auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
     auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
-    sparse_randomized_svd(handle, config, op, S.view(), U.view(), Vt.view());
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        sparse_randomized_svd(h, config, op, S.view(), U.view(), Vt.view());
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      randomized_svds_loose_min_alloc<ValueType>(m, n));
 
     // Singular values must match dense centered ground truth
     ASSERT_TRUE(raft::devArrMatch<ValueType>(

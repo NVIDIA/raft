@@ -11,6 +11,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <rmm/exec_policy.hpp>
@@ -88,6 +89,7 @@ void transpose_half(raft::resources const& handle,
                     const IndexType stride_out = 1)
 {
   if (n_cols == 0 || n_rows == 0) return;
+  if (resource::get_dry_run_flag(handle)) { return; }
   auto stream = resource::get_cuda_stream(handle);
 
   int dev_id, sm_count;
@@ -135,6 +137,7 @@ void transpose(raft::resources const& handle,
                int n_cols,
                cudaStream_t stream)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   int out_n_rows = n_cols;
   int out_n_cols = n_rows;
 
@@ -189,6 +192,7 @@ void transpose_row_major_impl(
   raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
   raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   auto out_n_rows   = in.extent(1);
   auto out_n_cols   = in.extent(0);
   T constexpr kOne  = 1;
@@ -231,6 +235,7 @@ void transpose_col_major_impl(
   raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
   raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   auto out_n_rows   = in.extent(1);
   auto out_n_cols   = in.extent(0);
   T constexpr kOne  = 1;

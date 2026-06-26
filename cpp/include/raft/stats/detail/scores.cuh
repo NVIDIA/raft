@@ -37,6 +37,7 @@ namespace detail {
  * in a linear regression model. The larger the R-squared value, the
  * more variability is explained by the linear regression model.
  *
+ * @param dry_run: whether to run in dry-run mode (track allocations but skip CUDA work)
  * @param y: Array of ground-truth response variables
  * @param y_hat: Array of predicted response variables
  * @param n: Number of elements in y and y_hat
@@ -44,20 +45,20 @@ namespace detail {
  * @return: The R-squared value.
  */
 template <typename math_t>
-math_t r2_score(math_t* y, math_t* y_hat, int n, cudaStream_t stream)
+math_t r2_score(bool dry_run, math_t* y, math_t* y_hat, int n, cudaStream_t stream)
 {
   rmm::device_scalar<math_t> y_bar(stream);
-
-  raft::stats::mean<false>(y_bar.data(), y, 1, n, stream);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
-
   rmm::device_uvector<math_t> sse_arr(n, stream);
+  rmm::device_uvector<math_t> ssto_arr(n, stream);
+
+  if (dry_run) { return math_t{0}; }
+
+  raft::stats::detail::mean<false>(dry_run, y_bar.data(), y, 1, n, stream);
+  RAFT_CUDA_TRY(cudaPeekAtLastError());
 
   raft::linalg::eltwiseSub(sse_arr.data(), y, y_hat, n, stream);
   raft::linalg::powerScalar(sse_arr.data(), sse_arr.data(), math_t(2.0), n, stream);
   RAFT_CUDA_TRY(cudaPeekAtLastError());
-
-  rmm::device_uvector<math_t> ssto_arr(n, stream);
 
   raft::linalg::subtractDevScalar(ssto_arr.data(), y, y_bar.data(), n, stream);
   raft::linalg::powerScalar(ssto_arr.data(), ssto_arr.data(), math_t(2.0), n, stream);
@@ -75,6 +76,7 @@ math_t r2_score(math_t* y, math_t* y_hat, int n, cudaStream_t stream)
 /**
  * @brief Compute accuracy of predictions. Useful for classification.
  * @tparam math_t: data type for predictions (e.g., int for classification)
+ * @param[in] dry_run: whether to run in dry-run mode (track allocations but skip CUDA work)
  * @param[in] predictions: array of predictions (GPU pointer).
  * @param[in] ref_predictions: array of reference (ground-truth) predictions (GPU pointer).
  * @param[in] n: number of elements in each of predictions, ref_predictions.
@@ -82,15 +84,18 @@ math_t r2_score(math_t* y, math_t* y_hat, int n, cudaStream_t stream)
  * @return: Accuracy score in [0, 1]; higher is better.
  */
 template <typename math_t>
-float accuracy_score(const math_t* predictions,
+float accuracy_score(bool dry_run,
+                     const math_t* predictions,
                      const math_t* ref_predictions,
                      int n,
                      cudaStream_t stream)
 {
-  unsigned long long correctly_predicted = 0ULL;
   rmm::device_uvector<math_t> diffs_array(n, stream);
 
+  if (dry_run) { return 0.0f; }
+
   // TODO could write a kernel instead
+  unsigned long long correctly_predicted = 0ULL;
   raft::linalg::eltwiseSub(diffs_array.data(), predictions, ref_predictions, n, stream);
   RAFT_CUDA_TRY(cudaGetLastError());
   correctly_predicted =
@@ -132,6 +137,7 @@ RAFT_KERNEL reg_metrics_kernel(
 /**
  * @brief Compute regression metrics mean absolute error, mean squared error, median absolute error
  * @tparam T: data type for predictions (e.g., float or double for regression).
+ * @param[in] dry_run: whether to run in dry-run mode (track allocations but skip CUDA work)
  * @param[in] predictions: array of predictions (GPU pointer).
  * @param[in] ref_predictions: array of reference (ground-truth) predictions (GPU pointer).
  * @param[in] n: number of elements in each of predictions, ref_predictions. Should be > 0.
@@ -144,7 +150,8 @@ RAFT_KERNEL reg_metrics_kernel(
  * ref_predictions[i]| for i in [0, n).
  */
 template <typename T>
-void regression_metrics(const T* predictions,
+void regression_metrics(bool dry_run,
+                        const T* predictions,
                         const T* ref_predictions,
                         int n,
                         cudaStream_t stream,
@@ -152,15 +159,30 @@ void regression_metrics(const T* predictions,
                         double& mean_squared_error,
                         double& median_abs_error)
 {
+  int array_size = n * sizeof(double);
+  rmm::device_uvector<double> abs_diffs_array(array_size, stream);
+  rmm::device_uvector<double> sorted_abs_diffs(array_size, stream);
+  rmm::device_uvector<double> tmp_sums(2 * sizeof(double), stream);
+
+  // CUB workspace size query (safe even in dry-run — no kernel launch)
+  size_t temp_storage_bytes = 0;
+  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortKeys((void*)nullptr,
+                                               temp_storage_bytes,
+                                               abs_diffs_array.data(),
+                                               sorted_abs_diffs.data(),
+                                               n,
+                                               0,
+                                               8 * sizeof(double),
+                                               stream));
+  rmm::device_uvector<char> temp_storage_v(temp_storage_bytes, stream);
+
   std::vector<double> mean_errors(2);
   std::vector<double> h_sorted_abs_diffs(n);
   int thread_cnt = 256;
   int block_cnt  = raft::ceildiv(n, thread_cnt);
 
-  int array_size = n * sizeof(double);
-  rmm::device_uvector<double> abs_diffs_array(array_size, stream);
-  rmm::device_uvector<double> sorted_abs_diffs(array_size, stream);
-  rmm::device_uvector<double> tmp_sums(2 * sizeof(double), stream);
+  if (dry_run) { return; }
+
   RAFT_CUDA_TRY(cudaMemsetAsync(tmp_sums.data(), 0, 2 * sizeof(double), stream));
 
   reg_metrics_kernel<T><<<block_cnt, thread_cnt, 0, stream>>>(
@@ -173,18 +195,7 @@ void regression_metrics(const T* predictions,
   mean_squared_error = mean_errors[1] / n;
 
   // Compute median error. Sort diffs_array and pick median value
-  char* temp_storage = nullptr;
-  size_t temp_storage_bytes;
-  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortKeys((void*)temp_storage,
-                                               temp_storage_bytes,
-                                               abs_diffs_array.data(),
-                                               sorted_abs_diffs.data(),
-                                               n,
-                                               0,
-                                               8 * sizeof(double),
-                                               stream));
-  rmm::device_uvector<char> temp_storage_v(temp_storage_bytes, stream);
-  temp_storage = temp_storage_v.data();
+  char* temp_storage = temp_storage_v.data();
   RAFT_CUDA_TRY(cub::DeviceRadixSort::SortKeys((void*)temp_storage,
                                                temp_storage_bytes,
                                                abs_diffs_array.data(),

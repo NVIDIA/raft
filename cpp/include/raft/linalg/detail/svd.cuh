@@ -13,6 +13,7 @@
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/eig.cuh>
 #include <raft/linalg/gemm.cuh>
@@ -59,6 +60,8 @@ void svdQR(raft::resources const& handle,
   int lwork = 0;
   RAFT_CUSOLVER_TRY(cusolverDngesvd_bufferSize<T>(cusolverH, n_rows, n_cols, &lwork));
   rmm::device_uvector<T> d_work(lwork, stream);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   char jobu  = 'S';
   char jobvt = 'A';
@@ -217,6 +220,11 @@ void svdJacobi(raft::resources const& handle,
 
   rmm::device_uvector<math_t> d_work(lwork, stream);
 
+  if (resource::get_dry_run_flag(handle)) {
+    RAFT_CUSOLVER_TRY(cusolverDnDestroyGesvdjInfo(gesvdj_params));
+    return;
+  }
+
   RAFT_CUSOLVER_TRY(cusolverDngesvdj(cusolverH,
                                      CUSOLVER_EIG_MODE_VECTOR,
                                      econ,
@@ -281,16 +289,19 @@ bool evaluateSVDByL2Norm(raft::resources const& handle,
                          math_t tol,
                          cudaStream_t stream)
 {
-  cublasHandle_t cublasH = resource::get_cublas_handle(handle);
-
   int m = n_rows, n = n_cols;
+  bool is_dry_run = resource::get_dry_run_flag(handle);
 
   // form product matrix
   rmm::device_uvector<math_t> P_d(m * n, stream);
   rmm::device_uvector<math_t> S_mat(k * k, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(P_d.data(), 0, sizeof(math_t) * m * n, stream));
-  RAFT_CUDA_TRY(cudaMemsetAsync(S_mat.data(), 0, sizeof(math_t) * k * k, stream));
 
+  if (!is_dry_run) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(P_d.data(), 0, sizeof(math_t) * m * n, stream));
+    RAFT_CUDA_TRY(cudaMemsetAsync(S_mat.data(), 0, sizeof(math_t) * k * k, stream));
+  }
+
+  // These RAFT functions have their own dry-run guards at the leaf level
   raft::matrix::set_diagonal(handle,
                              make_device_vector_view<const math_t>(S_vec, k),
                              make_device_matrix_view<math_t>(S_mat.data(), k, k));
@@ -308,8 +319,12 @@ bool evaluateSVDByL2Norm(raft::resources const& handle,
   // calculate percent error
   const math_t alpha = 1.0, beta = -1.0;
   rmm::device_uvector<math_t> A_minus_P(m * n, stream);
+
+  if (is_dry_run) { return false; }
+
   RAFT_CUDA_TRY(cudaMemsetAsync(A_minus_P.data(), 0, sizeof(math_t) * m * n, stream));
 
+  cublasHandle_t cublasH = resource::get_cublas_handle(handle);
   RAFT_CUBLAS_TRY(cublasgeam(cublasH,
                              CUBLAS_OP_N,
                              CUBLAS_OP_N,

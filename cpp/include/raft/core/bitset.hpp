@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_container_policy.hpp>
 #include <raft/core/device_mdarray.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/integer_utils.hpp>
@@ -133,9 +134,11 @@ struct bitset_view {
     auto count_gpu_scalar = raft::make_device_scalar<index_t>(res, 0.0);
     count(res, count_gpu_scalar.view());
     index_t count_cpu = 0;
-    raft::update_host(
-      &count_cpu, count_gpu_scalar.data_handle(), 1, resource::get_cuda_stream(res));
-    resource::sync_stream(res);
+    if (!resource::get_dry_run_flag(res)) {
+      raft::update_host(
+        &count_cpu, count_gpu_scalar.data_handle(), 1, resource::get_cuda_stream(res));
+      resource::sync_stream(res);
+    }
     return count_cpu;
   }
 
@@ -408,9 +411,11 @@ struct bitset {
     auto count_gpu_scalar = raft::make_device_scalar<index_t>(res, 0.0);
     count(res, count_gpu_scalar.view());
     index_t count_cpu = 0;
-    raft::update_host(
-      &count_cpu, count_gpu_scalar.data_handle(), 1, resource::get_cuda_stream(res));
-    resource::sync_stream(res);
+    if (!resource::get_dry_run_flag(res)) {
+      raft::update_host(
+        &count_cpu, count_gpu_scalar.data_handle(), 1, resource::get_cuda_stream(res));
+      resource::sync_stream(res);
+    }
     return count_cpu;
   }
   /**

@@ -9,6 +9,7 @@
 #include <raft/core/managed_container_policy.hpp>
 #include <raft/core/managed_mdspan.hpp>
 #include <raft/core/mdarray.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <cstdint>
@@ -118,7 +119,7 @@ auto make_managed_scalar(raft::resources const& handle, ElementType const& v)
   using policy_t = typename managed_scalar<ElementType>::container_policy_type;
   policy_t policy{};
   auto scalar = managed_scalar<ElementType>{handle, extents, policy};
-  scalar(0)   = v;
+  if (!resource::get_dry_run_flag(handle)) { scalar(0) = v; }
   return scalar;
 }
 

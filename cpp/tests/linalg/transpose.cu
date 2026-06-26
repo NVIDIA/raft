@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -109,7 +109,17 @@ class TransposeTest : public ::testing::TestWithParam<TransposeInputs<T>> {
     raft::update_device(data.data(), data_h.data(), len, stream);
     raft::update_device(data_trans_ref.data(), data_ref_h.data(), len, stream);
 
-    transpose(handle, data.data(), data_trans.data(), params.n_row, params.n_col, stream);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        transpose(h,
+                  data.data(),
+                  data_trans.data(),
+                  params.n_row,
+                  params.n_col,
+                  resource::get_cuda_stream(h));
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     if (params.n_row == params.n_col) { transpose(data.data(), params.n_col, stream); }
     resource::sync_stream(handle, stream);
   }

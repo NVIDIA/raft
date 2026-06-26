@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -94,17 +94,23 @@ class CSRTransposeTest : public ::testing::TestWithParam<CSRTransposeInputs<valu
 
     make_data();
 
-    raft::sparse::linalg::csr_transpose(handle,
-                                        indptr.data(),
-                                        indices.data(),
-                                        data.data(),
-                                        out_indptr.data(),
-                                        out_indices.data(),
-                                        out_data.data(),
-                                        params.nrows,
-                                        params.ncols,
-                                        params.nnz,
-                                        stream);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        raft::sparse::linalg::csr_transpose(h,
+                                            indptr.data(),
+                                            indices.data(),
+                                            data.data(),
+                                            out_indptr.data(),
+                                            out_indices.data(),
+                                            out_data.data(),
+                                            params.nrows,
+                                            params.ncols,
+                                            params.nnz,
+                                            resource::get_cuda_stream(h));
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      1);
 
     resource::sync_stream(handle, stream);
   }

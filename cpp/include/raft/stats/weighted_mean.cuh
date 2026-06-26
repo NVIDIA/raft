@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/types.hpp>
 #include <raft/stats/detail/weighted_mean.cuh>
 
@@ -36,7 +37,7 @@ template <bool row_major, bool along_rows, typename Type, typename IdxType = int
 void weightedMean(
   Type* mu, const Type* data, const Type* weights, IdxType D, IdxType N, cudaStream_t stream)
 {
-  detail::weightedMean<row_major, along_rows>(mu, data, weights, D, N, stream);
+  detail::weightedMean<row_major, along_rows>(false, mu, data, weights, D, N, stream);
 }
 
 /**
@@ -117,7 +118,8 @@ void weighted_mean(raft::resources const& handle,
   RAFT_EXPECTS(mu.extent(0) == mean_vec_size,
                "Size mismatch between mu and expected mean_vec_size");
 
-  detail::weightedMean<is_row_major, is_along_rows>(mu.data_handle(),
+  detail::weightedMean<is_row_major, is_along_rows>(resource::get_dry_run_flag(handle),
+                                                    mu.data_handle(),
                                                     data.data_handle(),
                                                     weights.data_handle(),
                                                     data.extent(1),

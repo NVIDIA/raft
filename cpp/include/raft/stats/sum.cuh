@@ -11,7 +11,10 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
-#include <raft/stats/detail/sum.cuh>
+#include <raft/core/resource/dry_run_flag.hpp>
+#include <raft/core/types.hpp>
+#include <raft/linalg/detail/reduce.cuh>
+#include <raft/linalg/reduce.cuh>
 #include <raft/util/cudart_utils.hpp>
 
 namespace raft {
@@ -34,7 +37,8 @@ namespace stats {
 template <bool rowMajor, typename Type, typename IdxType = int>
 void sum(Type* output, const Type* input, IdxType D, IdxType N, cudaStream_t stream)
 {
-  detail::sum<rowMajor>(output, input, D, N, stream);
+  // Inline detail::sum: reduce along columns (alongRows=false)
+  raft::linalg::detail::reduce<rowMajor, false>(false, output, input, D, N, Type(0), stream);
 }
 
 /**
@@ -65,11 +69,9 @@ void sum(raft::resources const& handle,
                 "sum: Layout must be either "
                 "raft::row_major or raft::col_major (or one of their aliases)");
   RAFT_EXPECTS(input.extent(1) == output.extent(0), "Size mismatch between input and output");
-  detail::sum<is_row_major>(output.data_handle(),
-                            input.data_handle(),
-                            input.extent(1),
-                            input.extent(0),
-                            resource::get_cuda_stream(handle));
+  // Use public reduce API that handles dry-run internally
+  // Sum along columns (Apply::ALONG_COLUMNS), reduce_op is add_op (default)
+  raft::linalg::reduce<raft::Apply::ALONG_COLUMNS>(handle, input, output, value_t(0));
 }
 
 /** @} */  // end group stats_sum

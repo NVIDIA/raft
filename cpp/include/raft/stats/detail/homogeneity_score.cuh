@@ -22,6 +22,7 @@ namespace detail {
  * @brief Function to calculate the homogeneity score between two clusters
  * <a href="https://en.wikipedia.org/wiki/Homogeneity_(statistics)">more info on mutual
  * information</a>
+ * @param dry_run: whether to run in dry-run mode
  * @param truthClusterArray: the array of truth classes of type T
  * @param predClusterArray: the array of predicted classes of type T
  * @param size: the size of the data points of type int
@@ -30,7 +31,8 @@ namespace detail {
  * @param stream: the cudaStream object
  */
 template <typename T>
-double homogeneity_score(const T* truthClusterArray,
+double homogeneity_score(bool dry_run,
+                         const T* truthClusterArray,
                          const T* predClusterArray,
                          int size,
                          T lowerLabelRange,
@@ -41,10 +43,10 @@ double homogeneity_score(const T* truthClusterArray,
 
   double computedMI, computedEntropy;
 
-  computedMI = raft::stats::mutual_info_score(
-    truthClusterArray, predClusterArray, size, lowerLabelRange, upperLabelRange, stream);
+  computedMI = mutual_info_score(
+    dry_run, truthClusterArray, predClusterArray, size, lowerLabelRange, upperLabelRange, stream);
   computedEntropy =
-    raft::stats::entropy(truthClusterArray, size, lowerLabelRange, upperLabelRange, stream);
+    entropy(dry_run, truthClusterArray, size, lowerLabelRange, upperLabelRange, stream);
 
   double homogeneity;
 

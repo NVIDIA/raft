@@ -12,6 +12,7 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 
@@ -42,6 +43,7 @@ void dot(raft::resources const& handle,
 {
   RAFT_EXPECTS(x.size() == y.size(),
                "Size mismatch between x and y input vectors in raft::linalg::dot");
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   RAFT_CUBLAS_TRY(detail::cublasdot(resource::get_cublas_handle(handle),
                                     x.size(),
@@ -72,6 +74,7 @@ void dot(raft::resources const& handle,
 {
   RAFT_EXPECTS(x.size() == y.size(),
                "Size mismatch between x and y input vectors in raft::linalg::dot");
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   RAFT_CUBLAS_TRY(detail::cublasdot(resource::get_cublas_handle(handle),
                                     x.size(),

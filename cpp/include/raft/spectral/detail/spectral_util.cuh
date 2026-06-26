@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
@@ -35,6 +36,11 @@ void transform_eigen_matrix(raft::resources const& handle,
                             vertex_t nEigVecs,
                             weight_t* eigVecs)
 {
+  // Allocate before dry-run check to track allocation
+  raft::spectral::matrix::vector_t<weight_t> work(handle, nEigVecs * n);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
+
   auto stream             = resource::get_cuda_stream(handle);
   auto cublas_h           = resource::get_cublas_handle(handle);
   auto thrust_exec_policy = resource::get_thrust_policy(handle);
@@ -77,7 +83,6 @@ void transform_eigen_matrix(raft::resources const& handle,
   // Transpose eigenvector matrix
   //   TODO: in-place transpose
   {
-    raft::spectral::matrix::vector_t<weight_t> work(handle, nEigVecs * n);
     // TODO: Call from public API when ready
     RAFT_CUBLAS_TRY(
       raft::linalg::detail::cublassetpointermode(cublas_h, CUBLAS_POINTER_MODE_HOST, stream));
@@ -135,6 +140,7 @@ bool construct_indicator(
   raft::spectral::matrix::vector_t<weight_t>& Bx,
   raft::spectral::matrix::laplacian_matrix_t<vertex_t, weight_t, nnz_t> const& B)
 {
+  if (resource::get_dry_run_flag(handle)) { return {}; }
   auto stream             = resource::get_cuda_stream(handle);
   auto cublas_h           = resource::get_cublas_handle(handle);
   auto thrust_exec_policy = resource::get_thrust_policy(handle);

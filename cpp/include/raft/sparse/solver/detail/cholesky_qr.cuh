@@ -5,9 +5,13 @@
 
 #pragma once
 
+#include <raft/core/copy.hpp>
+#include <raft/core/device_mdspan.hpp>
+#include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/linalg/detail/cusolver_wrappers.hpp>
@@ -61,6 +65,12 @@ bool cholesky_qr_pass(raft::resources const& handle,
                      W,
                      k,
                      stream);
+
+  if (raft::resource::get_dry_run_flag(handle)) {
+    // Return false to force fallback to QR in dry run mode to track its memory usage.
+    // There are no more allocations to track below this point - safe to return early.
+    return false;
+  }
 
   // L = cholesky(W, LOWER)  — W is overwritten with L in lower triangle
   RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDnpotrf(

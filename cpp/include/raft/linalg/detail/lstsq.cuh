@@ -10,6 +10,7 @@
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream_pool.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/linalg/detail/cusolver_wrappers.hpp>
 #include <raft/linalg/eig.cuh>
@@ -131,6 +132,9 @@ void lstsqSvdQR(raft::resources const& handle,
                                         + 1                // devInfo
                                       ,
                                       stream);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
+
   math_t* cusolverWorkSet = workset.data();
   math_t* U               = cusolverWorkSet + cusolverWorkSetSize;
   math_t* Vt              = U + n_rows * minmn;
@@ -205,6 +209,12 @@ void lstsqSvdJacobi(raft::resources const& handle,
                                         + 1                // devInfo
                                       ,
                                       stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    RAFT_CUSOLVER_TRY(cusolverDnDestroyGesvdjInfo(gesvdj_params));
+    return;
+  }
+
   math_t* cusolverWorkSet = workset.data();
   math_t* U               = cusolverWorkSet + cusolverWorkSetSize;
   math_t* V               = U + n_rows * minmn;
@@ -249,21 +259,27 @@ void lstsqEig(raft::resources const& handle,
 {
   rmm::cuda_stream_view mainStream   = rmm::cuda_stream_view(stream);
   rmm::cuda_stream_view multAbStream = resource::get_next_usable_stream(handle);
+  bool dry_run                       = resource::get_dry_run_flag(handle);
   bool concurrent;
-  // Check if the two streams can run concurrently. This is needed because a legacy default stream
-  // would synchronize with other blocking streams. To avoid synchronization in such case, we try to
-  // use an additional stream from the pool.
-  if (!are_implicitly_synchronized(mainStream, multAbStream)) {
-    concurrent = true;
-  } else if (resource::get_stream_pool_size(handle) > 1) {
-    mainStream = resource::get_next_usable_stream(handle);
-    concurrent = true;
+  if (dry_run) {
+    concurrent = false;
   } else {
-    multAbStream = mainStream;
-    concurrent   = false;
+    // Check if the two streams can run concurrently. This is needed because a legacy default stream
+    // would synchronize with other blocking streams. To avoid synchronization in such case, we try
+    // to use an additional stream from the pool.
+    if (!are_implicitly_synchronized(mainStream, multAbStream)) {
+      concurrent = true;
+    } else if (resource::get_stream_pool_size(handle) > 1) {
+      mainStream = resource::get_next_usable_stream(handle);
+      concurrent = true;
+    } else {
+      multAbStream = mainStream;
+      concurrent   = false;
+    }
   }
 
   rmm::device_uvector<math_t> workset(n_cols * n_cols * 3 + n_cols * 2, mainStream);
+
   // the event is created only if the given raft handle is capable of running
   // at least two CUDA streams without implicit synchronization.
   DeviceEvent worksetDone(concurrent);
@@ -303,8 +319,8 @@ void lstsqEig(raft::resources const& handle,
   raft::common::nvtx::pop_range();
 
   // QS  <- Q invS
-  raft::linalg::matrixVectorOp<false, true>(
-    QS, Q, S, n_cols, n_cols, DivideByNonZero<math_t>(), mainStream);
+  raft::linalg::detail::matrixVectorOp<false, true>(
+    dry_run, QS, Q, S, n_cols, n_cols, DivideByNonZero<math_t>(), mainStream);
   // covA <- QS Q* == Q invS Q* == inv(A* A)
   raft::linalg::gemm(handle,
                      QS,
@@ -392,6 +408,8 @@ void lstsqQR(raft::resources const& handle,
   lwork = (lwork_geqrf > lwork_ormqr) ? lwork_geqrf : lwork_ormqr;
 
   rmm::device_uvector<math_t> d_work(lwork, stream);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   // #TODO: Call from public API when ready
   RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDngeqrf(

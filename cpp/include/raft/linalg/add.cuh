@@ -13,6 +13,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/util/input_validation.hpp>
 
 namespace raft {
@@ -103,6 +104,7 @@ template <typename InType,
           typename = raft::enable_if_output_device_mdspan<OutType>>
 void add(raft::resources const& handle, InType in1, InType in2, OutType out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   using in_value_t  = typename InType::value_type;
   using out_value_t = typename OutType::value_type;
 
@@ -140,6 +142,7 @@ void add_scalar(raft::resources const& handle,
                 OutType out,
                 raft::device_scalar_view<const typename InType::value_type, ScalarIdxType> scalar)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   using in_value_t  = typename InType::value_type;
   using out_value_t = typename OutType::value_type;
 
@@ -175,6 +178,7 @@ void add_scalar(raft::resources const& handle,
                 OutType out,
                 raft::host_scalar_view<const typename InType::value_type, ScalarIdxType> scalar)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   using in_value_t  = typename InType::value_type;
   using out_value_t = typename OutType::value_type;
 

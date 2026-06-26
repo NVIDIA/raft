@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/sparse/convert/csr.cuh>
 #include <raft/sparse/coo.hpp>
@@ -19,6 +20,7 @@
 
 #include <rmm/device_uvector.hpp>
 
+#include <cub/device/device_scan.cuh>
 #include <cuda_runtime.h>
 #include <thrust/device_ptr.h>
 #include <thrust/scan.h>
@@ -130,9 +132,21 @@ void max_duplicates(raft::resources const& handle,
   // compute diffs & take exclusive scan
   rmm::device_uvector<value_idx> diff(nnz + 1, stream);
 
+  size_t scan_ws_bytes = 0;
+  cub::DeviceScan::ExclusiveSum(
+    nullptr, scan_ws_bytes, diff.data(), diff.data(), static_cast<int>(diff.size()), stream);
+  rmm::device_uvector<char> scan_ws(scan_ws_bytes, stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound: at most nnz unique entries (no duplicates removed).
+    out.allocate(nnz, m, n, false, stream);
+    return;
+  }
+
   compute_duplicates_mask(diff.data(), rows, cols, nnz, stream);
 
-  thrust::exclusive_scan(thrust_policy, diff.data(), diff.data() + diff.size(), diff.data());
+  cub::DeviceScan::ExclusiveSum(
+    scan_ws.data(), scan_ws_bytes, diff.data(), diff.data(), static_cast<int>(diff.size()), stream);
 
   // compute final size
   value_idx size = 0;

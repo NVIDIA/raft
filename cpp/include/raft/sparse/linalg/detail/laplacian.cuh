@@ -195,13 +195,13 @@ device_coo_matrix<ElementType, RowType, ColType, NZType> compute_graph_laplacian
                            });
 
   raft::sparse::op::coo_sort<ElementType, RowType, NZType>(
+    res,
     dim,
     dim,
     result.structure_view().get_nnz(),
     result.structure_view().get_rows().data(),
     result.structure_view().get_cols().data(),
-    result.get_elements().data(),
-    raft::resource::get_cuda_stream(res));
+    result.get_elements().data());
 
   auto result_nnz = result.structure_view().get_nnz();
   auto degrees    = raft::make_device_vector<ElementType, RowType>(res, dim);

@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/matrix.cuh>
 #include <raft/util/input_validation.hpp>
 
@@ -36,6 +37,7 @@ void copy_rows(raft::resources const& handle,
                raft::device_matrix_view<m_t, idx_t, layout> out,
                raft::device_vector_view<const idx_t, idx_t> indices)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.extent(1) == out.extent(1),
                "Input and output matrices must have same number of columns");
   RAFT_EXPECTS(indices.extent(0) == out.extent(0),
@@ -61,6 +63,7 @@ void copy(raft::resources const& handle,
           raft::device_matrix_view<const m_t, matrix_idx_t, row_major> in,
           raft::device_matrix_view<m_t, matrix_idx_t, row_major> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.extent(0) == out.extent(0) && in.extent(1) == out.extent(1),
                "Input and output matrix shapes must match.");
 
@@ -81,6 +84,7 @@ void copy(raft::resources const& handle,
           raft::device_matrix_view<const m_t, matrix_idx_t, col_major> in,
           raft::device_matrix_view<m_t, matrix_idx_t, col_major> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.extent(0) == out.extent(0) && in.extent(1) == out.extent(1),
                "Input and output matrix shapes must match.");
 
@@ -102,6 +106,7 @@ void trunc_zero_origin(raft::resources const& handle,
                        raft::device_matrix_view<const m_t, idx_t, col_major> in,
                        raft::device_matrix_view<m_t, idx_t, col_major> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(out.extent(0) <= in.extent(0) && out.extent(1) <= in.extent(1),
                "Output matrix must have less or equal number of rows and columns");
 

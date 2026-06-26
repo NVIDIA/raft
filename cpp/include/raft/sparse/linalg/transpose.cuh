@@ -7,8 +7,11 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cusparse_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
-#include <raft/sparse/linalg/detail/transpose.h>
+#include <raft/sparse/detail/cusparse_wrappers.h>
+
+#include <rmm/device_uvector.hpp>
 
 namespace raft {
 namespace sparse {
@@ -43,17 +46,44 @@ void csr_transpose(raft::resources const& handle,
                    value_idx nnz,
                    cudaStream_t stream)
 {
-  detail::csr_transpose(resource::get_cusparse_handle(handle),
-                        csr_indptr,
-                        csr_indices,
-                        csr_data,
-                        csc_indptr,
-                        csc_indices,
-                        csc_data,
-                        csr_nrows,
-                        csr_ncols,
-                        nnz,
-                        stream);
+  auto cusparse_h = resource::get_cusparse_handle(handle);
+
+  size_t convert_csc_workspace_size = 0;
+  RAFT_CUSPARSE_TRY(raft::sparse::detail::cusparsecsr2csc_bufferSize(cusparse_h,
+                                                                     csr_nrows,
+                                                                     csr_ncols,
+                                                                     nnz,
+                                                                     csr_data,
+                                                                     csr_indptr,
+                                                                     csr_indices,
+                                                                     csc_data,
+                                                                     csc_indptr,
+                                                                     csc_indices,
+                                                                     CUSPARSE_ACTION_NUMERIC,
+                                                                     CUSPARSE_INDEX_BASE_ZERO,
+                                                                     CUSPARSE_CSR2CSC_ALG1,
+                                                                     &convert_csc_workspace_size,
+                                                                     stream));
+
+  rmm::device_uvector<char> convert_csc_workspace(convert_csc_workspace_size, stream);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
+
+  RAFT_CUSPARSE_TRY(raft::sparse::detail::cusparsecsr2csc(cusparse_h,
+                                                          csr_nrows,
+                                                          csr_ncols,
+                                                          nnz,
+                                                          csr_data,
+                                                          csr_indptr,
+                                                          csr_indices,
+                                                          csc_data,
+                                                          csc_indptr,
+                                                          csc_indices,
+                                                          CUSPARSE_ACTION_NUMERIC,
+                                                          CUSPARSE_INDEX_BASE_ZERO,
+                                                          CUSPARSE_CSR2CSC_ALG1,
+                                                          convert_csc_workspace.data(),
+                                                          stream));
 }
 
 };  // end NAMESPACE linalg

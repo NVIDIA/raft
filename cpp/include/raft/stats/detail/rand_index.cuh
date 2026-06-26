@@ -112,13 +112,15 @@ RAFT_KERNEL computeTheNumerator(
 /**
  * @brief Function to calculate RandIndex
  * <a href="https://en.wikipedia.org/wiki/Rand_index">more info on rand index</a>
+ * @param dry_run: whether to run in dry-run mode
  * @param firstClusterArray: the array of classes of type T
  * @param secondClusterArray: the array of classes of type T
  * @param size: the size of the data points of type uint64_t
  * @param stream: the cudaStream object
  */
 template <typename T>
-double compute_rand_index(const T* firstClusterArray,
+double compute_rand_index(bool dry_run,
+                          const T* firstClusterArray,
                           const T* secondClusterArray,
                           uint64_t size,
                           cudaStream_t stream)
@@ -130,6 +132,7 @@ double compute_rand_index(const T* firstClusterArray,
 
   // allocating and initializing memory for a and b in the GPU
   rmm::device_uvector<uint64_t> arr_buf(2, stream);
+  if (dry_run) { return 0.0; }
   RAFT_CUDA_TRY(cudaMemsetAsync(arr_buf.data(), 0, 2 * sizeof(uint64_t), stream));
 
   // kernel configuration

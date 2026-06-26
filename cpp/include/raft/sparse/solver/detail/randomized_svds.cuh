@@ -5,6 +5,7 @@
 
 #pragma once
 
+#include <raft/core/copy.hpp>
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/logger.hpp>
@@ -228,7 +229,10 @@ void sparse_randomized_svd(
   }
 
   // Step 9: Truncate S, optionally compute Vt
-  raft::copy(singular_values.data_handle(), S_full.data_handle(), k, stream);
+  raft::copy(handle,
+             singular_values,
+             raft::make_device_vector_view<const ValueTypeT, uint32_t>(S_full.data_handle(),
+                                                                       static_cast<uint32_t>(k)));
 
   // Vt[:k, :] = U_bt[:, :k]^T
   // U_bt is col-major (n, block_size); transpose its first k columns to (k, n) col-major.

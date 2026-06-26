@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/binary_op.cuh>
 
@@ -54,6 +55,7 @@ void choleskyRank1Update(raft::resources const& handle,
     *n_bytes = offset + 1 * sizeof(math_t);
     return;
   }
+  if (resource::get_dry_run_flag(handle)) { return; }
   math_t* s    = reinterpret_cast<math_t*>(((char*)workspace) + offset);
   math_t* L_22 = L + (n - 1) * ld + n - 1;
 

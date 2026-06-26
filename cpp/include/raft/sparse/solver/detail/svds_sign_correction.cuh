@@ -7,6 +7,7 @@
 
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_utils.cuh>
 
@@ -148,8 +149,10 @@ void svd_sign_correction(
   ValueTypeT* U_ptr  = U ? U->data_handle() : nullptr;
   ValueTypeT* Vt_ptr = Vt ? Vt->data_handle() : nullptr;
 
-  svd_sign_correction_kernel<<<k, threads_per_block, smem_size, stream>>>(U_ptr, Vt_ptr, m, n, k);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  if (!raft::resource::get_dry_run_flag(handle)) {
+    svd_sign_correction_kernel<<<k, threads_per_block, smem_size, stream>>>(U_ptr, Vt_ptr, m, n, k);
+    RAFT_CUDA_TRY(cudaPeekAtLastError());
+  }
 }
 
 }  // namespace raft::sparse::solver::detail

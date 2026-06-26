@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -313,14 +313,20 @@ class SDDMMTest : public ::testing::TestWithParam<SDDMMInputs<ValueType, IndexTy
     auto op_b = params.transpose_b ? raft::linalg::Operation::TRANSPOSE
                                    : raft::linalg::Operation::NON_TRANSPOSE;
 
-    raft::sparse::linalg::sddmm(handle,
-                                a,
-                                b,
-                                c,
-                                op_a,
-                                op_b,
-                                raft::make_host_scalar_view<OutputType>(&params.alpha),
-                                raft::make_host_scalar_view<OutputType>(&params.beta));
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        raft::sparse::linalg::sddmm(h,
+                                    a,
+                                    b,
+                                    c,
+                                    op_a,
+                                    op_b,
+                                    raft::make_host_scalar_view<OutputType>(&params.alpha),
+                                    raft::make_host_scalar_view<OutputType>(&params.beta));
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      1);
 
     resource::sync_stream(handle);
 

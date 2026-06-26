@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -63,8 +63,13 @@ class ternaryOpTest : public ::testing::TestWithParam<BinaryOpInputs<T>> {
     auto in2_view     = raft::make_device_vector_view<const T>(in2.data(), len);
     auto in3_view     = raft::make_device_vector_view<const T>(in3.data(), len);
 
-    ternary_op(handle, in1_view, in2_view, in3_view, out_add_view, add);
-    ternary_op(handle, in1_view, in2_view, in3_view, out_mul_view, mul);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        ternary_op(h, in1_view, in2_view, in3_view, out_add_view, add);
+        ternary_op(h, in1_view, in2_view, in3_view, out_mul_view, mul);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
   }
 
  protected:

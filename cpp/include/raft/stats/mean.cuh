@@ -34,7 +34,7 @@ namespace stats {
 template <bool rowMajor, typename Type, typename IdxType = int>
 void mean(Type* mu, const Type* data, IdxType D, IdxType N, cudaStream_t stream)
 {
-  detail::mean<rowMajor>(mu, data, D, N, stream);
+  detail::mean<rowMajor>(false, mu, data, D, N, stream);
 }
 
 /**
@@ -59,7 +59,7 @@ template <bool rowMajor, typename Type, typename IdxType = int>
 [[deprecated("'sample' parameter deprecated")]] void mean(
   Type* mu, const Type* data, IdxType D, IdxType N, bool sample, cudaStream_t stream)
 {
-  detail::mean<rowMajor>(mu, data, D, N, sample, stream);
+  detail::mean<rowMajor>(false, mu, data, D, N, sample, stream);
 }
 
 /**
@@ -90,7 +90,8 @@ void mean(raft::resources const& handle,
   RAFT_EXPECTS(data.extent(1) == mu.extent(0), "Size mismatch between data and mu");
   RAFT_EXPECTS(mu.is_exhaustive(), "mu must be contiguous");
   RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
-  detail::mean<std::is_same_v<layout_t, raft::row_major>>(mu.data_handle(),
+  detail::mean<std::is_same_v<layout_t, raft::row_major>>(raft::resource::get_dry_run_flag(handle),
+                                                          mu.data_handle(),
                                                           data.data_handle(),
                                                           data.extent(1),
                                                           data.extent(0),
@@ -125,7 +126,8 @@ template <typename value_t, typename idx_t, typename layout_t>
   RAFT_EXPECTS(data.extent(1) == mu.extent(0), "Size mismatch between data and mu");
   RAFT_EXPECTS(mu.is_exhaustive(), "mu must be contiguous");
   RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
-  detail::mean<std::is_same_v<layout_t, raft::row_major>>(mu.data_handle(),
+  detail::mean<std::is_same_v<layout_t, raft::row_major>>(raft::resource::get_dry_run_flag(handle),
+                                                          mu.data_handle(),
                                                           data.data_handle(),
                                                           data.extent(1),
                                                           data.extent(0),

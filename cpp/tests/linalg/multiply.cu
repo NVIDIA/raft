@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -39,8 +39,10 @@ class MultiplyTest : public ::testing::TestWithParam<UnaryOpInputs<T>> {
     auto out_view    = raft::make_device_vector_view(out.data(), len);
     auto in_view     = raft::make_device_vector_view<const T>(in.data(), len);
     auto scalar_view = raft::make_host_scalar_view<const T>(&params.scalar);
-    multiply_scalar(handle, in_view, out_view, scalar_view);
-    resource::sync_stream(handle, stream);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) { multiply_scalar(h, in_view, out_view, scalar_view); },
+      raft::alloc_behavior::NO_ALLOCATIONS);
   }
 
  protected:

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -59,17 +59,22 @@ class MeanTest : public ::testing::TestWithParam<MeanInputs<T>> {
   void meanSGtest(T* data, cudaStream_t stream)
   {
     int rows = params.rows, cols = params.cols;
-    if (params.rowMajor) {
-      using layout = raft::row_major;
-      mean(handle,
-           raft::make_device_matrix_view<const T, int, layout>(data, rows, cols),
-           raft::make_device_vector_view<T, int>(mean_act.data(), cols));
-    } else {
-      using layout = raft::col_major;
-      mean(handle,
-           raft::make_device_matrix_view<const T, int, layout>(data, rows, cols),
-           raft::make_device_vector_view<T, int>(mean_act.data(), cols));
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.rowMajor) {
+          using layout = raft::row_major;
+          mean(h,
+               raft::make_device_matrix_view<const T, int, layout>(data, rows, cols),
+               raft::make_device_vector_view<T, int>(mean_act.data(), cols));
+        } else {
+          using layout = raft::col_major;
+          mean(h,
+               raft::make_device_matrix_view<const T, int, layout>(data, rows, cols),
+               raft::make_device_vector_view<T, int>(mean_act.data(), cols));
+        }
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
   }
 
  protected:

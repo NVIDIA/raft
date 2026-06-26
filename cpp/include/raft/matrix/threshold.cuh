@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/matrix.cuh>
 
 namespace raft {
@@ -34,6 +35,7 @@ void zero_small_values(raft::resources const& handle,
                        raft::device_matrix_view<math_t, idx_t, layout> out,
                        math_t thres = 1e-15)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.size() == out.size(), "Input and output matrices must have same size");
   detail::setSmallValuesZero(
     out.data_handle(), in.data_handle(), in.size(), resource::get_cuda_stream(handle), thres);
@@ -53,6 +55,7 @@ void zero_small_values(raft::resources const& handle,
                        raft::device_matrix_view<math_t, idx_t, layout> inout,
                        math_t thres = 1e-15)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   detail::setSmallValuesZero(
     inout.data_handle(), inout.size(), resource::get_cuda_stream(handle), thres);
 }

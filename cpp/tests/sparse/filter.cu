@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -151,7 +151,13 @@ TEST_P(COORemoveScalarView, ResultView)
 
   auto scalar = raft::make_host_scalar<float>(0.0f);
 
-  op::coo_remove_scalar<128, float, int, int>(h, in_view, scalar.view(), out_matrix);
+  raft::execute_with_dry_run_check(
+    h,
+    [&](raft::resources const& h) {
+      op::coo_remove_scalar<128, float, int, int>(h, in_view, scalar.view(), out_matrix);
+    },
+    raft::alloc_behavior::DATA_DRIVEN,
+    2 * 5 * sizeof(int));
   RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
 
   auto out_nnz = out_matrix.structure_view().get_nnz();

@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/scores.cuh>
 
 namespace raft {
@@ -34,7 +35,7 @@ namespace stats {
 template <typename math_t>
 math_t r2_score(math_t* y, math_t* y_hat, int n, cudaStream_t stream)
 {
-  return detail::r2_score(y, y_hat, n, stream);
+  return detail::r2_score(false, y, y_hat, n, stream);
 }
 
 /**
@@ -69,7 +70,8 @@ value_t r2_score(raft::resources const& handle,
   RAFT_EXPECTS(y_hat.is_exhaustive(), "y_hat must be contiguous");
 
   // TODO: Change the underlying implementation to remove the need to const_cast
-  return detail::r2_score(const_cast<value_t*>(y.data_handle()),
+  return detail::r2_score(resource::get_dry_run_flag(handle),
+                          const_cast<value_t*>(y.data_handle()),
                           const_cast<value_t*>(y_hat.data_handle()),
                           y.extent(0),
                           resource::get_cuda_stream(handle));

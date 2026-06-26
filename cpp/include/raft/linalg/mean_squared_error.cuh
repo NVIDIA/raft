@@ -12,6 +12,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 
 namespace raft {
 namespace linalg {
@@ -58,6 +59,7 @@ void mean_squared_error(raft::resources const& handle,
                         raft::device_scalar_view<OutValueType, IndexType> out,
                         OutValueType weight)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(A.size() == B.size(), "Size mismatch between inputs");
 
   meanSquaredError(out.data_handle(),

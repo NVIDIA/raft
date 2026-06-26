@@ -10,6 +10,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/stats/detail/stddev.cuh>
 
@@ -43,7 +44,7 @@ void stddev(Type* std,
             bool sample,
             cudaStream_t stream)
 {
-  detail::stddev<rowMajor>(std, data, mu, D, N, sample, stream);
+  detail::stddev<rowMajor>(false, std, data, mu, D, N, sample, stream);
 }
 
 /**
@@ -73,7 +74,7 @@ void vars(Type* var,
           bool sample,
           cudaStream_t stream)
 {
-  detail::vars<rowMajor>(var, data, mu, D, N, sample, stream);
+  detail::vars<rowMajor>(false, var, data, mu, D, N, sample, stream);
 }
 
 /**
@@ -111,7 +112,8 @@ void stddev(raft::resources const& handle,
                 "raft::row_major or raft::col_major (or one of their aliases)");
   RAFT_EXPECTS(mu.size() == std.size(), "Size mismatch between mu and std");
   RAFT_EXPECTS(mu.extent(0) == data.extent(1), "Size mismatch between data and mu");
-  detail::stddev<is_row_major>(std.data_handle(),
+  detail::stddev<is_row_major>(resource::get_dry_run_flag(handle),
+                               std.data_handle(),
                                data.data_handle(),
                                mu.data_handle(),
                                data.extent(1),
@@ -157,7 +159,8 @@ void vars(raft::resources const& handle,
                 "raft::row_major or raft::col_major (or one of their aliases)");
   RAFT_EXPECTS(mu.size() == var.size(), "Size mismatch between mu and std");
   RAFT_EXPECTS(mu.extent(0) == data.extent(1), "Size mismatch between data and mu");
-  detail::vars<is_row_major>(var.data_handle(),
+  detail::vars<is_row_major>(resource::get_dry_run_flag(handle),
+                             var.data_handle(),
                              data.data_handle(),
                              mu.data_handle(),
                              data.extent(1),

@@ -59,23 +59,31 @@ class MeanVarTest : public ::testing::TestWithParam<MeanVarInputs<T>> {
     random::RngState r(params.seed);
     normal(handle, r, data.data(), params.cols * params.rows, params.mean, params.stddev);
 
-    if (params.rowMajor) {
-      using layout = raft::row_major;
-      meanvar(
-        handle,
-        raft::make_device_matrix_view<const T, int, layout>(data.data(), params.rows, params.cols),
-        raft::make_device_vector_view<T, int>(mean_act.data(), params.cols),
-        raft::make_device_vector_view<T, int>(vars_act.data(), params.cols),
-        params.sample);
-    } else {
-      using layout = raft::col_major;
-      meanvar(
-        handle,
-        raft::make_device_matrix_view<const T, int, layout>(data.data(), params.rows, params.cols),
-        raft::make_device_vector_view<T, int>(mean_act.data(), params.cols),
-        raft::make_device_vector_view<T, int>(vars_act.data(), params.cols),
-        params.sample);
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.rowMajor) {
+          using layout = raft::row_major;
+          meanvar(h,
+                  raft::make_device_matrix_view<const T, int, layout>(
+                    data.data(), params.rows, params.cols),
+                  raft::make_device_vector_view<T, int>(mean_act.data(), params.cols),
+                  raft::make_device_vector_view<T, int>(vars_act.data(), params.cols),
+                  params.sample);
+        } else {
+          using layout = raft::col_major;
+          meanvar(h,
+                  raft::make_device_matrix_view<const T, int, layout>(
+                    data.data(), params.rows, params.cols),
+                  raft::make_device_vector_view<T, int>(mean_act.data(), params.cols),
+                  raft::make_device_vector_view<T, int>(vars_act.data(), params.cols),
+                  params.sample);
+        }
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      params.rowMajor ? sizeof(raft::stats::detail::mean_var<T>) * params.cols +
+                          sizeof(int) * raft::ceildiv(params.cols, 32)
+                      : 0);
     RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
   }
 

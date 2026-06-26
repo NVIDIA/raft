@@ -10,6 +10,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
 #include <raft/core/resource/detail/stream_sync_event.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/matrix/copy.cuh>
 #include <raft/util/cudart_utils.hpp>
@@ -45,8 +46,12 @@ void eigDC_legacy(raft::resources const& handle,
                                                eig_vals,
                                                &lwork));
 
+  // TODO(achirkin): Consider using the workspace resource for these temporary allocations.
   rmm::device_uvector<math_t> d_work(lwork, stream);
   rmm::device_scalar<int> d_dev_info(stream);
+
+  // The workspace is already allocated, no more allocation are foreseeable.
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   raft::matrix::copy(handle,
                      make_device_matrix_view<const math_t>(in, n_rows, n_cols),
@@ -122,6 +127,12 @@ void eigDC(raft::resources const& handle,
   rmm::device_scalar<int> d_dev_info(stream_new);
   std::vector<math_t> h_work(workspaceHost / sizeof(math_t));
 
+  if (resource::get_dry_run_flag(handle)) {
+    // No more allocations beyond this points, but need to cleanup.
+    RAFT_CUSOLVER_TRY(cusolverDnDestroyParams(dn_params));
+    return;
+  }
+
   raft::copy(eig_vectors, in, n_rows * n_cols, stream_new);
 
   RAFT_CUSOLVER_TRY(cusolverDnxsyevd(cusolverH,
@@ -188,7 +199,9 @@ void eigSelDC(raft::resources const& handle,
 
   rmm::device_uvector<math_t> d_work(lwork, stream);
   rmm::device_scalar<int> d_dev_info(stream);
-  rmm::device_uvector<math_t> d_eig_vectors(0, stream);
+  rmm::device_uvector<math_t> d_eig_vectors(memUsage == COPY_INPUT ? n_rows * n_cols : 0, stream);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   if (memUsage == OVERWRITE_INPUT) {
     RAFT_CUSOLVER_TRY(cusolverDnsyevdx(cusolverH,
@@ -209,7 +222,6 @@ void eigSelDC(raft::resources const& handle,
                                        d_dev_info.data(),
                                        stream));
   } else if (memUsage == COPY_INPUT) {
-    d_eig_vectors.resize(n_rows * n_cols, stream);
     raft::matrix::copy(handle,
                        make_device_matrix_view<const math_t>(in, n_rows, n_cols),
                        make_device_matrix_view(eig_vectors, n_rows, n_cols));
@@ -285,6 +297,12 @@ void eigJacobi(raft::resources const& handle,
 
   rmm::device_uvector<math_t> d_work(lwork, stream);
   rmm::device_scalar<int> dev_info(stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    // No more allocations beyond this points, but need to cleanup.
+    RAFT_CUSOLVER_TRY(cusolverDnDestroySyevjInfo(syevj_params));
+    return;
+  }
 
   raft::matrix::copy(handle,
                      make_device_matrix_view<const math_t>(in, n_rows, n_cols),

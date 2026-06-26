@@ -1,7 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
+
+#include "../test_utils.cuh"
 
 #include <raft/core/device_container_policy.hpp>
 #include <raft/core/device_mdarray.hpp>
@@ -110,43 +112,48 @@ TEST(MDArray, HostFlatten) { test_host_flatten(); }
 void test_device_flatten()
 {
   raft::resources handle;
-  // flatten 3d device mdspan
-  {
-    raft::resources handle;
-    using three_d_extents = extents<int, dynamic_extent, dynamic_extent, dynamic_extent>;
-    using three_d_mdarray = device_mdarray<int, three_d_extents>;
+  execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      // flatten 3d device mdspan
+      {
+        using three_d_extents = extents<int, dynamic_extent, dynamic_extent, dynamic_extent>;
+        using three_d_mdarray = device_mdarray<int, three_d_extents>;
 
-    three_d_extents extents{3, 3, 3};
-    typename three_d_mdarray::mapping_type layout{extents};
-    typename three_d_mdarray::container_policy_type policy{};
-    three_d_mdarray mda{handle, layout, policy};
+        three_d_extents extents{3, 3, 3};
+        typename three_d_mdarray::mapping_type layout{extents};
+        typename three_d_mdarray::container_policy_type policy{};
+        three_d_mdarray mda{h, layout, policy};
 
-    auto flat_view = flatten(mda);
+        auto flat_view = flatten(mda);
 
-    static_assert(std::is_same_v<typename three_d_mdarray::layout_type,
-                                 typename decltype(flat_view)::layout_type>,
-                  "layouts not the same");
+        static_assert(std::is_same_v<typename three_d_mdarray::layout_type,
+                                     typename decltype(flat_view)::layout_type>,
+                      "layouts not the same");
 
-    ASSERT_EQ(flat_view.extents().rank(), 1);
-    ASSERT_EQ(flat_view.size(), mda.size());
-  }
+        ASSERT_EQ(flat_view.extents().rank(), 1);
+        ASSERT_EQ(flat_view.size(), mda.size());
+      }
 
-  // flatten device vector
-  {
-    auto dv        = make_device_vector<int>(handle, 27);
-    auto flat_view = flatten(dv.view());
+      // flatten device vector
+      {
+        auto dv        = make_device_vector<int>(h, 27);
+        auto flat_view = flatten(dv.view());
 
-    ASSERT_EQ(dv.extents().rank(), flat_view.extents().rank());
-    ASSERT_EQ(dv.extent(0), flat_view.extent(0));
-  }
+        ASSERT_EQ(dv.extents().rank(), flat_view.extents().rank());
+        ASSERT_EQ(dv.extent(0), flat_view.extent(0));
+      }
 
-  // flatten device scalar
-  {
-    auto ds        = make_device_scalar<int>(handle, 27);
-    auto flat_view = flatten(ds.view());
+      // flatten device scalar
+      {
+        auto ds        = make_device_scalar<int>(h, 27);
+        auto flat_view = flatten(ds.view());
 
-    ASSERT_EQ(flat_view.extent(0), 1);
-  }
+        ASSERT_EQ(flat_view.extent(0), 1);
+      }
+    },
+    alloc_behavior::ARGUMENT_DRIVEN,
+    27 * sizeof(int));
 }
 
 TEST(MDArray, DeviceFlatten) { test_device_flatten(); }
@@ -172,21 +179,26 @@ void test_reshape()
 
   // reshape 4d device array to 2d
   {
-    raft::resources handle;
-    using four_d_extents =
-      extents<int, dynamic_extent, dynamic_extent, dynamic_extent, dynamic_extent>;
-    using four_d_mdarray = device_mdarray<int, four_d_extents>;
+    execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        using four_d_extents =
+          extents<int, dynamic_extent, dynamic_extent, dynamic_extent, dynamic_extent>;
+        using four_d_mdarray = device_mdarray<int, four_d_extents>;
 
-    four_d_extents extents{2, 2, 2, 2};
-    typename four_d_mdarray::mapping_type layout{extents};
-    typename four_d_mdarray::container_policy_type policy{};
-    four_d_mdarray mda{handle, layout, policy};
+        four_d_extents extents{2, 2, 2, 2};
+        typename four_d_mdarray::mapping_type layout{extents};
+        typename four_d_mdarray::container_policy_type policy{};
+        four_d_mdarray mda{h, layout, policy};
 
-    auto matrix = reshape(mda, raft::extents<int, dynamic_extent, dynamic_extent>{4, 4});
+        auto matrix = reshape(mda, raft::extents<int, dynamic_extent, dynamic_extent>{4, 4});
 
-    ASSERT_EQ(matrix.extents().rank(), 2);
-    ASSERT_EQ(matrix.extent(0), 4);
-    ASSERT_EQ(matrix.extent(1), 4);
+        ASSERT_EQ(matrix.extents().rank(), 2);
+        ASSERT_EQ(matrix.extent(0), 4);
+        ASSERT_EQ(matrix.extent(1), 4);
+      },
+      alloc_behavior::ARGUMENT_DRIVEN,
+      16 * sizeof(int));
   }
 
   // reshape 2d host matrix with static extents to vector

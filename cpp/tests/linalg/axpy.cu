@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "../test_utils.cuh"
@@ -88,53 +88,58 @@ class AxpyTest : public ::testing::TestWithParam<AxpyInputs<T>> {
     rmm::device_scalar<T> device_alpha(params.alpha, stream);
     auto device_alpha_view = make_device_scalar_view<const T>(device_alpha.data());
 
-    if ((params.incx > 1) && (params.incy > 1)) {
-      auto x_view = make_device_vector_view<const T, IndexType, layout_stride>(
-        x.data(), make_vector_strided_layout<IndexType>(params.len, params.incx));
-      axpy(handle,
-           host_alpha_view,
-           x_view,
-           make_device_vector_view<T, IndexType, layout_stride>(
-             y_host_alpha.data(), make_vector_strided_layout(params.len, params.incy)));
-      axpy(handle,
-           device_alpha_view,
-           x_view,
-           make_device_vector_view<T, IndexType, layout_stride>(
-             y_device_alpha.data(), make_vector_strided_layout(params.len, params.incy)));
-    } else if (params.incx > 1) {
-      auto x_view = make_device_vector_view<const T, IndexType, layout_stride>(
-        x.data(), make_vector_strided_layout<IndexType>(params.len, params.incx));
-      axpy(handle,
-           host_alpha_view,
-           x_view,
-           make_device_vector_view<T>(y_host_alpha.data(), params.len));
-      axpy(handle,
-           device_alpha_view,
-           x_view,
-           make_device_vector_view<T>(y_device_alpha.data(), params.len));
-    } else if (params.incy > 1) {
-      auto x_view = make_device_vector_view<const T>(x.data(), params.len);
-      axpy(handle,
-           host_alpha_view,
-           x_view,
-           make_device_vector_view<T, IndexType, layout_stride>(
-             y_host_alpha.data(), make_vector_strided_layout(params.len, params.incy)));
-      axpy(handle,
-           device_alpha_view,
-           x_view,
-           make_device_vector_view<T, IndexType, layout_stride>(
-             y_device_alpha.data(), make_vector_strided_layout(params.len, params.incy)));
-    } else {
-      auto x_view = make_device_vector_view<const T>(x.data(), params.len);
-      axpy(handle,
-           host_alpha_view,
-           x_view,
-           make_device_vector_view<T>(y_host_alpha.data(), params.len));
-      axpy(handle,
-           device_alpha_view,
-           x_view,
-           make_device_vector_view<T>(y_device_alpha.data(), params.len));
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if ((params.incx > 1) && (params.incy > 1)) {
+          auto x_view = make_device_vector_view<const T, IndexType, layout_stride>(
+            x.data(), make_vector_strided_layout<IndexType>(params.len, params.incx));
+          axpy(h,
+               host_alpha_view,
+               x_view,
+               make_device_vector_view<T, IndexType, layout_stride>(
+                 y_host_alpha.data(), make_vector_strided_layout(params.len, params.incy)));
+          axpy(h,
+               device_alpha_view,
+               x_view,
+               make_device_vector_view<T, IndexType, layout_stride>(
+                 y_device_alpha.data(), make_vector_strided_layout(params.len, params.incy)));
+        } else if (params.incx > 1) {
+          auto x_view = make_device_vector_view<const T, IndexType, layout_stride>(
+            x.data(), make_vector_strided_layout<IndexType>(params.len, params.incx));
+          axpy(h,
+               host_alpha_view,
+               x_view,
+               make_device_vector_view<T>(y_host_alpha.data(), params.len));
+          axpy(h,
+               device_alpha_view,
+               x_view,
+               make_device_vector_view<T>(y_device_alpha.data(), params.len));
+        } else if (params.incy > 1) {
+          auto x_view = make_device_vector_view<const T>(x.data(), params.len);
+          axpy(h,
+               host_alpha_view,
+               x_view,
+               make_device_vector_view<T, IndexType, layout_stride>(
+                 y_host_alpha.data(), make_vector_strided_layout(params.len, params.incy)));
+          axpy(h,
+               device_alpha_view,
+               x_view,
+               make_device_vector_view<T, IndexType, layout_stride>(
+                 y_device_alpha.data(), make_vector_strided_layout(params.len, params.incy)));
+        } else {
+          auto x_view = make_device_vector_view<const T>(x.data(), params.len);
+          axpy(h,
+               host_alpha_view,
+               x_view,
+               make_device_vector_view<T>(y_host_alpha.data(), params.len));
+          axpy(h,
+               device_alpha_view,
+               x_view,
+               make_device_vector_view<T>(y_device_alpha.data(), params.len));
+        }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
 
     resource::sync_stream(handle);
   }

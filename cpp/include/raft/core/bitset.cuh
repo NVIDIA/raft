@@ -10,6 +10,7 @@
 #include <raft/core/device_container_policy.hpp>
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/operators.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/map.cuh>
 #include <raft/linalg/reduce.cuh>
@@ -166,6 +167,8 @@ void bitset_view<bitset_t, index_t>::repeat(const raft::resources& res,
                                             index_t times,
                                             bitset_t* output_device_ptr) const
 {
+  // Only a copy and kernel run below this point.
+  if (resource::get_dry_run_flag(res)) { return; }
   constexpr index_t bits_per_element = sizeof(bitset_t) * 8;
 
   if (bitset_len_ % bits_per_element == 0) {

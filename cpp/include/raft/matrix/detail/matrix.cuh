@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/util/cache_util.cuh>
@@ -297,6 +298,7 @@ void getDiagonalInverseMatrix(m_t* in, idx_t len, cudaStream_t stream)
 template <typename m_t, typename idx_t = int>
 m_t getL2Norm(raft::resources const& handle, const m_t* in, idx_t size, cudaStream_t stream)
 {
+  if (resource::get_dry_run_flag(handle)) { return m_t{0}; }
   cublasHandle_t cublasH = resource::get_cublas_handle(handle);
   m_t normval            = 0;
   RAFT_EXPECTS(

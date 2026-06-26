@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/gemm.cuh>
 #include <raft/stats/mean_center.cuh>
 
@@ -45,6 +46,7 @@ void cov(raft::resources const& handle,
          bool stable,
          cudaStream_t stream)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   if (stable) {
     // since mean operation is assumed to be along a given column, broadcast
     // must be along rows!

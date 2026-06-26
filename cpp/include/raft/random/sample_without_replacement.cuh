@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <cassert>
@@ -131,7 +132,8 @@ void sample_without_replacement(raft::resources const& handle,
   }
   const weight_type* wts_ptr = wts_has_value ? (*wts).data_handle() : nullptr;
 
-  detail::sampleWithoutReplacement(rng_state,
+  detail::sampleWithoutReplacement(resource::get_dry_run_flag(handle),
+                                   rng_state,
                                    out.data_handle(),
                                    outIdx_ptr,
                                    in.data_handle(),

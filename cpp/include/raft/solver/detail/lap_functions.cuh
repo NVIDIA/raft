@@ -30,6 +30,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/solver/detail/lap_kernels.cuh>
 #include <raft/solver/linear_assignment_types.hpp>
@@ -111,6 +112,7 @@ inline void initialReduction(raft::resources const& handle,
                              int SP,
                              vertex_t N)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   dim3 blocks_per_grid;
   dim3 threads_per_block;
   int total_blocks = 0;
@@ -151,6 +153,8 @@ inline void computeInitialAssignments(raft::resources const& handle,
   rmm::device_uvector<int> row_lock_v(size, resource::get_cuda_stream(handle));
   rmm::device_uvector<int> col_lock_v(size, resource::get_cuda_stream(handle));
 
+  if (resource::get_dry_run_flag(handle)) { return; }
+
   thrust::fill_n(thrust::device, d_vertices.row_assignments, size, -1);
   thrust::fill_n(thrust::device, d_vertices.col_assignments, size, -1);
   thrust::fill_n(thrust::device, row_lock_v.data(), size, 0);
@@ -184,6 +188,7 @@ inline int computeRowCovers(raft::resources const& handle,
                             int SP,
                             vertex_t N)
 {
+  if (resource::get_dry_run_flag(handle)) { return {}; }
   dim3 blocks_per_grid;
   dim3 threads_per_block;
   int total_blocks = 0;
@@ -226,6 +231,7 @@ inline void coverZeroAndExpand(raft::resources const& handle,
                                vertex_t N,
                                weight_t epsilon)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   int total_blocks = 0;
   dim3 blocks_per_grid;
   dim3 threads_per_block;
@@ -258,10 +264,17 @@ inline vertex_t zeroCoverIteration(raft::resources const& handle,
                                    vertex_t N,
                                    weight_t epsilon)
 {
-  vertex_t M;
-
-  rmm::device_uvector<vertex_t> csr_ptrs_v(0, resource::get_cuda_stream(handle));
+  bool is_dry_run = resource::get_dry_run_flag(handle);
+  vertex_t M      = 0;
   rmm::device_uvector<vertex_t> csr_neighbors_v(0, resource::get_cuda_stream(handle));
+
+  // Allocate all buffers before dry-run check to track allocations
+  rmm::device_uvector<vertex_t> csr_ptrs_v(SP + 1, resource::get_cuda_stream(handle));
+  if (is_dry_run) {
+    // Upper bound for csr_neighbors_v: at most SP * N elements (one per matrix element)
+    csr_neighbors_v = rmm::device_uvector<vertex_t>(SP * N, resource::get_cuda_stream(handle));
+    return vertex_t{0};
+  }
 
   {
     dim3 blocks_per_grid;
@@ -273,9 +286,6 @@ inline vertex_t zeroCoverIteration(raft::resources const& handle,
 
     thrust::fill_n(thrust::device, predicates_v.data(), SP * N, false);
     thrust::fill_n(thrust::device, addresses_v.data(), SP * N, vertex_t{0});
-
-    csr_ptrs_v.resize(SP + 1, resource::get_cuda_stream(handle));
-
     thrust::fill_n(thrust::device, csr_ptrs_v.data(), (SP + 1), vertex_t{-1});
 
     detail::calculateRectangularDims(blocks_per_grid, threads_per_block, total_blocks, N, SP);
@@ -340,6 +350,7 @@ inline void executeZeroCover(raft::resources const& handle,
                              vertex_t N,
                              weight_t epsilon)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   vertex_t M = 1;
   while (M > 0) {
     M = zeroCoverIteration(
@@ -361,10 +372,15 @@ inline void reversePass(raft::resources const& handle,
 
   std::size_t size = SP * N;
 
-  detail::calculateLinearDims(blocks_per_grid, threads_per_block, total_blocks, size);
-
   rmm::device_uvector<bool> predicates_v(size, resource::get_cuda_stream(handle));
   rmm::device_uvector<vertex_t> addresses_v(size, resource::get_cuda_stream(handle));
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound for elements_v: at most size elements (one per matrix element)
+    rmm::device_uvector<vertex_t> elements_v(size, resource::get_cuda_stream(handle));
+    return;
+  }
+
+  detail::calculateLinearDims(blocks_per_grid, threads_per_block, total_blocks, size);
 
   thrust::fill_n(thrust::device, predicates_v.data(), size, false);
   thrust::fill_n(thrust::device, addresses_v.data(), size, vertex_t{0});
@@ -418,13 +434,18 @@ inline void augmentationPass(raft::resources const& handle,
                              int SP,
                              int N)
 {
+  rmm::device_uvector<bool> predicates_v(SP * N, resource::get_cuda_stream(handle));
+  rmm::device_uvector<vertex_t> addresses_v(SP * N, resource::get_cuda_stream(handle));
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound for elements_v: at most SP * N elements (one per matrix element)
+    rmm::device_uvector<vertex_t> elements_v(SP * N, resource::get_cuda_stream(handle));
+    return;
+  }
+
   int total_blocks = 0;
   dim3 blocks_per_grid;
   dim3 threads_per_block;
   detail::calculateLinearDims(blocks_per_grid, threads_per_block, total_blocks, SP * N);
-
-  rmm::device_uvector<bool> predicates_v(SP * N, resource::get_cuda_stream(handle));
-  rmm::device_uvector<vertex_t> addresses_v(SP * N, resource::get_cuda_stream(handle));
 
   thrust::fill_n(thrust::device, predicates_v.data(), SP * N, false);
   thrust::fill_n(thrust::device, addresses_v.data(), SP * N, vertex_t{0});
@@ -487,11 +508,13 @@ inline void dualUpdate(raft::resources const& handle,
                        vertex_t N,
                        weight_t epsilon)
 {
+  rmm::device_uvector<weight_t> sp_min_v(SP, resource::get_cuda_stream(handle));
+
+  if (resource::get_dry_run_flag(handle)) { return; }
+
   dim3 blocks_per_grid;
   dim3 threads_per_block;
   int total_blocks;
-
-  rmm::device_uvector<weight_t> sp_min_v(SP, resource::get_cuda_stream(handle));
 
   detail::calculateLinearDims(blocks_per_grid, threads_per_block, total_blocks, SP);
   kernel_dualUpdate_1<<<blocks_per_grid, threads_per_block, 0, resource::get_cuda_stream(handle)>>>(
@@ -530,6 +553,7 @@ inline void calcObjValDual(raft::resources const& handle,
                            int SP,
                            int N)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   dim3 blocks_per_grid;
   dim3 threads_per_block;
   int total_blocks = 0;
@@ -554,6 +578,7 @@ inline void calcObjValPrimal(raft::resources const& handle,
                              int SP,
                              vertex_t N)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   dim3 blocks_per_grid;
   dim3 threads_per_block;
   int total_blocks = 0;

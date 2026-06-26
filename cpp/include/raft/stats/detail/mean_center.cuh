@@ -16,45 +16,58 @@ namespace detail {
 
 /**
  * @brief Center the input matrix wrt its mean
+ * @tparam rowMajor whether input is row or col major
+ * @tparam bcastAlongRows whether to broadcast vector along rows or columns
  * @tparam Type the data type
  * @tparam IdxType Integer type used to for addressing
  * @tparam TPB threads per block of the cuda kernel launched
+ * @param dry_run whether to run in dry-run mode (skip CUDA work)
  * @param out the output mean-centered matrix
  * @param data input matrix
  * @param mu the mean vector
  * @param D number of columns of data
  * @param N number of rows of data
- * @param rowMajor whether input is row or col major
- * @param bcastAlongRows whether to broadcast vector along rows or columns
  * @param stream cuda stream where to launch work
  */
 template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = int, int TPB = 256>
-void meanCenter(
-  Type* out, const Type* data, const Type* mu, IdxType D, IdxType N, cudaStream_t stream)
+void meanCenter(bool dry_run,
+                Type* out,
+                const Type* data,
+                const Type* mu,
+                IdxType D,
+                IdxType N,
+                cudaStream_t stream)
 {
-  raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
-    out, data, mu, D, N, raft::sub_op{}, stream);
+  raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+    dry_run, out, data, mu, D, N, raft::sub_op{}, stream);
 }
 
 /**
  * @brief Add the input matrix wrt its mean
+ * @tparam rowMajor whether input is row or col major
+ * @tparam bcastAlongRows whether to broadcast vector along rows or columns
  * @tparam Type the data type
  * @tparam IdxType Integer type used to for addressing
  * @tparam TPB threads per block of the cuda kernel launched
+ * @param dry_run whether to run in dry-run mode (skip CUDA work)
  * @param out the output mean-added matrix
  * @param data input matrix
  * @param mu the mean vector
  * @param D number of columns of data
  * @param N number of rows of data
- * @param rowMajor whether input is row or col major
- * @param bcastAlongRows whether to broadcast vector along rows or columns
  * @param stream cuda stream where to launch work
  */
 template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = int, int TPB = 256>
-void meanAdd(Type* out, const Type* data, const Type* mu, IdxType D, IdxType N, cudaStream_t stream)
+void meanAdd(bool dry_run,
+             Type* out,
+             const Type* data,
+             const Type* mu,
+             IdxType D,
+             IdxType N,
+             cudaStream_t stream)
 {
-  raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
-    out, data, mu, D, N, raft::add_op{}, stream);
+  raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+    dry_run, out, data, mu, D, N, raft::add_op{}, stream);
 }
 
 };  // end namespace detail

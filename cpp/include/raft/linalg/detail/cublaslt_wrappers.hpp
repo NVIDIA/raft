@@ -10,6 +10,7 @@
 #include <raft/core/resource/cublaslt_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/custom_resource.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cache.hpp>
 #include <raft/util/cuda_data_type.hpp>
@@ -284,6 +285,8 @@ template <bool DevicePointerMode = false, typename S, typename A, typename B, ty
                                   uint64_t ldc,
                                   cudaStream_t stream)
 {
+  // We pass nullptr to the workspace, so the extra memory usage should be zero.
+  if (resource::get_dry_run_flag(res)) { return; }
   common::nvtx::range<common::nvtx::domain::raft> batch_scope(
     "linalg::matmul(m = %d, n = %d, k = %d)", m, n, k);
   std::shared_ptr<matmul_desc> mm_desc{nullptr};

@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusparse_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/sparse/coo.hpp>
 #include <raft/sparse/detail/cusparse_wrappers.h>
@@ -47,15 +48,19 @@ void coo_to_csr(raft::resources const& handle,
 {
   auto stream         = resource::get_cuda_stream(handle);
   auto cusparseHandle = resource::get_cusparse_handle(handle);
+
   rmm::device_uvector<int> dstRows(nnz, stream);
-  RAFT_CUDA_TRY(
-    cudaMemcpyAsync(dstRows.data(), srcRows, sizeof(int) * nnz, cudaMemcpyDeviceToDevice, stream));
-  RAFT_CUDA_TRY(
-    cudaMemcpyAsync(dstCols, srcCols, sizeof(int) * nnz, cudaMemcpyDeviceToDevice, stream));
   auto buffSize = raft::sparse::detail::cusparsecoosort_bufferSizeExt(
     cusparseHandle, m, m, nnz, srcRows, srcCols, stream);
   rmm::device_uvector<char> pBuffer(buffSize, stream);
   rmm::device_uvector<int> P(nnz, stream);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
+
+  RAFT_CUDA_TRY(
+    cudaMemcpyAsync(dstRows.data(), srcRows, sizeof(int) * nnz, cudaMemcpyDeviceToDevice, stream));
+  RAFT_CUDA_TRY(
+    cudaMemcpyAsync(dstCols, srcCols, sizeof(int) * nnz, cudaMemcpyDeviceToDevice, stream));
   RAFT_CUSPARSE_TRY(cusparseCreateIdentityPermutation(cusparseHandle, nnz, P.data()));
   raft::sparse::detail::cusparsecoosortByRow(
     cusparseHandle, m, m, nnz, dstRows.data(), dstCols, P.data(), pBuffer.data(), stream);

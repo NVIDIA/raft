@@ -137,9 +137,21 @@ class SparsePreprocessCSR
       auto bm25_vals = raft::make_device_vector<Type_f, int64_t>(handle, int(coo_a.nnz));
       raft::util::calc_tfidf_bm25<Index_, Type_f>(handle, csr_matrix.view(), bm25_vals.view());
       if (coo_on) {
-        raft::sparse::matrix::encode_bm25<float, int>(handle, coo_a_matrix, result.view());
+        raft::execute_with_dry_run_check(
+          handle,
+          [&](raft::resources const& h) {
+            raft::sparse::matrix::encode_bm25<float, int>(h, coo_a_matrix, result.view());
+          },
+          raft::alloc_behavior::DATA_DRIVEN,
+          sizeof(float) * coo_a.nnz);
       } else {
-        raft::sparse::matrix::encode_bm25<float, int>(handle, csr_matrix, result.view());
+        raft::execute_with_dry_run_check(
+          handle,
+          [&](raft::resources const& h) {
+            raft::sparse::matrix::encode_bm25<float, int>(h, csr_matrix, result.view());
+          },
+          raft::alloc_behavior::DATA_DRIVEN,
+          sizeof(float) * coo_a.nnz);
       }
       ASSERT_TRUE(raft::devArrMatch<Type_f>(bm25_vals.data_handle(),
                                             result.data_handle(),
@@ -151,9 +163,21 @@ class SparsePreprocessCSR
       raft::util::calc_tfidf_bm25<Index_, Type_f>(
         handle, csr_matrix.view(), tfidf_vals.view(), true);
       if (coo_on) {
-        raft::sparse::matrix::encode_tfidf<float, int>(handle, coo_a_matrix, result.view());
+        raft::execute_with_dry_run_check(
+          handle,
+          [&](raft::resources const& h) {
+            raft::sparse::matrix::encode_tfidf<float, int>(h, coo_a_matrix, result.view());
+          },
+          raft::alloc_behavior::ARGUMENT_DRIVEN,
+          1);
       } else {
-        raft::sparse::matrix::encode_tfidf<float, int>(handle, csr_matrix, result.view());
+        raft::execute_with_dry_run_check(
+          handle,
+          [&](raft::resources const& h) {
+            raft::sparse::matrix::encode_tfidf<float, int>(h, csr_matrix, result.view());
+          },
+          raft::alloc_behavior::ARGUMENT_DRIVEN,
+          1);
       }
       ASSERT_TRUE(raft::devArrMatch<Type_f>(tfidf_vals.data_handle(),
                                             result.data_handle(),

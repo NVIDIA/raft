@@ -9,6 +9,7 @@
 #include <raft/core/device_coo_matrix.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/init.cuh>
 #include <raft/sparse/convert/csr.cuh>
 #include <raft/sparse/coo.hpp>
@@ -401,22 +402,23 @@ void symmetrize(raft::resources const& handle,
   rmm::device_uvector<value_idx> symm_cols(nnz * 2, stream);
   rmm::device_uvector<value_t> symm_vals(nnz * 2, stream);
 
-  raft::copy_async(symm_rows.data(), rows, nnz, stream);
-  raft::copy_async(symm_rows.data() + nnz, cols, nnz, stream);
-  raft::copy_async(symm_cols.data(), cols, nnz, stream);
-  raft::copy_async(symm_cols.data() + nnz, rows, nnz, stream);
+  if (!resource::get_dry_run_flag(handle)) {
+    raft::copy_async(symm_rows.data(), rows, nnz, stream);
+    raft::copy_async(symm_rows.data() + nnz, cols, nnz, stream);
+    raft::copy_async(symm_cols.data(), cols, nnz, stream);
+    raft::copy_async(symm_cols.data() + nnz, rows, nnz, stream);
 
-  raft::copy_async(symm_vals.data(), vals, nnz, stream);
-  raft::copy_async(symm_vals.data() + nnz, vals, nnz, stream);
+    raft::copy_async(symm_vals.data(), vals, nnz, stream);
+    raft::copy_async(symm_vals.data() + nnz, vals, nnz, stream);
+  }
 
-  // sort COO
-  raft::sparse::op::coo_sort((value_idx)m,
+  raft::sparse::op::coo_sort(handle,
+                             (value_idx)m,
                              (value_idx)n,
                              static_cast<nnz_t>(nnz) * 2,
                              symm_rows.data(),
                              symm_cols.data(),
-                             symm_vals.data(),
-                             stream);
+                             symm_vals.data());
 
   raft::sparse::op::max_duplicates(
     handle, out, symm_rows.data(), symm_cols.data(), symm_vals.data(), nnz * 2, m, n);

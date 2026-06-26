@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/mutual_info_score.cuh>
 
 namespace raft {
@@ -35,7 +36,7 @@ double mutual_info_score(const T* firstClusterArray,
                          cudaStream_t stream)
 {
   return detail::mutual_info_score(
-    firstClusterArray, secondClusterArray, size, lowerLabelRange, upperLabelRange, stream);
+    false, firstClusterArray, secondClusterArray, size, lowerLabelRange, upperLabelRange, stream);
 }
 
 /**
@@ -66,7 +67,8 @@ double mutual_info_score(raft::resources const& handle,
                "Size mismatch between first_cluster_array and second_cluster_array");
   RAFT_EXPECTS(first_cluster_array.is_exhaustive(), "first_cluster_array must be contiguous");
   RAFT_EXPECTS(second_cluster_array.is_exhaustive(), "second_cluster_array must be contiguous");
-  return detail::mutual_info_score(first_cluster_array.data_handle(),
+  return detail::mutual_info_score(resource::get_dry_run_flag(handle),
+                                   first_cluster_array.data_handle(),
                                    second_cluster_array.data_handle(),
                                    first_cluster_array.extent(0),
                                    lower_label_range,

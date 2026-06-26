@@ -13,6 +13,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/stats/detail/contingencyMatrix.cuh>
 
@@ -53,7 +54,7 @@ size_t getContingencyMatrixWorkspaceSize(int nSamples,
                                          T maxLabel = std::numeric_limits<T>::max())
 {
   return detail::getContingencyMatrixWorkspaceSize(
-    nSamples, groundTruth, stream, minLabel, maxLabel);
+    false, nSamples, groundTruth, stream, minLabel, maxLabel);
 }
 
 /**
@@ -116,6 +117,7 @@ void get_input_class_cardinality(raft::resources const& handle,
                                  raft::host_scalar_view<value_t> minLabel,
                                  raft::host_scalar_view<value_t> maxLabel)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(minLabel.data_handle() != nullptr, "Invalid minLabel pointer");
   RAFT_EXPECTS(maxLabel.data_handle() != nullptr, "Invalid maxLabel pointer");
   detail::getInputClassCardinality(groundTruth.data_handle(),
@@ -169,12 +171,15 @@ void contingency_matrix(raft::resources const& handle,
   if (min_label.has_value()) { min_label_value = min_label.value(); }
   if (max_label.has_value()) { max_label_value = max_label.value(); }
 
-  auto workspace_sz = detail::getContingencyMatrixWorkspaceSize(ground_truth.extent(0),
+  auto workspace_sz = detail::getContingencyMatrixWorkspaceSize(resource::get_dry_run_flag(handle),
+                                                                ground_truth.extent(0),
                                                                 ground_truth.data_handle(),
                                                                 resource::get_cuda_stream(handle),
                                                                 min_label_value,
                                                                 max_label_value);
   auto workspace    = raft::make_device_vector<char>(handle, workspace_sz);
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   detail::contingencyMatrix<value_t, out_t>(ground_truth.data_handle(),
                                             predicted_label.data_handle(),

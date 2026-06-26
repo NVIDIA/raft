@@ -16,6 +16,7 @@ namespace detail {
 /**
  * @brief Function to calculate the v-measure between two clusters
  *
+ * @param dry_run: whether to run in dry-run mode
  * @param truthClusterArray: the array of truth classes of type T
  * @param predClusterArray: the array of predicted classes of type T
  * @param size: the size of the data points of type int
@@ -25,7 +26,8 @@ namespace detail {
  * @param beta: v_measure parameter
  */
 template <typename T>
-double v_measure(const T* truthClusterArray,
+double v_measure(bool dry_run,
+                 const T* truthClusterArray,
                  const T* predClusterArray,
                  int size,
                  T lowerLabelRange,
@@ -35,10 +37,10 @@ double v_measure(const T* truthClusterArray,
 {
   double computedHomogeity, computedCompleteness, computedVMeasure;
 
-  computedHomogeity = raft::stats::homogeneity_score(
-    truthClusterArray, predClusterArray, size, lowerLabelRange, upperLabelRange, stream);
-  computedCompleteness = raft::stats::homogeneity_score(
-    predClusterArray, truthClusterArray, size, lowerLabelRange, upperLabelRange, stream);
+  computedHomogeity = homogeneity_score(
+    dry_run, truthClusterArray, predClusterArray, size, lowerLabelRange, upperLabelRange, stream);
+  computedCompleteness = homogeneity_score(
+    dry_run, predClusterArray, truthClusterArray, size, lowerLabelRange, upperLabelRange, stream);
 
   if (computedCompleteness + computedHomogeity == 0.0)
     computedVMeasure = 0.0;

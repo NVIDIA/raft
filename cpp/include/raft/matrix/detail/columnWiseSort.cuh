@@ -164,7 +164,8 @@ cudaError_t layoutSortOffset(T* in, T value, int n_times, cudaStream_t stream)
  * @param sortedKeys: Optional, output matrix for sorted keys (input)
  */
 template <typename InType, typename OutType>
-void sortColumnsPerRow(const InType* in,
+void sortColumnsPerRow(bool dry_run,
+                       const InType* in,
                        OutType* out,
                        int n_rows,
                        int n_columns,
@@ -203,6 +204,8 @@ void sortColumnsPerRow(const InType* in,
       n_columns <= dtypeToColumnMap[perElementSmemUsage]) {
     // more elements per thread --> more register pressure
     // 512(blockSize) * 8 elements per thread = 71 register / thread
+
+    if (dry_run) { return; }
 
     // instantiate some kernel combinations
     if (n_columns <= 512)
@@ -256,6 +259,8 @@ void sortColumnsPerRow(const InType* in,
       // for segment offsets (numOffsets = numSegments + 1, see above)
       workspaceSize += raft::alignTo(sizeof(int) * (size_t)numOffsets, memAlignWidth);
     } else {
+      if (dry_run) { return; }
+
       size_t workspaceOffset = 0;
 
       if (!sortedKeys) {
@@ -307,6 +312,8 @@ void sortColumnsPerRow(const InType* in,
 
       workspaceSize += raft::alignTo(sizeof(OutType) * (size_t)n_columns, memAlignWidth);
     } else {
+      if (dry_run) { return; }
+
       size_t workspaceOffset   = 0;
       bool userKeyOutputBuffer = true;
 

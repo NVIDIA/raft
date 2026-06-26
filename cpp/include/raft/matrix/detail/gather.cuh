@@ -14,6 +14,7 @@
 #include <raft/core/operators.hpp>
 #include <raft/core/pinned_mdarray.hpp>
 #include <raft/core/pinned_mdspan.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/util/cuda_dev_essentials.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/integer_utils.hpp>
@@ -551,13 +552,15 @@ void gather(raft::resources const& res,
             device_vector_view<const IdxT, MatIdxT> indices,
             raft::device_matrix_view<T, MatIdxT> output)
 {
+  auto dry_run = resource::get_dry_run_flag(res);
   raft::common::nvtx::range<common::nvtx::domain::raft> fun_scope("gather");
   IdxT n_dim        = output.extent(1);
   IdxT n_train      = output.extent(0);
   auto indices_host = raft::make_host_vector<IdxT, MatIdxT>(n_train);
-  raft::copy(
-    indices_host.data_handle(), indices.data_handle(), n_train, resource::get_cuda_stream(res));
-  resource::sync_stream(res);
+  if (!dry_run) {
+    raft::copy(
+      indices_host.data_handle(), indices.data_handle(), n_train, resource::get_cuda_stream(res));
+  }
 
   const size_t buffer_size = 32768 * 1024;  // bytes
   const size_t max_batch_size =
@@ -568,6 +571,10 @@ void gather(raft::resources const& res,
   // and gathering the data.
   auto out_tmp1 = raft::make_pinned_matrix<T, MatIdxT>(res, max_batch_size, n_dim);
   auto out_tmp2 = raft::make_pinned_matrix<T, MatIdxT>(res, max_batch_size, n_dim);
+
+  if (dry_run) { return; }
+
+  resource::sync_stream(res);
 
   // Usually a limited number of threads provide sufficient bandwidth for gathering data.
 #if defined(_OPENMP)

@@ -22,7 +22,8 @@ template <bool rowMajor,
           typename MainLambda   = raft::identity_op,
           typename ReduceLambda = raft::add_op,
           typename FinalLambda  = raft::identity_op>
-void reduce(OutType* dots,
+void reduce(bool dry_run,
+            OutType* dots,
             const InType* data,
             IdxType D,
             IdxType N,
@@ -34,17 +35,19 @@ void reduce(OutType* dots,
             FinalLambda final_op   = raft::identity_op())
 {
   if constexpr (rowMajor && alongRows) {
-    raft::linalg::coalescedReduction<InType, OutType, IdxType>(
-      dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
+    coalescedReduction<InType, OutType, IdxType>(
+      dry_run, dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
   } else if constexpr (rowMajor && !alongRows) {
+    if (dry_run) { return; }  // no allocations in strided reduction
     raft::linalg::stridedReduction<InType, OutType, IdxType>(
       dots, data, D, N, init, stream, inplace, main_op, reduce_op, final_op);
   } else if constexpr (!rowMajor && alongRows) {
+    if (dry_run) { return; }  // no allocations in strided reduction
     raft::linalg::stridedReduction<InType, OutType, IdxType>(
       dots, data, N, D, init, stream, inplace, main_op, reduce_op, final_op);
   } else {
-    raft::linalg::coalescedReduction<InType, OutType, IdxType>(
-      dots, data, N, D, init, stream, inplace, main_op, reduce_op, final_op);
+    coalescedReduction<InType, OutType, IdxType>(
+      dry_run, dots, data, N, D, init, stream, inplace, main_op, reduce_op, final_op);
   }
 }
 

@@ -83,6 +83,7 @@ RAFT_KERNEL mutual_info_kernel(const int* dContingencyMatrix,
 /**
  * @brief Function to calculate the mutual information between two clusters
  * <a href="https://en.wikipedia.org/wiki/Mutual_information">more info on mutual information</a>
+ * @param dry_run: whether to run in dry-run mode
  * @param firstClusterArray: the array of classes of type T
  * @param secondClusterArray: the array of classes of type T
  * @param size: the size of the data points of type int
@@ -91,7 +92,8 @@ RAFT_KERNEL mutual_info_kernel(const int* dContingencyMatrix,
  * @param stream: the cudaStream object
  */
 template <typename T>
-double mutual_info_score(const T* firstClusterArray,
+double mutual_info_score(bool dry_run,
+                         const T* firstClusterArray,
                          const T* secondClusterArray,
                          int size,
                          T lowerLabelRange,
@@ -102,24 +104,28 @@ double mutual_info_score(const T* firstClusterArray,
 
   // declaring, allocating and initializing memory for the contingency marix
   rmm::device_uvector<int> dContingencyMatrix(numUniqueClasses * numUniqueClasses, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(
-    dContingencyMatrix.data(), 0, numUniqueClasses * numUniqueClasses * sizeof(int), stream));
+  if (!dry_run) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(
+      dContingencyMatrix.data(), 0, numUniqueClasses * numUniqueClasses * sizeof(int), stream));
+  }
 
   // workspace allocation
-  size_t workspaceSz = raft::stats::getContingencyMatrixWorkspaceSize(
-    size, firstClusterArray, stream, lowerLabelRange, upperLabelRange);
+  size_t workspaceSz = raft::stats::detail::getContingencyMatrixWorkspaceSize(
+    dry_run, size, firstClusterArray, stream, lowerLabelRange, upperLabelRange);
   rmm::device_uvector<char> pWorkspace(workspaceSz, stream);
 
   // calculating the contingency matrix
-  raft::stats::contingencyMatrix(firstClusterArray,
-                                 secondClusterArray,
-                                 (int)size,
-                                 (int*)dContingencyMatrix.data(),
-                                 stream,
-                                 (void*)pWorkspace.data(),
-                                 workspaceSz,
-                                 lowerLabelRange,
-                                 upperLabelRange);
+  if (!dry_run) {
+    raft::stats::contingencyMatrix(firstClusterArray,
+                                   secondClusterArray,
+                                   (int)size,
+                                   (int*)dContingencyMatrix.data(),
+                                   stream,
+                                   (void*)pWorkspace.data(),
+                                   workspaceSz,
+                                   lowerLabelRange,
+                                   upperLabelRange);
+  }
 
   // creating device buffers for all the parameters involved in ARI calculation
   // device variables
@@ -131,17 +137,21 @@ double mutual_info_score(const T* firstClusterArray,
   double h_MI;
 
   // initializing device memory
-  RAFT_CUDA_TRY(cudaMemsetAsync(a.data(), 0, numUniqueClasses * sizeof(int), stream));
-  RAFT_CUDA_TRY(cudaMemsetAsync(b.data(), 0, numUniqueClasses * sizeof(int), stream));
-  RAFT_CUDA_TRY(cudaMemsetAsync(d_MI.data(), 0, sizeof(double), stream));
+  if (!dry_run) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(a.data(), 0, numUniqueClasses * sizeof(int), stream));
+    RAFT_CUDA_TRY(cudaMemsetAsync(b.data(), 0, numUniqueClasses * sizeof(int), stream));
+    RAFT_CUDA_TRY(cudaMemsetAsync(d_MI.data(), 0, sizeof(double), stream));
+  }
 
   // calculating the row-wise sums
-  raft::linalg::reduce<true, true, int, int, int>(
-    a.data(), dContingencyMatrix.data(), numUniqueClasses, numUniqueClasses, 0, stream);
+  raft::linalg::detail::reduce<true, true, int, int, int>(
+    dry_run, a.data(), dContingencyMatrix.data(), numUniqueClasses, numUniqueClasses, 0, stream);
 
   // calculating the column-wise sums
-  raft::linalg::reduce<true, false, int, int, int>(
-    b.data(), dContingencyMatrix.data(), numUniqueClasses, numUniqueClasses, 0, stream);
+  raft::linalg::detail::reduce<true, false, int, int, int>(
+    dry_run, b.data(), dContingencyMatrix.data(), numUniqueClasses, numUniqueClasses, 0, stream);
+
+  if (dry_run) { return 0.0; }
 
   // kernel configuration
   static const int BLOCK_DIM_Y = 16, BLOCK_DIM_X = 16;

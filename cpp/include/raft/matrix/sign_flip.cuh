@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/matrix.cuh>
 
 namespace raft {
@@ -30,6 +31,7 @@ template <typename math_t, typename idx_t>
 void sign_flip(raft::resources const& handle,
                raft::device_matrix_view<math_t, idx_t, col_major> inout)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   detail::signFlip(
     inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle));
 }

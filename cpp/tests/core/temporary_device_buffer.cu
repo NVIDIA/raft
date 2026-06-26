@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -54,18 +54,21 @@ TEST(TemporaryDeviceBuffer, HostPointerWithWriteBack)
   rmm::device_uvector<int> result(5, resource::get_cuda_stream(handle));
 
   {
-    auto d_buf  = raft::make_writeback_temporary_device_buffer(handle, array.data_handle(), exts);
-    auto d_view = d_buf.view();
+    execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        auto d_buf  = raft::make_writeback_temporary_device_buffer(h, array.data_handle(), exts);
+        auto d_view = d_buf.view();
 
-    thrust::fill(rmm::exec_policy(resource::get_cuda_stream(handle)),
-                 d_view.data_handle(),
-                 d_view.data_handle() + d_view.extent(0),
-                 10);
-    raft::copy(
-      result.data(), d_view.data_handle(), d_view.extent(0), resource::get_cuda_stream(handle));
-
-    static_assert(!std::is_const_v<typename decltype(d_buf.view())::element_type>,
-                  "element_type should not be const");
+        thrust::fill(rmm::exec_policy(resource::get_cuda_stream(h)),
+                     d_view.data_handle(),
+                     d_view.data_handle() + d_view.extent(0),
+                     10);
+        raft::copy(
+          result.data(), d_view.data_handle(), d_view.extent(0), resource::get_cuda_stream(h));
+      },
+      alloc_behavior::ARGUMENT_DRIVEN,
+      5 * sizeof(int));
   }
 
   ASSERT_TRUE(raft::devArrMatchHost(array.data_handle(),

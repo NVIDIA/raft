@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -82,13 +82,18 @@ class RowNormalizeTest : public ::testing::TestWithParam<RowNormalizeInputs<T, I
       data.data(), params.rows, params.cols);
     auto output_view = raft::make_device_matrix_view<T, IdxT, raft::row_major>(
       out_act.data(), params.rows, params.cols);
-    if (params.norm_type == raft::linalg::L1Norm) {
-      raft::linalg::row_normalize<raft::linalg::L1Norm>(handle, input_view, output_view);
-    } else if (params.norm_type == raft::linalg::L2Norm) {
-      raft::linalg::row_normalize<raft::linalg::L2Norm>(handle, input_view, output_view);
-    } else if (params.norm_type == raft::linalg::LinfNorm) {
-      raft::linalg::row_normalize<raft::linalg::LinfNorm>(handle, input_view, output_view);
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.norm_type == raft::linalg::L1Norm) {
+          raft::linalg::row_normalize<raft::linalg::L1Norm>(h, input_view, output_view);
+        } else if (params.norm_type == raft::linalg::L2Norm) {
+          raft::linalg::row_normalize<raft::linalg::L2Norm>(h, input_view, output_view);
+        } else if (params.norm_type == raft::linalg::LinfNorm) {
+          raft::linalg::row_normalize<raft::linalg::LinfNorm>(h, input_view, output_view);
+        }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
 
     resource::sync_stream(handle, stream);
   }

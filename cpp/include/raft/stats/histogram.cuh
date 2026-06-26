@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/histogram.cuh>
 #include <raft/stats/stats_types.hpp>
 
@@ -88,6 +89,10 @@ void histogram(raft::resources const& handle,
                raft::device_matrix_view<int, idx_t, raft::col_major> bins,
                binner_op binner = IdentityBinner<value_t, idx_t>())
 {
+  // Seems like neither implementation of histogram does any CUDA allocations.
+  // There is one allocation of std::vector inside Seive object in computeHashTableSize,
+  // but it doesn't go through sdt::pmr, so isn't counted.
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(std::is_integral_v<idx_t> && data.extent(0) <= std::numeric_limits<int>::max(),
                "Index type not supported");
   RAFT_EXPECTS(bins.extent(1) == data.extent(1), "Size mismatch");

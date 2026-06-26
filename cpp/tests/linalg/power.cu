@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -96,10 +96,15 @@ class PowerTest : public ::testing::TestWithParam<PowerInputs<T>> {
     auto const_in2_view = raft::make_device_vector_view<const T>(in2.data(), len);
     const auto scalar   = static_cast<T>(2);
     auto scalar_view    = raft::make_host_scalar_view(&scalar);
-    power(handle, const_in1_view, const_in2_view, out_view);
-    power_scalar(handle, const_out_view, out_view, scalar_view);
-    power(handle, const_in1_view, const_in2_view, in1_view);
-    power_scalar(handle, const_in1_view, in1_view, scalar_view);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        power(h, const_in1_view, const_in2_view, out_view);
+        power_scalar(h, const_out_view, out_view, scalar_view);
+        power(h, const_in1_view, const_in2_view, in1_view);
+        power_scalar(h, const_in1_view, in1_view, scalar_view);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
 
     resource::sync_stream(handle);
   }

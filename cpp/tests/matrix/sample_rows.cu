@@ -1,14 +1,16 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "../test_utils.cuh"
 
 #include <raft/core/device_mdarray.hpp>
+#include <raft/core/dry_run_resources.hpp>
 #include <raft/core/host_mdarray.hpp>
 #include <raft/core/mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/matrix/sample_rows.cuh>
 #include <raft/random/rng.cuh>
@@ -143,6 +145,43 @@ const std::vector<inputs> inputs1 = generate_inputs();
 using SampleRowsTestInt64 = SampleRowsTest<float>;
 TEST_P(SampleRowsTestInt64, SamplingTest) { check(); }
 INSTANTIATE_TEST_SUITE_P(SampleRowsTests, SampleRowsTestInt64, ::testing::ValuesIn(inputs1));
+
+// ===== Dry-run tests =====
+
+TEST(SampleRowsDryRun, VoidOverload)
+{
+  raft::resources res;
+  constexpr int64_t n_rows = 1000, n_cols = 64, n_samples = 100;
+
+  auto dataset = raft::make_device_matrix<float, int64_t>(res, n_rows, n_cols);
+  auto output  = raft::make_device_matrix<float, int64_t>(res, n_samples, n_cols);
+
+  auto stats = raft::util::dry_run_execute(res, [&](raft::resources const& handle) {
+    raft::matrix::sample_rows(handle,
+                              raft::random::RngState{42ULL},
+                              raft::make_const_mdspan(dataset.view()),
+                              output.view());
+  });
+
+  EXPECT_FALSE(raft::resource::get_dry_run_flag(res));
+  EXPECT_GT(stats.device_global, 0) << "Expected non-zero peak device allocation";
+}
+
+TEST(SampleRowsDryRun, ReturningOverload)
+{
+  raft::resources res;
+  constexpr int64_t n_rows = 1000, n_cols = 64, n_samples = 100;
+
+  auto dataset = raft::make_device_matrix<float, int64_t>(res, n_rows, n_cols);
+
+  auto stats = raft::util::dry_run_execute(res, [&](raft::resources const& handle) {
+    auto result = raft::matrix::sample_rows<float, int64_t>(
+      handle, raft::random::RngState{42ULL}, raft::make_const_mdspan(dataset.view()), n_samples);
+  });
+
+  EXPECT_FALSE(raft::resource::get_dry_run_flag(res));
+  EXPECT_GT(stats.device_global, 0) << "Expected non-zero peak device allocation";
+}
 
 }  // namespace matrix
 }  // namespace raft

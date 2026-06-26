@@ -23,6 +23,7 @@ namespace detail {
  * @tparam rowMajor whether the input data is row or col major
  * @tparam Type the data type
  * @tparam IdxType Integer type used to for addressing
+ * @param dry_run whether to run in dry-run mode (skip CUDA work)
  * @param std the output stddev vector
  * @param data the input matrix
  * @param mu the mean vector
@@ -31,11 +32,11 @@ namespace detail {
  * @param sample whether to evaluate sample stddev or not. In other words,
  * whether
  *  to normalize the output using N-1 or N, for true or false, respectively
- * @param rowMajor whether the input data is row or col major
  * @param stream cuda stream where to launch work
  */
 template <bool rowMajor, typename Type, typename IdxType = int>
-void stddev(Type* std,
+void stddev(bool dry_run,
+            Type* std,
             const Type* data,
             const Type* mu,
             IdxType D,
@@ -43,8 +44,11 @@ void stddev(Type* std,
             bool sample,
             cudaStream_t stream)
 {
-  raft::linalg::reduce<rowMajor, false>(
-    std, data, D, N, Type(0), stream, false, [mu] __device__(Type a, IdxType i) { return a * a; });
+  raft::linalg::detail::reduce<rowMajor, false>(
+    dry_run, std, data, D, N, Type(0), stream, false, [mu] __device__(Type a, IdxType i) {
+      return a * a;
+    });
+  if (dry_run) { return; }
   Type ratio      = Type(1) / ((sample) ? Type(N - 1) : Type(N));
   Type ratio_mean = sample ? ratio * Type(N) : Type(1);
   raft::linalg::binaryOp(std,
@@ -67,18 +71,20 @@ void stddev(Type* std,
  * @tparam rowMajor whether the input data is row or col major
  * @tparam Type the data type
  * @tparam IdxType Integer type used to for addressing
- * @param var the output stddev vector
+ * @param dry_run whether to run in dry-run mode (skip CUDA work)
+ * @param var the output variance vector
  * @param data the input matrix
  * @param mu the mean vector
  * @param D number of columns of data
  * @param N number of rows of data
- * @param sample whether to evaluate sample stddev or not. In other words,
+ * @param sample whether to evaluate sample variance or not. In other words,
  * whether
  *  to normalize the output using N-1 or N, for true or false, respectively
  * @param stream cuda stream where to launch work
  */
 template <bool rowMajor, typename Type, typename IdxType = int>
-void vars(Type* var,
+void vars(bool dry_run,
+          Type* var,
           const Type* data,
           const Type* mu,
           IdxType D,
@@ -86,8 +92,11 @@ void vars(Type* var,
           bool sample,
           cudaStream_t stream)
 {
-  raft::linalg::reduce<rowMajor, false>(
-    var, data, D, N, Type(0), stream, false, [mu] __device__(Type a, IdxType i) { return a * a; });
+  raft::linalg::detail::reduce<rowMajor, false>(
+    dry_run, var, data, D, N, Type(0), stream, false, [mu] __device__(Type a, IdxType i) {
+      return a * a;
+    });
+  if (dry_run) { return; }
   Type ratio      = Type(1) / ((sample) ? Type(N - 1) : Type(N));
   Type ratio_mean = sample ? ratio * Type(N) : Type(1);
   raft::linalg::binaryOp(var,

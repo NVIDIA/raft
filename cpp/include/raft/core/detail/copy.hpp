@@ -11,6 +11,7 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/logger.hpp>
 #include <raft/core/mdspan.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/stream_view.hpp>
 #include <raft/core/resources.hpp>
 
@@ -398,6 +399,10 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
   for (auto i = std::size_t{}; i < config::src_rank; ++i) {
     RAFT_EXPECTS(src.extent(i) == dst.extent(i), "Must copy between mdspans of the same shape");
   }
+
+  // Dry-run guard: raft::copy is a pure data-movement utility with no
+  // allocations that callers would need tracked.
+  if (resource::get_dry_run_flag(res)) { return; }
 
   if constexpr (config::use_intermediate_src) {
 #ifndef RAFT_DISABLE_CUDA

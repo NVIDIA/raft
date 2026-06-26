@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -87,8 +87,13 @@ class coalescedReductionTest : public ::testing::TestWithParam<coalescedReductio
                             raft::add_op{},
                             raft::identity_op{});
 
-    coalescedReductionLaunch(handle, dots_act.data(), data.data(), cols, rows);
-    coalescedReductionLaunch(handle, dots_act.data(), data.data(), cols, rows, true);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        coalescedReductionLaunch(h, dots_act.data(), data.data(), cols, rows);
+        coalescedReductionLaunch(h, dots_act.data(), data.data(), cols, rows, true);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
 
     resource::sync_stream(handle, stream);
   }
@@ -120,7 +125,8 @@ const std::vector<coalescedReductionInputs<float>> inputsf = {{0.000002f, 50, 2,
                                                               {0.000002f, 10000, 55, 1234ULL},
                                                               {0.000002f, 10000, 100, 1234ULL},
                                                               {0.000002f, 10000, 270, 1234ULL},
-                                                              {0.0001f, 10, 25000, 1234ULL}};
+                                                              {0.0001f, 10, 25000, 1234ULL},
+                                                              {0.0001f, 2, 200000, 1234ULL}};
 
 const std::vector<coalescedReductionInputs<double>> inputsd = {{0.000000001, 50, 2, 1234ULL},
                                                                {0.000000001, 50, 3, 1234ULL},
@@ -136,7 +142,8 @@ const std::vector<coalescedReductionInputs<double>> inputsd = {{0.000000001, 50,
                                                                {0.000000001, 10000, 55, 1234ULL},
                                                                {0.000000001, 10000, 100, 1234ULL},
                                                                {0.000000001, 10000, 270, 1234ULL},
-                                                               {0.0000001, 10, 25000, 1234ULL}};
+                                                               {0.0000001, 10, 25000, 1234ULL},
+                                                               {0.0000001, 2, 200000, 1234ULL}};
 
 typedef coalescedReductionTest<float> coalescedReductionTestF;
 TEST_P(coalescedReductionTestF, Result)

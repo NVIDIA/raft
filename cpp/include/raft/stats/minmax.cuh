@@ -10,6 +10,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/minmax.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
@@ -96,6 +97,7 @@ void minmax(raft::resources const& handle,
             raft::device_vector_view<value_t, idx_t> globalmax,
             std::optional<raft::device_vector_view<value_t, idx_t>> sampledcols)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   const unsigned* rowids_ptr = nullptr;
   const unsigned* colids_ptr = nullptr;
   value_t* sampledcols_ptr   = nullptr;

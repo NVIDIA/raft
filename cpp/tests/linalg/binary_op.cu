@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -54,7 +54,10 @@ class BinaryOpTest : public ::testing::TestWithParam<BinaryOpInputs<InType, IdxT
     uniform(handle, r, in1.data(), len, InType(-1.0), InType(1.0));
     uniform(handle, r, in2.data(), len, InType(-1.0), InType(1.0));
     naiveAdd(out_ref.data(), in1.data(), in2.data(), len);
-    binaryOpLaunch(handle, out.data(), in1.data(), in2.data(), len);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) { binaryOpLaunch(h, out.data(), in1.data(), in2.data(), len); },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     resource::sync_stream(handle, stream);
   }
 

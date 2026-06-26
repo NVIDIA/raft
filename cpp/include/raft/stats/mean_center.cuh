@@ -11,6 +11,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/stats/detail/mean_center.cuh>
 
 namespace raft {
@@ -34,7 +35,8 @@ template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = 
 void meanCenter(
   Type* out, const Type* data, const Type* mu, IdxType D, IdxType N, cudaStream_t stream)
 {
-  detail::meanCenter<rowMajor, bcastAlongRows, Type, IdxType, TPB>(out, data, mu, D, N, stream);
+  detail::meanCenter<rowMajor, bcastAlongRows, Type, IdxType, TPB>(
+    false, out, data, mu, D, N, stream);
 }
 
 /**
@@ -54,7 +56,7 @@ void meanCenter(
 template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = int, int TPB = 256>
 void meanAdd(Type* out, const Type* data, const Type* mu, IdxType D, IdxType N, cudaStream_t stream)
 {
-  detail::meanAdd<rowMajor, bcastAlongRows, Type, IdxType, TPB>(out, data, mu, D, N, stream);
+  detail::meanAdd<rowMajor, bcastAlongRows, Type, IdxType, TPB>(false, out, data, mu, D, N, stream);
 }
 
 /**
@@ -91,7 +93,8 @@ void mean_center(raft::resources const& handle,
   detail::meanCenter<std::is_same_v<layout_t, raft::row_major>,
                      apply == Apply::ALONG_ROWS,
                      value_t,
-                     idx_t>(out.data_handle(),
+                     idx_t>(resource::get_dry_run_flag(handle),
+                            out.data_handle(),
                             data.data_handle(),
                             mu.data_handle(),
                             data.extent(1),
@@ -128,6 +131,7 @@ void mean_add(raft::resources const& handle,
   RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
   detail::
     meanAdd<std::is_same_v<layout_t, raft::row_major>, apply == Apply::ALONG_ROWS, value_t, idx_t>(
+      resource::get_dry_run_flag(handle),
       out.data_handle(),
       data.data_handle(),
       mu.data_handle(),

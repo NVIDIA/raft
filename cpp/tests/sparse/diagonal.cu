@@ -1,7 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
+
+#include "../test_utils.cuh"
 
 #include <raft/core/device_coo_matrix.hpp>
 #include <raft/core/device_csr_matrix.hpp>
@@ -81,8 +83,10 @@ TEST(SparseMatrixDiagonal, GetDiagonalVectorFromCSR)
   // Create diagonal output vector
   auto diagonal_vec = raft::make_device_vector<float, int>(res, 4);
 
-  // Get diagonal (function initializes to zero internally)
-  diagonal(res, matrix.view(), diagonal_vec.view());
+  raft::execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& h) { diagonal(h, matrix.view(), diagonal_vec.view()); },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 
   // Copy result back to host
   auto diagonal_host = std::vector<float>(4);
@@ -110,8 +114,12 @@ TEST(SparseMatrixDiagonal, ScaleCSRByDiagonalSymmetric)
              diagonal_data.size(),
              raft::resource::get_cuda_stream(res));
 
-  // Scale matrix by diagonal
-  scale_by_diagonal_symmetric(res, diagonal_vec.view(), matrix.view());
+  raft::execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& h) {
+      scale_by_diagonal_symmetric(h, diagonal_vec.view(), matrix.view());
+    },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 
   // Copy result back to host
   auto matrix_structure = matrix.structure_view();
@@ -150,8 +158,10 @@ TEST(SparseMatrixDiagonal, SetCSRDiagonalToOnes)
   auto res    = raft::resources{};
   auto matrix = create_test_csr_matrix(res);
 
-  // Set diagonal to ones
-  set_diagonal(res, matrix.view(), 1.0f);
+  raft::execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& h) { set_diagonal(h, matrix.view(), 1.0f); },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 
   // Copy result back to host
   auto matrix_structure = matrix.structure_view();
@@ -178,15 +188,15 @@ TEST(SparseMatrixDiagonal, CompleteWorkflow)
   auto res    = raft::resources{};
   auto matrix = create_test_csr_matrix(res);
 
-  // 1. Get diagonal
   auto diagonal_vec = raft::make_device_vector<float, int>(res, 4);
-  diagonal(res, matrix.view(), diagonal_vec.view());
-
-  // 2. Scale matrix by diagonal
-  scale_by_diagonal_symmetric(res, diagonal_vec.view(), matrix.view());
-
-  // 3. Set diagonal to ones
-  set_diagonal(res, matrix.view(), 1.0f);
+  raft::execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& h) {
+      diagonal(h, matrix.view(), diagonal_vec.view());
+      scale_by_diagonal_symmetric(h, diagonal_vec.view(), matrix.view());
+      set_diagonal(h, matrix.view(), 1.0f);
+    },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 
   // Copy results back to host
   auto matrix_structure = matrix.structure_view();
@@ -237,11 +247,12 @@ TEST(SparseMatrixDiagonal, GetDiagonalVectorFromCOO)
   auto res    = raft::resources{};
   auto matrix = create_test_coo_matrix(res);
 
-  // Create diagonal output vector
   auto diagonal_vec = raft::make_device_vector<float, int>(res, 4);
 
-  // Get diagonal (function initializes to zero internally)
-  diagonal(res, matrix.view(), diagonal_vec.view());
+  raft::execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& h) { diagonal(h, matrix.view(), diagonal_vec.view()); },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 
   // Copy result back to host
   auto diagonal_host = std::vector<float>(4);
@@ -261,7 +272,6 @@ TEST(SparseMatrixDiagonal, ScaleCOOByDiagonalSymmetric)
   auto res    = raft::resources{};
   auto matrix = create_test_coo_matrix(res);
 
-  // Create diagonal with values [2, 4, 2, 4]
   auto diagonal_data = std::vector<float>{2, 4, 2, 4};
   auto diagonal_vec  = raft::make_device_vector<float, int>(res, 4);
   raft::copy(diagonal_vec.data_handle(),
@@ -269,8 +279,12 @@ TEST(SparseMatrixDiagonal, ScaleCOOByDiagonalSymmetric)
              diagonal_data.size(),
              raft::resource::get_cuda_stream(res));
 
-  // Scale matrix by diagonal
-  scale_by_diagonal_symmetric(res, diagonal_vec.view(), matrix.view());
+  raft::execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& h) {
+      scale_by_diagonal_symmetric(h, diagonal_vec.view(), matrix.view());
+    },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 
   // Copy result back to host
   auto matrix_structure = matrix.structure_view();
@@ -309,8 +323,10 @@ TEST(SparseMatrixDiagonal, SetCOODiagonalToOnes)
   auto res    = raft::resources{};
   auto matrix = create_test_coo_matrix(res);
 
-  // Set diagonal to ones
-  set_diagonal(res, matrix.view(), 1.0f);
+  raft::execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& h) { set_diagonal(h, matrix.view(), 1.0f); },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 
   // Copy result back to host
   auto matrix_structure = matrix.structure_view();
@@ -337,15 +353,15 @@ TEST(SparseMatrixDiagonal, CompleteWorkflowCOO)
   auto res    = raft::resources{};
   auto matrix = create_test_coo_matrix(res);
 
-  // 1. Get diagonal
   auto diagonal_vec = raft::make_device_vector<float, int>(res, 4);
-  diagonal(res, matrix.view(), diagonal_vec.view());
-
-  // 2. Scale matrix by diagonal
-  scale_by_diagonal_symmetric(res, diagonal_vec.view(), matrix.view());
-
-  // 3. Set diagonal to ones
-  set_diagonal(res, matrix.view(), 1.0f);
+  raft::execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& h) {
+      diagonal(h, matrix.view(), diagonal_vec.view());
+      scale_by_diagonal_symmetric(h, diagonal_vec.view(), matrix.view());
+      set_diagonal(h, matrix.view(), 1.0f);
+    },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 
   // Copy results back to host
   auto matrix_structure = matrix.structure_view();

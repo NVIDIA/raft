@@ -204,7 +204,8 @@ void generate_data(DataT* out,
  * @param[in]  type               RNG type
  */
 template <typename DataT, typename IdxT>
-void make_blobs_caller(DataT* out,
+void make_blobs_caller(bool dry_run,
+                       DataT* out,
                        IdxT* labels,
                        IdxT n_rows,
                        IdxT n_cols,
@@ -222,15 +223,17 @@ void make_blobs_caller(DataT* out,
 {
   raft::random::RngState r(seed, type);
   // use the right centers buffer for data generation
-  rmm::device_uvector<DataT> rand_centers(0, stream);
+  rmm::device_uvector<DataT> rand_centers(centers == nullptr ? n_clusters * n_cols : 0, stream);
   const DataT* _centers;
   if (centers == nullptr) {
-    rand_centers.resize(n_clusters * n_cols, stream);
-    detail::uniform(
-      r, rand_centers.data(), n_clusters * n_cols, center_box_min, center_box_max, stream);
     _centers = rand_centers.data();
   } else {
     _centers = centers;
+  }
+  if (dry_run) { return; }
+  if (centers == nullptr) {
+    detail::uniform(
+      r, rand_centers.data(), n_clusters * n_cols, center_box_min, center_box_max, stream);
   }
   generate_labels(labels, n_rows, n_clusters, shuffle, r, stream);
   generate_data(out,

@@ -1,8 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "../test_utils.cuh"
 #include "../test_utils.h"
 
 #include <raft/core/copy.cuh>
@@ -45,7 +46,10 @@ TEST(MDSpanCopy, Mdspan3DDeviceDeviceCuda)
   static_assert(
     detail::mdspan_copyable_with_kernel_v<decltype(out_long.view()), decltype(in_left.view())>,
     "Current implementation should use kernel for this copy");
-  copy(res, out_long.view(), in_left.view());
+  execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& r) { copy(r, out_long.view(), in_left.view()); },
+    alloc_behavior::NO_ALLOCATIONS);
   res.sync_stream();
   for (auto i = std::uint32_t{}; i < depth; ++i) {
     for (auto j = std::uint32_t{}; j < rows; ++j) {
@@ -64,7 +68,10 @@ TEST(MDSpanCopy, Mdspan3DDeviceDeviceCuda)
   static_assert(
     detail::mdspan_copyable_with_kernel_v<decltype(out_right.view()), decltype(in_left.view())>,
     "Current implementation should use kernel for this copy");
-  copy(res, out_right.view(), in_left.view());
+  execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& r) { copy(r, out_right.view(), in_left.view()); },
+    alloc_behavior::NO_ALLOCATIONS);
   res.sync_stream();
   for (auto i = std::uint32_t{}; i < depth; ++i) {
     for (auto j = std::uint32_t{}; j < rows; ++j) {
@@ -77,7 +84,10 @@ TEST(MDSpanCopy, Mdspan3DDeviceDeviceCuda)
   static_assert(
     detail::mdspan_copyable_with_kernel_v<decltype(out_left.view()), decltype(in_right.view())>,
     "Current implementation should use kernel for this copy");
-  copy(res, out_left.view(), in_right.view());
+  execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& r) { copy(r, out_left.view(), in_right.view()); },
+    alloc_behavior::NO_ALLOCATIONS);
   res.sync_stream();
   for (auto i = std::uint32_t{}; i < depth; ++i) {
     for (auto j = std::uint32_t{}; j < rows; ++j) {
@@ -130,7 +140,10 @@ TEST(MDSpanCopy, Mdspan2DDeviceDeviceCuda)
   static_assert(
     detail::mdspan_copyable_with_kernel_v<decltype(out_right.view()), decltype(in_left.view())>,
     "Current implementation should use kernel for this copy");
-  copy(res, out_right.view(), in_left.view());
+  execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& r) { copy(r, out_right.view(), in_left.view()); },
+    alloc_behavior::NO_ALLOCATIONS);
   res.sync_stream();
   for (auto i = std::uint32_t{}; i < rows; ++i) {
     for (auto j = std::uint32_t{}; j < cols; ++j) {
@@ -141,7 +154,10 @@ TEST(MDSpanCopy, Mdspan2DDeviceDeviceCuda)
   static_assert(
     detail::mdspan_copyable_with_kernel_v<decltype(out_left.view()), decltype(in_right.view())>,
     "Current implementation should use kernel for this copy");
-  copy(res, out_left.view(), in_right.view());
+  execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& r) { copy(r, out_left.view(), in_right.view()); },
+    alloc_behavior::NO_ALLOCATIONS);
   res.sync_stream();
   for (auto i = std::uint32_t{}; i < rows; ++i) {
     for (auto j = std::uint32_t{}; j < cols; ++j) {
@@ -180,7 +196,10 @@ TEST(MDSpanCopy, Mdspan2DDeviceDeviceCudaHalfWithTranspose)
   static_assert(
     detail::mdspan_copyable_with_kernel_v<decltype(out_right.view()), decltype(in_left.view())>,
     "Current implementation should use kernel for this copy");
-  copy(res, out_right.view(), in_left.view());
+  execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& r) { copy(r, out_right.view(), in_left.view()); },
+    alloc_behavior::NO_ALLOCATIONS);
   res.sync_stream();
   for (auto i = std::uint32_t{}; i < rows; ++i) {
     for (auto j = std::uint32_t{}; j < cols; ++j) {

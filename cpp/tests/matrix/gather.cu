@@ -151,46 +151,50 @@ class GatherTest : public ::testing::TestWithParam<GatherInputs<IdxT>> {
     auto stencil_view =
       raft::make_device_vector_view<const MatrixT, IdxT>(d_stencil.data(), map_length);
 
-    if (params.ncols_margin == 0) {
-      auto in_view = raft::make_device_matrix_view<const MatrixT, IdxT, row_major>(
-        d_in.data(), params.nrows, params.ncols);
-      auto inout_view = raft::make_device_matrix_view<MatrixT, IdxT, row_major>(
-        d_in.data(), params.nrows, params.ncols);
-      if (Conditional && MapTransform) {
-        raft::matrix::gather_if(
-          handle, in_view, out_view, map_view, stencil_view, pred_op, transform_op);
-      } else if (Conditional) {
-        raft::matrix::gather_if(handle, in_view, out_view, map_view, stencil_view, pred_op);
-      } else if (MapTransform && Inplace) {
-        raft::matrix::gather(handle, inout_view, map_view, params.col_batch_size, transform_op);
-      } else if (MapTransform) {
-        raft::matrix::gather(handle, in_view, map_view, out_view, transform_op);
-      } else if (Inplace) {
-        raft::matrix::gather(handle, inout_view, map_view, params.col_batch_size);
-      } else {
-        raft::matrix::gather(handle, in_view, map_view, out_view);
-      }
-    } else {
-      // Test for a view with specifying the leading dimension
-      auto in_view = raft::make_device_strided_matrix_view<const MatrixT, IdxT, row_major>(
-        d_in.data(), params.nrows, params.ncols, ld_in);
-      auto inout_view = raft::make_device_strided_matrix_view<MatrixT, IdxT, row_major>(
-        d_in.data(), params.nrows, params.ncols, ld_in);
-      if (Conditional && MapTransform) {
-        raft::matrix::gather_if(
-          handle, in_view, out_view, map_view, stencil_view, pred_op, transform_op);
-      } else if (Conditional) {
-        raft::matrix::gather_if(handle, in_view, out_view, map_view, stencil_view, pred_op);
-      } else if (MapTransform && Inplace) {
-        raft::matrix::gather(handle, inout_view, map_view, params.col_batch_size, transform_op);
-      } else if (MapTransform) {
-        raft::matrix::gather(handle, in_view, map_view, out_view, transform_op);
-      } else if (Inplace) {
-        raft::matrix::gather(handle, inout_view, map_view, params.col_batch_size);
-      } else {
-        raft::matrix::gather(handle, in_view, map_view, out_view);
-      }
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.ncols_margin == 0) {
+          auto in_view = raft::make_device_matrix_view<const MatrixT, IdxT, row_major>(
+            d_in.data(), params.nrows, params.ncols);
+          auto inout_view = raft::make_device_matrix_view<MatrixT, IdxT, row_major>(
+            d_in.data(), params.nrows, params.ncols);
+          if (Conditional && MapTransform) {
+            raft::matrix::gather_if(
+              h, in_view, out_view, map_view, stencil_view, pred_op, transform_op);
+          } else if (Conditional) {
+            raft::matrix::gather_if(h, in_view, out_view, map_view, stencil_view, pred_op);
+          } else if (MapTransform && Inplace) {
+            raft::matrix::gather(h, inout_view, map_view, params.col_batch_size, transform_op);
+          } else if (MapTransform) {
+            raft::matrix::gather(h, in_view, map_view, out_view, transform_op);
+          } else if (Inplace) {
+            raft::matrix::gather(h, inout_view, map_view, params.col_batch_size);
+          } else {
+            raft::matrix::gather(h, in_view, map_view, out_view);
+          }
+        } else {
+          auto in_view = raft::make_device_strided_matrix_view<const MatrixT, IdxT, row_major>(
+            d_in.data(), params.nrows, params.ncols, ld_in);
+          auto inout_view = raft::make_device_strided_matrix_view<MatrixT, IdxT, row_major>(
+            d_in.data(), params.nrows, params.ncols, ld_in);
+          if (Conditional && MapTransform) {
+            raft::matrix::gather_if(
+              h, in_view, out_view, map_view, stencil_view, pred_op, transform_op);
+          } else if (Conditional) {
+            raft::matrix::gather_if(h, in_view, out_view, map_view, stencil_view, pred_op);
+          } else if (MapTransform && Inplace) {
+            raft::matrix::gather(h, inout_view, map_view, params.col_batch_size, transform_op);
+          } else if (MapTransform) {
+            raft::matrix::gather(h, in_view, map_view, out_view, transform_op);
+          } else if (Inplace) {
+            raft::matrix::gather(h, inout_view, map_view, params.col_batch_size);
+          } else {
+            raft::matrix::gather(h, in_view, map_view, out_view);
+          }
+        }
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
 
     if (Inplace) {
       RAFT_CUDA_TRY(cudaMemcpy2DAsync(d_out_act.data(),

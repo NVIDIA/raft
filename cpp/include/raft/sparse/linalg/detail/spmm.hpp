@@ -10,6 +10,7 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusparse_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/sparse/detail/cusparse_wrappers.h>
 
@@ -86,9 +87,11 @@ void spmm(raft::resources const& handle,
                                                   &bufferSize,
                                                   resource::get_cuda_stream(handle)));
 
-  raft::interruptible::synchronize(resource::get_cuda_stream(handle));
+  resource::sync_stream(handle);
 
   rmm::device_uvector<ValueType> tmp(bufferSize, resource::get_cuda_stream(handle));
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   RAFT_CUSPARSE_TRY(raft::sparse::detail::cusparsespmm(resource::get_cusparse_handle(handle),
                                                        opX,

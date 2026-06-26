@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/device_atomics.cuh>
@@ -130,6 +131,8 @@ void adj_to_csr(raft::resources const& handle,
                 index_t* out_col_ind     // output column indices
 )
 {
+  if (resource::get_dry_run_flag(handle)) { return; }  // No allocations below
+
   auto stream = resource::get_cuda_stream(handle);
 
   // Check inputs and return early if possible.
