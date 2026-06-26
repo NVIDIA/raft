@@ -144,8 +144,9 @@ repos:
                 cpp/include/raft/core/detail/mdspan_numpy_serializer[.]hpp$
               )
           - id: verify-alpha-spec
-          - id: verify-codeowners
-            args: [--fix, --project-prefix=raft]
+          # TODO: Re-enable once verify-codeowners supports --org parameter
+          # - id: verify-codeowners
+          #   args: [--fix, --org=NVIDIA, --project-prefix=raft]
           - id: verify-hardcoded-version
             exclude: |
               (?x)
