@@ -22,7 +22,7 @@ class FastIntDivTest : public ::testing::Test {
   {
     std::vector<IntT> magnitudes{0, 1, 2, 3, 7, 13, 255, 12345, (1 << 20), kInt32Max};
     std::vector<IntT> divisors{1, 2, 4, 7, 16, 31, 63, 128, 1000, (1 << 15), kInt32Max};
-    
+
     for (IntT d : divisors) {
       FastIntDiv fid(d);
       for (IntT mag : magnitudes) {

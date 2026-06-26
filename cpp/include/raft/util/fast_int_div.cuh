@@ -9,6 +9,7 @@
 #include <raft/util/cuda_utils.cuh>
 
 #include <stdint.h>
+
 #include <type_traits>
 
 namespace raft {
@@ -18,7 +19,7 @@ namespace util {
  * @brief Perform fast integer division and modulo using a known divisor
  * From Hacker's Delight, Second Edition, Chapter 10
  *
- * @note 32b signed integer is supported. 
+ * @note 32b signed integer is supported.
  * @note 64b signed integers is supported for an input data up to 2^31
  * because gpu-non-native int128 is avoided for performance.
  * @todo Extend support for signed divisors
