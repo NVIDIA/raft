@@ -1,3 +1,10 @@
+## build logs
+build_*.log
+
+## aarch64 build artifacts
+cpp/build-aarch64/
+*.tar.bz2
+
 ## common
 __pycache__
 *.pyc
