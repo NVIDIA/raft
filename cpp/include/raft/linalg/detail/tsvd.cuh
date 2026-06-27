@@ -15,7 +15,9 @@
 #include <raft/linalg/eig.cuh>
 #include <raft/linalg/eltwise.cuh>
 #include <raft/linalg/gemm.cuh>
+#include <raft/linalg/map.cuh>
 #include <raft/linalg/pca_types.hpp>
+#include <raft/linalg/reduce.cuh>
 #include <raft/linalg/rsvd.cuh>
 #include <raft/linalg/transpose.cuh>
 #include <raft/matrix/copy.cuh>
@@ -150,19 +152,31 @@ void cal_eig(raft::resources const& handle,
 
 /**
  * @brief sign flip for PCA and tSVD. Stabilizes the sign of column major eigenvectors.
+ *
+ * The components matrix is always stored in col-major; the input matrix may be either
+ * row-major or col-major (deduced from the LayoutPolicy template parameter).
+ *
+ * @tparam math_t element type
+ * @tparam idx_t index type
+ * @tparam LayoutPolicy layout of the input matrix (raft::row_major or raft::col_major)
  * @param handle: raft::resources
- * @param input: input data [n_samples x n_features] (col-major)
+ * @param input: input data [n_samples x n_features]
  * @param components: components matrix [n_components x n_features] (col-major)
  * @param center whether to mean-center input before computing signs
  * @param flip_signs_based_on_U whether to determine signs by U (true) or V.T (false)
  */
-template <typename math_t, typename idx_t>
+template <typename math_t, typename idx_t, typename LayoutPolicy = raft::col_major>
 void sign_flip_components(raft::resources const& handle,
-                          raft::device_matrix_view<math_t, idx_t, raft::col_major> input,
+                          raft::device_matrix_view<math_t, idx_t, LayoutPolicy> input,
                           raft::device_matrix_view<math_t, idx_t, raft::col_major> components,
                           bool center,
                           bool flip_signs_based_on_U = false)
 {
+  static_assert(
+    std::is_same_v<LayoutPolicy, raft::row_major> || std::is_same_v<LayoutPolicy, raft::col_major>,
+    "sign_flip_components: input layout must be raft::row_major or raft::col_major");
+  constexpr bool input_row_major = std::is_same_v<LayoutPolicy, raft::row_major>;
+
   auto stream       = resource::get_cuda_stream(handle);
   auto n_samples    = input.extent(0);
   auto n_features   = input.extent(1);
@@ -176,26 +190,28 @@ void sign_flip_components(raft::resources const& handle,
   if (flip_signs_based_on_U) {
     if (center) {
       rmm::device_uvector<math_t> col_means(static_cast<std::size_t>(n_features), stream);
-      raft::stats::mean<false>(
+      raft::stats::mean<input_row_major>(
         col_means.data(), input.data_handle(), n_features, n_samples, stream);
-      raft::stats::meanCenter<false, true>(
+      raft::stats::meanCenter<input_row_major, true>(
         input.data_handle(), input.data_handle(), col_means.data(), n_features, n_samples, stream);
     }
+    // US = input @ components^T, shape (n_samples x n_components), in input's layout.
+    // The components matrix is col-major (n_components x n_features); reinterpreting the
+    // same memory as row-major (n_features x n_components) yields the transpose.
     rmm::device_uvector<math_t> US(static_cast<std::size_t>(n_samples * n_components), stream);
-    raft::linalg::gemm<math_t, math_t, math_t, math_t>(handle,
-                                                       input.data_handle(),
-                                                       n_samples,
-                                                       n_features,
-                                                       components.data_handle(),
-                                                       US.data(),
-                                                       n_samples,
-                                                       n_components,
-                                                       CUBLAS_OP_N,
-                                                       CUBLAS_OP_T,
-                                                       math_t(1),
-                                                       math_t(0),
-                                                       stream);
-    raft::linalg::reduce<false, false>(
+    using transposed_layout = std::conditional_t<input_row_major, raft::col_major, raft::row_major>;
+    auto components_transposed_view =
+      raft::make_device_matrix_view<math_t, idx_t, transposed_layout>(
+        components.data_handle(), n_features, n_components);
+    auto US_view = raft::make_device_matrix_view<math_t, idx_t, LayoutPolicy>(
+      US.data(), n_samples, n_components);
+
+    raft::linalg::gemm(handle, input, components_transposed_view, US_view);
+
+    // Per-column reduction of US (n_samples x n_components) yields one max-abs value per
+    // component. With the (rowMajor, alongRows) convention, alongRows=false produces D
+    // outputs (one per column) regardless of layout; only the memory access pattern differs.
+    raft::linalg::reduce<input_row_major, false>(
       max_vals.data(),
       US.data(),
       n_components,
@@ -211,6 +227,8 @@ void sign_flip_components(raft::resources const& handle,
       },
       raft::identity_op());
   } else {
+    // components is col-major (n_components x n_features); reduce per row to get one
+    // max-abs value per component.
     raft::linalg::reduce<false, true>(
       max_vals.data(),
       components.data_handle(),

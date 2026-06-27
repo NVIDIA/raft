@@ -20,14 +20,19 @@ namespace linalg {
 
 /**
  * @brief perform fit operation for PCA. Generates eigenvectors, explained vars, singular vals, etc.
+ *
+ * Supports both row-major and col-major layouts. The layout is deduced from the input view's
+ * `LayoutPolicy` and must match between `input` and `components`.
+ *
  * @tparam math_t data-type upon which the math operation will be performed
  * @tparam idx_t integer type used for indexing
+ * @tparam LayoutPolicy layout of the input/components matrices (raft::row_major or
+ *                      raft::col_major)
  * @param[in] handle: raft::resources
  * @param[in] prms PCA parameters (n_components, algorithm, whiten, etc.)
- * @param[inout] input the data is fitted to PCA. Size n_rows x n_cols (col-major). Modified
+ * @param[inout] input the data is fitted to PCA. Size n_rows x n_cols. Modified
  * temporarily during computation.
- * @param[out] components the principal components of the input data. Size n_components x n_cols
- * (col-major).
+ * @param[out] components the principal components of the input data. Size n_components x n_cols.
  * @param[out] explained_var explained variances (eigenvalues) of the principal components. Size
  * n_components.
  * @param[out] explained_var_ratio the ratio of the explained variance and total variance. Size
@@ -37,11 +42,11 @@ namespace linalg {
  * @param[out] noise_vars variance of the noise. Scalar.
  * @param[in] flip_signs_based_on_U whether to determine signs by U (true) or V.T (false)
  */
-template <typename math_t, typename idx_t>
+template <typename math_t, typename idx_t, typename LayoutPolicy>
 void pca_fit(raft::resources const& handle,
              const paramsPCA& prms,
-             raft::device_matrix_view<math_t, idx_t, raft::col_major> input,
-             raft::device_matrix_view<math_t, idx_t, raft::col_major> components,
+             raft::device_matrix_view<math_t, idx_t, LayoutPolicy> input,
+             raft::device_matrix_view<math_t, idx_t, LayoutPolicy> components,
              raft::device_vector_view<math_t, idx_t> explained_var,
              raft::device_vector_view<math_t, idx_t> explained_var_ratio,
              raft::device_vector_view<math_t, idx_t> singular_vals,
@@ -64,15 +69,18 @@ void pca_fit(raft::resources const& handle,
 /**
  * @brief perform fit and transform operations for PCA. Generates transformed data,
  * eigenvectors, explained vars, singular vals, etc.
+ *
+ * Supports both row-major and col-major layouts. All matrix views must share the same layout.
+ *
  * @tparam math_t data-type upon which the math operation will be performed
  * @tparam idx_t integer type used for indexing
+ * @tparam LayoutPolicy layout of the input/output matrices (raft::row_major or raft::col_major)
  * @param[in] handle raft::resources
  * @param[in] prms PCA parameters (n_components, algorithm, whiten, etc.)
- * @param[inout] input the data is fitted to PCA. Size n_rows x n_cols (col-major). Modified
+ * @param[inout] input the data is fitted to PCA. Size n_rows x n_cols. Modified
  * temporarily during computation.
- * @param[out] trans_input the transformed data. Size n_rows x n_components (col-major).
- * @param[out] components the principal components of the input data. Size n_components x n_cols
- * (col-major).
+ * @param[out] trans_input the transformed data. Size n_rows x n_components.
+ * @param[out] components the principal components of the input data. Size n_components x n_cols.
  * @param[out] explained_var explained variances (eigenvalues) of the principal components. Size
  * n_components.
  * @param[out] explained_var_ratio the ratio of the explained variance and total variance. Size
@@ -82,12 +90,12 @@ void pca_fit(raft::resources const& handle,
  * @param[out] noise_vars variance of the noise. Scalar.
  * @param[in] flip_signs_based_on_U whether to determine signs by U (true) or V.T (false)
  */
-template <typename math_t, typename idx_t>
+template <typename math_t, typename idx_t, typename LayoutPolicy>
 void pca_fit_transform(raft::resources const& handle,
                        const paramsPCA& prms,
-                       raft::device_matrix_view<math_t, idx_t, raft::col_major> input,
-                       raft::device_matrix_view<math_t, idx_t, raft::col_major> trans_input,
-                       raft::device_matrix_view<math_t, idx_t, raft::col_major> components,
+                       raft::device_matrix_view<math_t, idx_t, LayoutPolicy> input,
+                       raft::device_matrix_view<math_t, idx_t, LayoutPolicy> trans_input,
+                       raft::device_matrix_view<math_t, idx_t, LayoutPolicy> components,
                        raft::device_vector_view<math_t, idx_t> explained_var,
                        raft::device_vector_view<math_t, idx_t> explained_var_ratio,
                        raft::device_vector_view<math_t, idx_t> singular_vals,
@@ -111,51 +119,57 @@ void pca_fit_transform(raft::resources const& handle,
 /**
  * @brief performs inverse transform operation for PCA. Transforms the transformed data back to
  * original data.
+ *
+ * Supports both row-major and col-major layouts. All matrix views must share the same layout.
+ *
  * @tparam math_t data-type upon which the math operation will be performed
  * @tparam idx_t integer type used for indexing
+ * @tparam LayoutPolicy layout of the input/output matrices (raft::row_major or raft::col_major)
  * @param[in] handle raft::resources
  * @param[in] prms PCA parameters (n_components, algorithm, whiten, etc.)
- * @param[in] trans_input the transformed data. Size n_rows x n_components (col-major).
- * @param[in] components the principal components of the input data. Size n_components x n_cols
- * (col-major).
+ * @param[in] trans_input the transformed data. Size n_rows x n_components.
+ * @param[in] components the principal components of the input data. Size n_components x n_cols.
  * @param[in] singular_vals singular values of the data. Size n_components.
  * @param[in] mu mean of features (every column). Size n_cols.
- * @param[out] output the reconstructed data. Size n_rows x n_cols (col-major).
+ * @param[out] output the reconstructed data. Size n_rows x n_cols.
  */
-template <typename math_t, typename idx_t>
+template <typename math_t, typename idx_t, typename LayoutPolicy>
 void pca_inverse_transform(raft::resources const& handle,
                            const paramsPCA& prms,
-                           raft::device_matrix_view<math_t, idx_t, raft::col_major> trans_input,
-                           raft::device_matrix_view<math_t, idx_t, raft::col_major> components,
+                           raft::device_matrix_view<math_t, idx_t, LayoutPolicy> trans_input,
+                           raft::device_matrix_view<math_t, idx_t, LayoutPolicy> components,
                            raft::device_vector_view<math_t, idx_t> singular_vals,
                            raft::device_vector_view<math_t, idx_t> mu,
-                           raft::device_matrix_view<math_t, idx_t, raft::col_major> output)
+                           raft::device_matrix_view<math_t, idx_t, LayoutPolicy> output)
 {
   detail::pca_inverse_transform(handle, prms, trans_input, components, singular_vals, mu, output);
 }
 
 /**
  * @brief performs transform operation for PCA. Transforms the data to eigenspace.
+ *
+ * Supports both row-major and col-major layouts. All matrix views must share the same layout.
+ *
  * @tparam math_t data-type upon which the math operation will be performed
  * @tparam idx_t integer type used for indexing
+ * @tparam LayoutPolicy layout of the input/output matrices (raft::row_major or raft::col_major)
  * @param[in] handle raft::resources
  * @param[in] prms PCA parameters (n_components, algorithm, whiten, etc.)
- * @param[inout] input the data to be transformed. Size n_rows x n_cols (col-major). Modified
+ * @param[inout] input the data to be transformed. Size n_rows x n_cols. Modified
  * temporarily during computation (mean-centered then restored).
- * @param[in] components principal components of the input data. Size n_components x n_cols
- * (col-major).
+ * @param[in] components principal components of the input data. Size n_components x n_cols.
  * @param[in] singular_vals singular values of the data. Size n_components.
  * @param[in] mu mean value of the input data. Size n_cols.
- * @param[out] trans_input the transformed data. Size n_rows x n_components (col-major).
+ * @param[out] trans_input the transformed data. Size n_rows x n_components.
  */
-template <typename math_t, typename idx_t>
+template <typename math_t, typename idx_t, typename LayoutPolicy>
 void pca_transform(raft::resources const& handle,
                    const paramsPCA& prms,
-                   raft::device_matrix_view<math_t, idx_t, raft::col_major> input,
-                   raft::device_matrix_view<math_t, idx_t, raft::col_major> components,
+                   raft::device_matrix_view<math_t, idx_t, LayoutPolicy> input,
+                   raft::device_matrix_view<math_t, idx_t, LayoutPolicy> components,
                    raft::device_vector_view<math_t, idx_t> singular_vals,
                    raft::device_vector_view<math_t, idx_t> mu,
-                   raft::device_matrix_view<math_t, idx_t, raft::col_major> trans_input)
+                   raft::device_matrix_view<math_t, idx_t, LayoutPolicy> trans_input)
 {
   detail::pca_transform(handle, prms, input, components, singular_vals, mu, trans_input);
 }
