@@ -77,7 +77,7 @@ void scatterInplaceImpl(
     auto copy_op = [inout = inout.data_handle(),
                     map   = map.data_handle(),
                     batch_offset,
-                    cols_per_batch = raft::util::FastIntDiv(cols_per_batch),
+                    cols_per_batch = raft::util::FastIntDiv<IndexT>(cols_per_batch),
                     n] __device__(auto idx) {
       IndexT row = idx / cols_per_batch;
       IndexT col = idx % cols_per_batch;
@@ -92,7 +92,7 @@ void scatterInplaceImpl(
                        map           = map.data_handle(),
                        scratch_space = scratch_space.data_handle(),
                        batch_offset,
-                       cols_per_batch = raft::util::FastIntDiv(cols_per_batch),
+                       cols_per_batch = raft::util::FastIntDiv<IndexT>(cols_per_batch),
                        n] __device__(auto idx) {
       IndexT row     = idx / cols_per_batch;
       IndexT col     = idx % cols_per_batch;
