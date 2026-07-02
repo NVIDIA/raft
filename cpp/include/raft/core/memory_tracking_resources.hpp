@@ -10,11 +10,11 @@
 #include <raft/core/resource/managed_memory_resource.hpp>
 #include <raft/core/resource/pinned_memory_resource.hpp>
 #include <raft/core/resources.hpp>
-#include <raft/mr/recording_monitor.hpp>
 #include <raft/mr/host_device_resource.hpp>
 #include <raft/mr/host_memory_resource.hpp>
 #include <raft/mr/notifying_adaptor.hpp>
 #include <raft/mr/recording_adaptor.hpp>
+#include <raft/mr/recording_monitor.hpp>
 #include <raft/mr/sampling_monitor.hpp>
 #include <raft/mr/statistics_adaptor.hpp>
 
@@ -50,7 +50,7 @@ namespace raft {
  *    periodically samples aggregate statistics counters and writes a CSV row.
  *    Lower per-allocation overhead than the recording approach, but NVTX range
  *    association is approximate (whatever range is active when the sampler
- *    is writing).  Use when you want lower invasion and don't need exact 
+ *    is writing).  Use when you want lower invasion and don't need exact
  *    per-event labels.
  *
  * On construction the handle:

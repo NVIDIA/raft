@@ -130,17 +130,17 @@ TEST(MemoryTrackingResources, RecordingParallelThreads)
     for (int t = 0; t < kNumThreads; ++t) {
       workers.emplace_back(run, t);
     }
-    for (auto& w : workers) w.join();
+    for (auto& w : workers)
+      w.join();
   }  // tracked destroyed: drains queue, flushes CSV
 
   std::string output = oss.str();
-  auto num_lines = std::count(output.begin(), output.end(), '\n');
+  auto num_lines     = std::count(output.begin(), output.end(), '\n');
 
   // Each iteration: one alloc row + one dealloc row; plus one header line.
   const int expected_rows = kNumThreads * kNumIters * 2 + 1;
   EXPECT_GE(num_lines, expected_rows)
-    << "Expected at least " << expected_rows << " lines; got " << num_lines
-    << "\noutput:\n"
+    << "Expected at least " << expected_rows << " lines; got " << num_lines << "\noutput:\n"
     << output;
 }
 
@@ -149,7 +149,7 @@ TEST(MemoryTrackingResources, SamplingParallelThreads)
   constexpr int kNumThreads        = 64;
   constexpr int kNumIters          = 200;
   constexpr std::size_t kAllocSize = 256 * 1024;  // 256 KiB
-  
+
   std::ostringstream oss;
   {
     raft::resources res;
@@ -167,17 +167,18 @@ TEST(MemoryTrackingResources, SamplingParallelThreads)
     for (int t = 0; t < kNumThreads; ++t) {
       workers.emplace_back(run, t);
     }
-    for (auto& w : workers) w.join();
+    for (auto& w : workers)
+      w.join();
   }
 
   std::string output = oss.str();
-  auto num_lines = std::count(output.begin(), output.end(), '\n');
+  auto num_lines     = std::count(output.begin(), output.end(), '\n');
 
   // Sampling approach drops many rows
   const int max_num_rows = kNumThreads * kNumIters * 2 + 1;
   EXPECT_TRUE(3 < num_lines && num_lines < max_num_rows)
-    << "Expected at least several rows. It is expected when many rows are dropped; got " << num_lines
-    << "\noutput:\n"
+    << "Expected at least several rows. It is expected when many rows are dropped; got "
+    << num_lines << "\noutput:\n"
     << output;
 }
 

@@ -6,7 +6,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/detail/nvtx_range_stack.hpp>  // thread_local_current_range
-#include <raft/mr/recording_monitor.hpp>   // allocation_event, allocation_event_queue
+#include <raft/mr/recording_monitor.hpp>          // allocation_event, allocation_event_queue
 #include <raft/mr/statistics_adaptor.hpp>         // resource_stats (atomic counters, reused)
 
 #include <cuda/memory_resource>
