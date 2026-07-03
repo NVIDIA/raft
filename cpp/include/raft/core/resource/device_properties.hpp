@@ -56,8 +56,10 @@ class device_properties_resource_factory : public resource_factory {
  */
 inline cudaDeviceProp& get_device_properties(resources const& res)
 {
-  res.ensure_default_factory(
-    std::make_shared<device_properties_resource_factory>(get_device_id(res)));
+  if (!res.has_resource_factory(resource_type::DEVICE_PROPERTIES)) {
+    res.ensure_default_factory(
+      std::make_shared<device_properties_resource_factory>(get_device_id(res)));
+  }
   return *res.get_resource<cudaDeviceProp>(resource_type::DEVICE_PROPERTIES);
 };
 

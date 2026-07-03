@@ -173,7 +173,9 @@ namespace detail {
 
 inline auto get_workspace_adaptor(resources const& res) -> rmm::mr::limiting_resource_adaptor*
 {
-  res.ensure_default_factory(std::make_shared<workspace_resource_factory>());
+  if (!res.has_resource_factory(resource_type::WORKSPACE_RESOURCE)) {
+    res.ensure_default_factory(std::make_shared<workspace_resource_factory>());
+  }
   return res.get_resource<rmm::mr::limiting_resource_adaptor>(resource_type::WORKSPACE_RESOURCE);
 }
 
@@ -309,7 +311,9 @@ inline void set_workspace_to_global_resource(
  */
 inline auto get_large_workspace_resource_ref(resources const& res) -> rmm::device_async_resource_ref
 {
-  res.ensure_default_factory(std::make_shared<large_workspace_resource_factory>());
+  if (!res.has_resource_factory(resource_type::LARGE_WORKSPACE_RESOURCE)) {
+    res.ensure_default_factory(std::make_shared<large_workspace_resource_factory>());
+  }
   return rmm::device_async_resource_ref{
     *res.get_resource<raft::mr::device_resource>(resource_type::LARGE_WORKSPACE_RESOURCE)};
 }

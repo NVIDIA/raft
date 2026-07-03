@@ -62,7 +62,10 @@ class cusolver_sp_resource_factory : public resource_factory {
  */
 inline cusolverSpHandle_t get_cusolver_sp_handle(resources const& res)
 {
-  res.ensure_default_factory(std::make_shared<cusolver_sp_resource_factory>(get_cuda_stream(res)));
+  if (!res.has_resource_factory(resource_type::CUSOLVER_SP_HANDLE)) {
+    res.ensure_default_factory(
+      std::make_shared<cusolver_sp_resource_factory>(get_cuda_stream(res)));
+  }
   return *res.get_resource<cusolverSpHandle_t>(resource_type::CUSOLVER_SP_HANDLE);
 };
 
