@@ -100,6 +100,8 @@ class resources {
   void ensure_default_factory(std::shared_ptr<resource::resource_factory> factory) const
   {
     resource::resource_type rtype = factory->get_resource_type();
+    RAFT_EXPECTS(rtype != resource::resource_type::LAST_KEY,
+                 "LAST_KEY is a placeholder and not a valid resource factory type.");
     std::shared_ptr<resource::resource_factory> expected{};
     cells_[rtype]->factory.compare_exchange_strong(expected, std::move(factory));
   }
