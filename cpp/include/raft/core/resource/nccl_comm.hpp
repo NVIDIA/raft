@@ -5,20 +5,28 @@
 #pragma once
 #include <raft/common/nccl_macros.hpp>
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/device_id.hpp>
 #include <raft/core/resource/multi_gpu.hpp>
 #include <raft/core/resource/resource_types.hpp>
 #include <raft/core/resources.hpp>
 
 #include <nccl.h>
 
+#include <algorithm>
 #include <memory>
+#include <vector>
 
 namespace RAFT_EXPORT raft {
 namespace resource {
 
 class nccl_comm_resource : public resource {
  public:
-  nccl_comm_resource() : nccl_comms_(std::make_unique<std::vector<ncclComm_t>>(0)) {}
+  explicit nccl_comm_resource(const std::vector<int>& device_ids)
+    : nccl_comms_(std::make_unique<std::vector<ncclComm_t>>(device_ids.size()))
+  {
+    RAFT_NCCL_TRY(
+      ncclCommInitAll(nccl_comms_->data(), static_cast<int>(device_ids.size()), device_ids.data()));
+  }
   ~nccl_comm_resource() override
   {
     int num_ranks = nccl_comms_->size();
@@ -38,30 +46,16 @@ class nccl_comm_resource : public resource {
 /** Factory that knows how to construct a specific raft::resource to populate the res_t. */
 class nccl_comm_resource_factory : public resource_factory {
  public:
-  resource_type get_resource_type() override { return resource_type::NCCL_COMM; }
-  resource* make_resource() override { return new nccl_comm_resource(); }
-};
-
-inline void _init_nccl_comms(const resources& res)
-{
-  int curr_gpu_id;
-  RAFT_CUDA_TRY(cudaGetDevice(&curr_gpu_id));
-
-  int num_ranks    = raft::resource::get_num_ranks(res);
-  auto& nccl_comms = *res.get_resource<std::vector<ncclComm_t>>(resource_type::NCCL_COMM);
-  nccl_comms.resize(num_ranks);
-
-  ncclUniqueId id;
-  ncclGetUniqueId(&id);
-
-  ncclGroupStart();
-  for (int rank = 0; rank < num_ranks; rank++) {
-    raft::resource::set_current_device_to_rank(res, rank);
-    RAFT_NCCL_TRY(ncclCommInitRank(&(nccl_comms[rank]), num_ranks, id, rank));
+  explicit nccl_comm_resource_factory(std::vector<int> device_ids)
+    : device_ids_(std::move(device_ids))
+  {
   }
-  ncclGroupEnd();
-  RAFT_CUDA_TRY(cudaSetDevice(curr_gpu_id));
-}
+  resource_type get_resource_type() override { return resource_type::NCCL_COMM; }
+  resource* make_resource() override { return new nccl_comm_resource(device_ids_); }
+
+ private:
+  std::vector<int> device_ids_;
+};
 
 /**
  * @defgroup ncclComm_t NCCL comm resource functions
@@ -76,8 +70,13 @@ inline void _init_nccl_comms(const resources& res)
 inline std::vector<ncclComm_t>& get_nccl_comms(const resources& res)
 {
   if (!res.has_resource_factory(resource_type::NCCL_COMM)) {
-    res.ensure_default_factory(std::make_shared<nccl_comm_resource_factory>());
-    _init_nccl_comms(res);
+    auto& world = raft::resource::get_multi_gpu_resource(res);
+    std::vector<int> device_ids(world.size());
+    std::ranges::transform(world, device_ids.begin(), [](const raft::resources& dev_res) {
+      return raft::resource::get_device_id(dev_res);
+    });
+
+    res.ensure_default_factory(std::make_shared<nccl_comm_resource_factory>(std::move(device_ids)));
   }
   return *res.get_resource<std::vector<ncclComm_t>>(resource_type::NCCL_COMM);
 };
