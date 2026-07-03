@@ -55,7 +55,9 @@ class device_id_resource_factory : public resource_factory {
  */
 inline int get_device_id(resources const& res)
 {
-  res.ensure_default_factory(std::make_shared<device_id_resource_factory>());
+  if (!res.has_resource_factory(resource_type::DEVICE_ID)) {
+    res.ensure_default_factory(std::make_shared<device_id_resource_factory>());
+  }
   return *res.get_resource<int>(resource_type::DEVICE_ID);
 };
 

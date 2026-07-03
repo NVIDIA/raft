@@ -54,7 +54,9 @@ class root_rank_resource_factory : public resource_factory {
 
 inline int get_root_rank(resources const& res)
 {
-  res.ensure_default_factory(std::make_shared<root_rank_resource_factory>());
+  if (!res.has_resource_factory(resource_type::ROOT_RANK)) {
+    res.ensure_default_factory(std::make_shared<root_rank_resource_factory>());
+  }
   return *res.get_resource<int>(resource_type::ROOT_RANK);
 };
 
@@ -67,7 +69,9 @@ inline int get_root_rank(resources const& res)
  */
 inline std::vector<raft::resources>& get_multi_gpu_resource(resources const& res)
 {
-  res.ensure_default_factory(std::make_shared<multi_gpu_resource_factory>());
+  if (!res.has_resource_factory(resource_type::MULTI_GPU)) {
+    res.ensure_default_factory(std::make_shared<multi_gpu_resource_factory>());
+  }
   return *res.get_resource<std::vector<raft::resources>>(resource_type::MULTI_GPU);
 };
 

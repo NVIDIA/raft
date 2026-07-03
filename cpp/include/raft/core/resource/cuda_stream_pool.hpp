@@ -69,7 +69,9 @@ inline bool is_stream_pool_initialized(const resources& res)
  */
 inline const rmm::cuda_stream_pool& get_cuda_stream_pool(const resources& res)
 {
-  res.ensure_default_factory(std::make_shared<cuda_stream_pool_resource_factory>());
+  if (!res.has_resource_factory(resource_type::CUDA_STREAM_POOL)) {
+    res.ensure_default_factory(std::make_shared<cuda_stream_pool_resource_factory>());
+  }
   return *(
     *res.get_resource<std::shared_ptr<rmm::cuda_stream_pool>>(resource_type::CUDA_STREAM_POOL));
 };
@@ -162,7 +164,9 @@ inline void sync_stream_pool(const resources& res, const std::vector<std::size_t
  */
 inline void wait_stream_pool_on_stream(const resources& res)
 {
-  res.ensure_default_factory(std::make_shared<cuda_stream_pool_resource_factory>());
+  if (!res.has_resource_factory(resource_type::CUDA_STREAM_POOL)) {
+    res.ensure_default_factory(std::make_shared<cuda_stream_pool_resource_factory>());
+  }
 
   cudaEvent_t event = detail::get_cuda_stream_sync_event(res);
   RAFT_CUDA_TRY(cudaEventRecord(event, get_cuda_stream(res)));

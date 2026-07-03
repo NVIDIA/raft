@@ -40,7 +40,9 @@ class sub_comms_resource_factory : public resource_factory {
 
 inline const comms::comms_t& get_subcomm(const resources& res, std::string key)
 {
-  res.ensure_default_factory(std::make_shared<sub_comms_resource_factory>());
+  if (!res.has_resource_factory(resource_type::SUB_COMMUNICATOR)) {
+    res.ensure_default_factory(std::make_shared<sub_comms_resource_factory>());
+  }
 
   auto sub_comms =
     res.get_resource<std::unordered_map<std::string, std::shared_ptr<comms::comms_t>>>(

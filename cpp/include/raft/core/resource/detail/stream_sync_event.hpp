@@ -33,7 +33,9 @@ class cuda_stream_sync_event_resource_factory : public resource_factory {
  */
 inline cudaEvent_t& get_cuda_stream_sync_event(resources const& res)
 {
-  res.ensure_default_factory(std::make_shared<cuda_stream_sync_event_resource_factory>());
+  if (!res.has_resource_factory(resource_type::CUDA_STREAM_SYNC_EVENT)) {
+    res.ensure_default_factory(std::make_shared<cuda_stream_sync_event_resource_factory>());
+  }
   return *res.get_resource<cudaEvent_t>(resource_type::CUDA_STREAM_SYNC_EVENT);
 };
 
