@@ -248,7 +248,7 @@ void make_regression_caller(raft::resources const& handle,
 
     // Shuffle the samples from out to tmp_out
     raft::random::permute<DataT, IdxT, IdxT>(
-      perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream);
+      perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream, seed);
     IdxT nblks_rows = raft::ceildiv<IdxT>(n_rows, Nthreads);
     _gather2d_kernel<<<nblks_rows, Nthreads, 0, stream>>>(
       values, _values, perms_samples.data(), n_rows, n_targets);
@@ -256,7 +256,14 @@ void make_regression_caller(raft::resources const& handle,
 
     // Shuffle the features from tmp_out to out
     raft::random::permute<DataT, IdxT, IdxT>(
-      perms_features.data(), out, tmp_out.data(), n_rows, n_cols, false, stream);
+      perms_features.data(),
+      out,
+      tmp_out.data(),
+      n_rows,
+      n_cols,
+      false,
+      stream,
+      seed + 1);  // different derived seed for feature shuffle keeps sample and feature independent
 
     // Shuffle the coefficients accordingly
     if (coef != nullptr) {

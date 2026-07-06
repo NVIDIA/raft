@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -337,6 +337,77 @@ TEST_P(PermMdspanTestD, Result)
   _PERMTEST_BODY(test_data_type);
 }
 INSTANTIATE_TEST_CASE_P(PermMdspanTests, PermMdspanTestD, ::testing::ValuesIn(inputsd));
+
+// Determinism test for the seeded `permute` overload (cuML issue #7871:
+// make_regression was not reproducible with shuffle=True because permute
+// drew its affine coefficients from the unseeded global rand()). The same
+// seed must yield identical permutation indices across calls.
+template <typename T>
+class PermSeedTest : public ::testing::TestWithParam<PermInputs<T>> {
+ protected:
+  PermSeedTest()
+    : in(0, resource::get_cuda_stream(handle)),
+      out(0, resource::get_cuda_stream(handle)),
+      perms1(0, resource::get_cuda_stream(handle)),
+      perms2(0, resource::get_cuda_stream(handle))
+  {
+  }
+
+  void SetUp() override
+  {
+    auto stream = resource::get_cuda_stream(handle);
+    params      = ::testing::TestWithParam<PermInputs<T>>::GetParam();
+    int N       = params.N;
+    int D       = params.D;
+    int len     = N * D;
+    raft::random::RngState r(params.seed);
+    in.resize(len, stream);
+    out.resize(len, stream);
+    perms1.resize(N, stream);
+    perms2.resize(N, stream);
+    uniform(handle, r, in.data(), len, T(-1.0), T(1.0));
+
+    // Same seed twice -> the two permutations must be identical.
+    permute<T, int, int>(
+      perms1.data(), out.data(), in.data(), D, N, params.rowMajor, stream, params.seed);
+    permute<T, int, int>(
+      perms2.data(), out.data(), in.data(), D, N, params.rowMajor, stream, params.seed);
+    resource::sync_stream(handle);
+  }
+
+ protected:
+  raft::resources handle;
+  PermInputs<T> params;
+  rmm::device_uvector<T> in, out;
+  rmm::device_uvector<int> perms1, perms2;
+};
+
+using PermSeedTestF = PermSeedTest<float>;
+TEST_P(PermSeedTestF, SameSeedIsDeterministic)
+{
+  auto stream = resource::get_cuda_stream(handle);
+  int N       = params.N;
+  std::vector<int> h1(N), h2(N);
+  raft::update_host(h1.data(), perms1.data(), N, stream);
+  raft::update_host(h2.data(), perms2.data(), N, stream);
+  RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
+  ASSERT_EQ(h1, h2);
+
+  // Different seeds should produce different permutations. Only checked for
+  // larger N, where the space of affine permutations is large enough that a
+  // collision is astronomically unlikely.
+  if (N >= 1024) {
+    rmm::device_uvector<int> perms3(N, stream);
+    permute<float, int, int>(
+      perms3.data(), out.data(), in.data(), params.D, N, params.rowMajor, stream, params.seed + 1);
+    resource::sync_stream(handle);
+    std::vector<int> h3(N);
+    raft::update_host(h3.data(), perms3.data(), N, stream);
+    RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
+    ASSERT_NE(h1, h3);
+  }
+}
+INSTANTIATE_TEST_CASE_P(PermSeedTests, PermSeedTestF, ::testing::ValuesIn(inputsf));
 
 }  // end namespace random
 }  // end namespace raft

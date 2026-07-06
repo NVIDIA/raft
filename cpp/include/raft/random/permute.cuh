@@ -90,7 +90,8 @@ template <typename InputOutputValueType, typename IntType, typename IdxType, typ
 void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              std::optional<raft::device_vector_view<IntType, IdxType>> permsOut,
-             std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out)
+             std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out,
+             uint64_t seed = 0ULL)
 {
   static_assert(std::is_integral_v<IntType>,
                 "permute: The type of each element "
@@ -126,7 +127,8 @@ void permute(raft::resources const& handle,
                                                             D,
                                                             N,
                                                             is_row_major,
-                                                            resource::get_cuda_stream(handle));
+                                                            resource::get_cuda_stream(handle),
+                                                            seed);
   }
 }
 
@@ -190,9 +192,10 @@ void permute(IntType* perms,
              IntType D,
              IntType N,
              bool rowMajor,
-             cudaStream_t stream)
+             cudaStream_t stream,
+             uint64_t seed = 0ULL)  // default seed
 {
-  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream);
+  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, seed);
 }
 
 };  // namespace random

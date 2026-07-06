@@ -13,6 +13,7 @@
 #include <cooperative_groups.h>
 
 #include <memory>
+#include <random>
 
 namespace raft {
 namespace random {
@@ -120,15 +121,22 @@ void permute(IntType* perms,
              IntType D,
              IntType N,
              bool rowMajor,
-             cudaStream_t stream)
+             cudaStream_t stream,
+             uint64_t seed)
 {
   auto nblks = raft::ceildiv(N, (IntType)TPB);
 
-  // always keep 'a' to be coprime to N
-  IdxType a = rand() % N;
+  // gen seeded once, deterministically, from seed param
+  std::mt19937_64 gen(seed);
+  // maps gen's raw bit stream to a uniform integer
+  std::uniform_int_distribution<IdxType> dist(0, N - 1);
+
+  // a must be coprime to N, otherwise (a * tid) % N does not hit every row exactly once
+  IdxType a = dist(gen);
   while (raft::gcd(a, N) != 1)
     a = (a + 1) % N;
-  IdxType b = rand() % N;
+  // additive offset
+  IdxType b = dist(gen);
 
   if (rowMajor) {
     permute_impl_t<Type,
