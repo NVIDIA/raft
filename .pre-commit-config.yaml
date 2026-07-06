@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 repos:
@@ -85,7 +85,7 @@ repos:
                   (?x)
                     ^CHANGELOG[.]md$|
       - repo: https://github.com/rapidsai/pre-commit-hooks
-        rev: v1.4.2
+        rev: v1.6.0
         hooks:
           - id: verify-copyright
             name: verify-copyright-raft
@@ -145,7 +145,7 @@ repos:
               )
           - id: verify-alpha-spec
           - id: verify-codeowners
-            args: [--fix, --project-prefix=raft]
+            args: [--fix, --org=NVIDIA, --project-prefix=raft]
           - id: verify-hardcoded-version
             exclude: |
               (?x)
@@ -171,7 +171,7 @@ repos:
                 ^conda/environments/|
                 (^|/)UCXX_BRANCH$|
                 (^|/)RAPIDS_BRANCH$|
-                [.](md|rst)$
+                [.](md|rst|svg)$
           - id: verify-pyproject-license
             # ignore the top-level pyproject.toml, which doesn't
             # have or need a [project] table

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 schema_version: 1
 
@@ -89,13 +89,13 @@ requirements:
     - libraft =${{ version }}
     - libraft-headers =${{ version }}
     - python
-    - numpy >=1.23,<3.0
+    - numpy >=2.0,<3.0
     - rmm =${{ minor_version }}
     - if: cuda_major == "12"
       then: cuda-python >=12.9.2,<13.0
       else: cuda-python >=13.0.1,<14.0
   run_constraints:
-    - cupy >=13.6.0,!=14.0.0,!=14.1.0
+    - cupy >=14.0.1,!=14.1.0
   ignore_run_exports:
     from_package:
       - ${{ compiler("c") }}

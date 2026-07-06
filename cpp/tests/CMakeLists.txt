@@ -1,6 +1,6 @@
 # =============================================================================
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 # =============================================================================
@@ -317,6 +317,7 @@ if(BUILD_TESTS)
     util/bitonic_sort.cu
     util/cudart_utils.cpp
     util/device_atomics.cu
+    util/fast_int_div.cu
     util/integer_utils.cpp
     util/integer_utils.cu
     util/memory_type_dispatcher.cu
