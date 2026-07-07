@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -108,7 +108,7 @@ class rmat_lanczos_tests
     raft::random::uniform<ValueType>(handle, rng, theta.view(), 0, 1);
 
     auto out = raft::make_device_mdarray<IndexType, IndexType, raft::row_major>(
-      handle, raft::extents<IndexType, raft::dynamic_extent, 2>(n_edges * 2, 2));
+      handle, raft::extents<IndexType, raft::dynamic_extent, 2>(n_edges, 2));
     auto out_src = raft::make_device_vector<IndexType, IndexType, raft::row_major>(handle, n_edges);
     auto out_dst = raft::make_device_vector<IndexType, IndexType, raft::row_major>(handle, n_edges);
 

@@ -20,7 +20,7 @@ authors = [
 license = "Apache-2.0"
 requires-python = ">=3.11"
 dependencies = [
-    "cuda-python>=13.0.1,<14.0",
+    "cuda-bindings>=13.0.1,<14.0",
     "libraft==26.8.*,>=0.0.0a0",
     "numpy>=2.0,<3.0",
     "rmm==26.8.*,>=0.0.0a0",
@@ -85,7 +85,7 @@ regex = "(?P<value>.*)"
 build-backend = "scikit_build_core.build"
 requires = [
     "cmake>=4.0",
-    "cuda-python>=13.0.1,<14.0",
+    "cuda-bindings>=13.0.1,<14.0",
     "cython>=3.2.2",
     "libraft==26.8.*,>=0.0.0a0",
     "librmm==26.8.*,>=0.0.0a0",
