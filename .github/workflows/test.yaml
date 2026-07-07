@@ -68,7 +68,6 @@ jobs:
       build_type: ${{ inputs.build_type }}
       branch: ${{ inputs.branch }}
       date: ${{ inputs.date }}
-      run_codecov: false
       script: ci/test_python.sh
       sha: ${{ inputs.sha }}
   wheel-tests-pylibraft:

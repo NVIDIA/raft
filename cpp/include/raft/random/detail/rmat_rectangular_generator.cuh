@@ -249,7 +249,7 @@ void rmat_rectangular_gen_impl(raft::resources const& handle,
  * @brief Overload of `rmat_rectangular_gen` that assumes the same
  *   a, b, c, d probability distributions across all the scales.
  *
- * `a`, `b, and `c` effectively replace the above overload's
+ * `a`, `b`, and `c` effectively replace the above overload's
  * `theta` parameter.
  */
 template <typename IdxT, typename ProbT>
