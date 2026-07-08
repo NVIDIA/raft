@@ -5,6 +5,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_setter.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/managed_memory_resource.hpp>
 #include <raft/core/resource/pinned_memory_resource.hpp>
@@ -108,7 +109,7 @@ class memory_tracking_resources : public resources {
   {
     report_.stop();
     raft::mr::set_default_host_resource(old_host_);
-    rmm::mr::set_current_device_resource(old_device_);
+    rmm::mr::set_per_device_resource(rmm::cuda_device_id{device_id_}, std::move(old_device_));
   }
 
   memory_tracking_resources(memory_tracking_resources const&)            = delete;
@@ -127,6 +128,7 @@ class memory_tracking_resources : public resources {
     : resources(existing ? *existing : resources{}),
       owned_stream_(std::move(owned_stream)),
       report_(out_override ? *out_override : *owned_stream_, sample_interval),
+      device_id_(device_setter::get_current_device()),
       old_host_(raft::mr::get_default_host_resource()),
       old_device_(rmm::mr::get_current_device_resource_ref())
   {
@@ -141,6 +143,7 @@ class memory_tracking_resources : public resources {
   std::unique_ptr<std::ofstream> owned_stream_;
   raft::mr::resource_monitor report_;
 
+  int device_id_;
   raft::mr::host_resource old_host_;
   raft::mr::device_resource old_device_;
 
