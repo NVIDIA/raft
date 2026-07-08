@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,6 +13,7 @@
 #include <raft/util/cudart_utils.hpp>
 
 #include <algorithm>
+#include <cstdint>
 #include <vector>
 
 namespace raft {
@@ -337,6 +338,75 @@ TEST_P(PermMdspanTestD, Result)
   _PERMTEST_BODY(test_data_type);
 }
 INSTANTIATE_TEST_CASE_P(PermMdspanTests, PermMdspanTestD, ::testing::ValuesIn(inputsd));
+
+/*
+ * Randomness test for the Feistel-based permutation via a chi-square
+ * goodness-of-fit test.
+ *
+ * For a random permutation of [0, N), the consecutive differences
+ * d[i] = (perm[i+1] - perm[i]) mod N are approximately uniformly distributed
+ * over [0, N). We bin them into B equal-width buckets and compare the observed
+ * counts against the flat expected count E = (N-1)/B using Pearson's statistic
+ *
+ *     chi2 = sum_b (O_b - E)^2 / E.
+ *
+ * Under the uniform (random) hypothesis chi2 follows a chi-square distribution
+ * with dof = B-1, so it concentrates around its mean (dof) with std sqrt(2*dof)
+ * -- for B = 1000 that is 999 +/- ~45. Structure in the permutation (e.g. a
+ * predictable relationship between adjacent outputs) piles the differences into
+ * a few buckets and inflates chi2 far above dof.
+ *
+ * The key is an explicit, fixed parameter, so the permutation and the resulting
+ * statistic are fully deterministic (not flaky). We assert chi2 lands in a
+ * generous central band around dof; a well-mixing permutation clears this
+ * easily, while a non-uniform one falls outside it.
+ */
+TEST(PermuteRandomness, ConsecutiveDifferencesChiSquareUniform)
+{
+  // N is a non-power-of-two (prime) so the permutation also cycle-walks.
+  const int N        = 100003;
+  const uint64_t key = 1234567890ULL;
+  const int B        = 1000;  // number of histogram buckets
+
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+  rmm::device_uvector<int> perms(N, stream);
+  // null in/out: only the permutation indices are produced.
+  permute<float, int, int>(perms.data(),
+                           static_cast<float*>(nullptr),
+                           static_cast<const float*>(nullptr),
+                           /* D = */ 1,
+                           N,
+                           /* rowMajor = */ true,
+                           stream,
+                           key);
+  std::vector<int> p(N);
+  raft::update_host<int>(p.data(), perms.data(), N, stream);
+  resource::sync_stream(handle);
+
+  std::vector<long> hist(B, 0);
+  const int total = N - 1;
+  for (int i = 0; i + 1 < N; ++i) {
+    int d = static_cast<int>(((static_cast<long>(p[i + 1]) - p[i]) % N + N) % N);
+    int b = static_cast<int>((static_cast<long>(d) * B) / N);  // map [0, N) -> [0, B)
+    if (b >= B) b = B - 1;
+    hist[b]++;
+  }
+
+  const double expected = static_cast<double>(total) / B;
+  double chi2           = 0.0;
+  for (int b = 0; b < B; ++b) {
+    double diff = static_cast<double>(hist[b]) - expected;
+    chi2 += diff * diff / expected;
+  }
+
+  const double dof = B - 1;  // expected mean of chi2 under uniformity
+  // Generous central band (mean +/- ~11 std) to demonstrate uniformity without
+  // being flaky. A random permutation sits near dof; structure pushes chi2 high.
+  EXPECT_GT(chi2, 0.5 * dof) << "chi2=" << chi2 << " suspiciously low (dof=" << dof << ")";
+  EXPECT_LT(chi2, 1.5 * dof) << "chi2=" << chi2 << " too high -- consecutive differences are "
+                             << "not uniform, permutation is not random (dof=" << dof << ")";
+}
 
 }  // end namespace random
 }  // end namespace raft
