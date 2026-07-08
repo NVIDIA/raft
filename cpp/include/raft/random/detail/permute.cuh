@@ -270,13 +270,14 @@ void permute(IntType* perms,
              IntType D,
              IntType N,
              bool rowMajor,
-             cudaStream_t stream)
+             cudaStream_t stream,
+             uint64_t key)
 {
   auto nblks = raft::ceildiv(N, (IntType)TPB);
 
-  // draw one 64-bit key and build the keyed Feistel schedule for [0, N) once on
-  // the host; the same schedule is broadcast (by value) to every thread
-  uint64_t key = (uint64_t(rand()) << 32) ^ uint64_t(rand());
+  // build the keyed Feistel schedule for [0, N) once on the host from the
+  // caller-supplied key; the same schedule is broadcast (by value) to every
+  // thread
   feistel_permute_params fp = make_feistel_permute_params(uint64_t(N), key);
 
   if (rowMajor) {
