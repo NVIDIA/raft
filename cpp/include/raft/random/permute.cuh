@@ -16,6 +16,7 @@
 #include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
+#include <cstdint>
 #include <optional>
 #include <type_traits>
 
@@ -75,6 +76,8 @@ using perms_out_view_t = typename perms_out_view<T, InputOutputValueType, IdxTyp
  * @param[out] out If provided, the output matrix, containing the
  *   permuted rows of the input matrix `in`.  (Not providing this
  *   is only useful if you provide `permsOut`.)
+ * @param[in] key 64-bit key that selects the permutation. The same key
+ *   (with the same `in.extent(0)`) always produces the same permutation.
  *
  * @pre If `permsOut.has_value()` is `true`,
  *   then `(*permsOut).extent(0) == in.extent(0)` is `true`.
@@ -91,7 +94,8 @@ template <typename InputOutputValueType, typename IntType, typename IdxType, typ
 void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              std::optional<raft::device_vector_view<IntType, IdxType>> permsOut,
-             std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out)
+             std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out,
+             uint64_t key)
 {
   if (resource::get_dry_run_flag(handle)) { return; }
   static_assert(std::is_integral_v<IntType>,
@@ -128,7 +132,8 @@ void permute(raft::resources const& handle,
                                                             D,
                                                             N,
                                                             is_row_major,
-                                                            resource::get_cuda_stream(handle));
+                                                            resource::get_cuda_stream(handle),
+                                                            key);
   }
 }
 
@@ -144,7 +149,8 @@ template <typename InputOutputValueType,
 void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              PermsOutType&& permsOut,
-             OutType&& out)
+             OutType&& out,
+             uint64_t key)
 {
   if (resource::get_dry_run_flag(handle)) { return; }
   // If PermsOutType is std::optional<device_vector_view<T, IdxType>>
@@ -162,7 +168,7 @@ void permute(raft::resources const& handle,
 
   std::optional<perms_out_view_type> permsOut_arg = std::forward<PermsOutType>(permsOut);
   std::optional<out_view_type> out_arg            = std::forward<OutType>(out);
-  permute(handle, in, permsOut_arg, out_arg);
+  permute(handle, in, permsOut_arg, out_arg, key);
 }
 
 /** @} */
@@ -185,6 +191,8 @@ void permute(raft::resources const& handle,
  * @param[in] rowMajor true if the matrices are row major,
  *   false if they are column major
  * @param[in] stream CUDA stream on which to run
+ * @param[in] key 64-bit key that selects the permutation. The same key
+ *   (with the same @c N) always produces the same permutation.
  */
 template <typename Type, typename IntType = int, typename IdxType = int, int TPB = 256>
 void permute(IntType* perms,
@@ -193,9 +201,10 @@ void permute(IntType* perms,
              IntType D,
              IntType N,
              bool rowMajor,
-             cudaStream_t stream)
+             cudaStream_t stream,
+             uint64_t key)
 {
-  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream);
+  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, key);
 }
 
 };  // namespace random

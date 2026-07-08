@@ -248,9 +248,15 @@ void make_regression_caller(raft::resources const& handle,
     if (!is_dry_run) {
       constexpr IdxT Nthreads = 256;
 
+      // Derive two distinct permutation keys from the seed so the shuffle stays
+      // reproducible for a given seed while the samples and features get
+      // independent permutations.
+      const uint64_t samples_key  = seed;
+      const uint64_t features_key = seed ^ 0x9e3779b97f4a7c15ULL;
+
       // Shuffle the samples from out to tmp_out
       raft::random::permute<DataT, IdxT, IdxT>(
-        perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream);
+        perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream, samples_key);
       IdxT nblks_rows = raft::ceildiv<IdxT>(n_rows, Nthreads);
       raft::launch_kernel(stream,
                           nblks_rows,
@@ -264,7 +270,7 @@ void make_regression_caller(raft::resources const& handle,
 
       // Shuffle the features from tmp_out to out
       raft::random::permute<DataT, IdxT, IdxT>(
-        perms_features.data(), out, tmp_out.data(), n_rows, n_cols, false, stream);
+        perms_features.data(), out, tmp_out.data(), n_rows, n_cols, false, stream, features_key);
 
       // Shuffle the coefficients accordingly
       if (coef != nullptr) {
