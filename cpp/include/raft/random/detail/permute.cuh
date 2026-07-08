@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -69,11 +69,11 @@ HDI uint32_t feistel_fmix32(uint32_t h)
 struct feistel_permute_params {
   static constexpr int ROUNDS = 4;
 
-  uint64_t U;      // N (domain size); U <= 1 selects the identity permutation
-  uint64_t mask_n;  // low-n-bit mask, n = ceil(log2(N)) (the cycle-walk domain)
-  uint32_t mask_b;  // low-half mask (b bits); high half needs no mask (see below)
-  uint32_t a;       // high part width, ceil(n/2), 1..32
-  uint32_t b;       // low  part width, floor(n/2), 1..32 (n is clamped to >= 2)
+  uint64_t U;               // N (domain size); U <= 1 selects the identity permutation
+  uint64_t mask_n;          // low-n-bit mask, n = ceil(log2(N)) (the cycle-walk domain)
+  uint32_t mask_b;          // low-half mask (b bits); high half needs no mask (see below)
+  uint32_t a;               // high part width, ceil(n/2), 1..32
+  uint32_t b;               // low  part width, floor(n/2), 1..32 (n is clamped to >= 2)
   uint32_t prefix[ROUNDS];  // per-round key-derived mixing constant
 };
 
@@ -286,8 +286,14 @@ void permute(IntType* perms,
                    IdxType,
                    TPB,
                    true,
-                   (16 / sizeof(Type) > 0) ? 16 / sizeof(Type) : 1>::permuteImpl(
-      perms, out, in, N, D, nblks, fp, stream);
+                   (16 / sizeof(Type) > 0) ? 16 / sizeof(Type) : 1>::permuteImpl(perms,
+                                                                                 out,
+                                                                                 in,
+                                                                                 N,
+                                                                                 D,
+                                                                                 nblks,
+                                                                                 fp,
+                                                                                 stream);
   } else {
     permute_impl_t<Type, IntType, IdxType, TPB, false, 1>::permuteImpl(
       perms, out, in, N, D, nblks, fp, stream);
