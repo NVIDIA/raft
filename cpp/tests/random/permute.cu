@@ -65,7 +65,7 @@ class PermTest : public ::testing::TestWithParam<PermInputs<T>> {
       out_ptr = out.data();
       uniform(handle, r, in_ptr, len, T(-1.0), T(1.0));
     }
-    permute(outPerms_ptr, out_ptr, in_ptr, D, N, params.rowMajor, stream);
+    permute(outPerms_ptr, out_ptr, in_ptr, D, N, params.rowMajor, stream, params.seed);
     resource::sync_stream(handle);
   }
 
@@ -133,16 +133,16 @@ class PermMdspanTest : public ::testing::TestWithParam<PermInputs<T>> {
       std::optional<vector_view_t<index_type>> outPerms_view;
       if (outPerms_ptr != nullptr) { outPerms_view.emplace(outPerms_ptr, N); }
 
-      permute(handle, in_view, outPerms_view, out_view);
+      permute(handle, in_view, outPerms_view, out_view, params.seed);
 
       // None of these three permute calls should have an effect.
       // The point is to test whether the function can deduce the
       // element type of outPerms if given nullopt.
       std::optional<matrix_view_t<T, layout_type>> out_view_empty;
       std::optional<vector_view_t<index_type>> outPerms_view_empty;
-      permute(handle, in_view, std::nullopt, out_view_empty);
-      permute(handle, in_view, outPerms_view_empty, std::nullopt);
-      permute(handle, in_view, std::nullopt, std::nullopt);
+      permute(handle, in_view, std::nullopt, out_view_empty, params.seed);
+      permute(handle, in_view, outPerms_view_empty, std::nullopt, params.seed);
+      permute(handle, in_view, std::nullopt, std::nullopt, params.seed);
     };
 
     if (params.rowMajor) {

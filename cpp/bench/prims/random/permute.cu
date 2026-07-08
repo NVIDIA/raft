@@ -34,8 +34,14 @@ struct permute : public fixture {
   {
     raft::random::RngState r(123456ULL);
     loop_on_state(state, [this, &r]() {
-      raft::random::permute(
-        perms.data(), out.data(), in.data(), params.cols, params.rows, params.rowMajor, stream);
+      raft::random::permute(perms.data(),
+                            out.data(),
+                            in.data(),
+                            params.cols,
+                            params.rows,
+                            params.rowMajor,
+                            stream,
+                            123456ULL);
     });
   }
 
