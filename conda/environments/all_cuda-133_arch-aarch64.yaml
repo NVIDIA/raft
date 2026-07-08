@@ -10,12 +10,12 @@ dependencies:
 - clang-tools=20.1.8
 - clang==20.1.8
 - cmake>=4.0
+- cuda-bindings>=13.0.1,<14.0
 - cuda-nvcc
 - cuda-nvtx-dev
 - cuda-profiler-api
-- cuda-python>=13.0.1,<14.0
-- cuda-version=13.2
-- cupy>=13.6.0,!=14.0.0,!=14.1.0
+- cuda-version=13.3
+- cupy>=14.0.1,!=14.1.0
 - cxx-compiler
 - cython>=3.2.2
 - dask-cuda==26.8.*,>=0.0.0a0
@@ -31,7 +31,7 @@ dependencies:
 - libucxx==0.51.*,>=0.0.0a0
 - nccl>=2.19
 - ninja
-- numpy>=1.23,<3.0
+- numpy>=2.0,<3.0
 - numpydoc
 - pre-commit
 - pylibraft==26.8.*,>=0.0.0a0
@@ -51,4 +51,4 @@ dependencies:
 - sysroot_linux-aarch64==2.28
 - pip:
   - nvidia-sphinx-theme
-name: all_cuda-132_arch-aarch64
+name: all_cuda-133_arch-aarch64

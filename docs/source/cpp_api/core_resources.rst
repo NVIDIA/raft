@@ -196,6 +196,32 @@ namespace *raft::resource*
      :members:
      :content-only:
 
+Memory Statistics Resources
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``#include <raft/core/memory_stats_resources.hpp>``
+
+namespace *raft*
+
+.. doxygenstruct:: raft::memory_stats
+    :project: RAFT
+    :members:
+
+.. doxygenclass:: raft::memory_stats_resources
+    :project: RAFT
+    :members:
+
+Memory Tracking Resources
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``#include <raft/core/memory_tracking_resources.hpp>``
+
+namespace *raft*
+
+.. doxygenclass:: raft::memory_tracking_resources
+    :project: RAFT
+    :members:
+
 Device Properties
 ~~~~~~~~~~~~~~~~~
 

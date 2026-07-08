@@ -14,6 +14,8 @@
 #include <raft/core/resources.hpp>
 #include <raft/stats/detail/mean.cuh>
 
+#include <type_traits>
+
 namespace raft {
 namespace stats {
 
@@ -68,6 +70,37 @@ template <bool rowMajor, typename Type, typename IdxType = int>
  */
 
 /**
+ * @brief Compute mean of the input matrix with different input and output data types.
+ *
+ * Mean operation is assumed to be performed on a given column.
+ *
+ * @tparam in_value_t the input data type
+ * @tparam out_value_t the output data type
+ * @tparam idx_t index type
+ * @tparam layout_t Layout type of the input matrix.
+ * @param[in]  handle the raft handle
+ * @param[in]  data the input matrix
+ * @param[out] mu the output mean vector
+ */
+template <typename in_value_t, typename out_value_t, typename idx_t, typename layout_t>
+void mean(raft::resources const& handle,
+          raft::device_matrix_view<const in_value_t, idx_t, layout_t> data,
+          raft::device_vector_view<out_value_t, idx_t> mu)
+{
+  static_assert(
+    std::is_same_v<layout_t, raft::row_major> || std::is_same_v<layout_t, raft::col_major>,
+    "Data layout not supported");
+  RAFT_EXPECTS(data.extent(1) == mu.extent(0), "Size mismatch between data and mu");
+  RAFT_EXPECTS(mu.is_exhaustive(), "mu must be contiguous");
+  RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
+  detail::mean<std::is_same_v<layout_t, raft::row_major>>(mu.data_handle(),
+                                                          data.data_handle(),
+                                                          data.extent(1),
+                                                          data.extent(0),
+                                                          resource::get_cuda_stream(handle));
+}
+
+/**
  * @brief Compute mean of the input matrix
  *
  * Mean operation is assumed to be performed on a given column.
@@ -84,17 +117,7 @@ void mean(raft::resources const& handle,
           raft::device_matrix_view<const value_t, idx_t, layout_t> data,
           raft::device_vector_view<value_t, idx_t> mu)
 {
-  static_assert(
-    std::is_same_v<layout_t, raft::row_major> || std::is_same_v<layout_t, raft::col_major>,
-    "Data layout not supported");
-  RAFT_EXPECTS(data.extent(1) == mu.extent(0), "Size mismatch between data and mu");
-  RAFT_EXPECTS(mu.is_exhaustive(), "mu must be contiguous");
-  RAFT_EXPECTS(data.is_exhaustive(), "data must be contiguous");
-  detail::mean<std::is_same_v<layout_t, raft::row_major>>(mu.data_handle(),
-                                                          data.data_handle(),
-                                                          data.extent(1),
-                                                          data.extent(0),
-                                                          resource::get_cuda_stream(handle));
+  mean<value_t, value_t, idx_t, layout_t>(handle, data, mu);
 }
 
 /**

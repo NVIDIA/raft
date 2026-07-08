@@ -31,18 +31,18 @@ namespace detail {
 struct default_host_resource_holder {
  private:
   std::mutex lock_;
-  raft::mr::host_resource_ref ref_{raft::mr::new_delete_resource()};
+  raft::mr::host_resource res_{raft::mr::new_delete_resource()};
 
  public:
-  inline auto set(raft::mr::host_resource_ref ref) -> raft::mr::host_resource_ref
+  inline auto set(raft::mr::host_resource res) -> raft::mr::host_resource
   {
     std::unique_lock<std::mutex> guard(lock_);
-    return std::exchange(ref_, ref);
+    return std::exchange(res_, res);
   }
   inline auto get() -> raft::mr::host_resource_ref
   {
     std::unique_lock<std::mutex> guard(lock_);
-    return ref_;
+    return raft::mr::host_resource_ref{res_};
   }
 };
 
@@ -64,16 +64,14 @@ inline auto get_default_host_resource() -> raft::mr::host_resource_ref
 /**
  * @brief Set the default host memory resource.
  *
- * The caller must keep the underlying resource alive while it is set as the default
  * (same contract as rmm::mr::set_current_device_resource).
  *
- * @param ref Non-owning reference to the resource to install.
- * @return The previous default host resource ref.
+ * @param res The resource to install.
+ * @return The previous default host resource.
  */
-inline auto set_default_host_resource(raft::mr::host_resource_ref ref)
-  -> raft::mr::host_resource_ref
+inline auto set_default_host_resource(raft::mr::host_resource res) -> raft::mr::host_resource
 {
-  return detail::default_host_resource_holder_.set(ref);
+  return detail::default_host_resource_holder_.set(res);
 }
 
 }  // namespace mr

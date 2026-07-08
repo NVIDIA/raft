@@ -141,6 +141,7 @@ jobs:
       date: ${{ inputs.date }}
       package-name: libraft
       package-type: cpp
+      publish-wheel-search-key: raft_wheel_cpp_libraft
   wheel-build-pylibraft:
     needs: wheel-build-libraft
     permissions:
@@ -179,7 +180,7 @@ jobs:
       date: ${{ inputs.date }}
       package-name: pylibraft
       package-type: python
-      publish-wheel-search-key: pylibraft_wheel_python_abi3
+      publish-wheel-search-key: raft_wheel_python_pylibraft
   wheel-build-raft-dask:
     needs: wheel-build-libraft
     permissions:
@@ -218,7 +219,7 @@ jobs:
       date: ${{ inputs.date }}
       package-name: raft_dask
       package-type: python
-      publish-wheel-search-key: raft_dask_wheel_python_abi3
+      publish-wheel-search-key: raft_wheel_python_raft_dask
   devcontainers:
     name: Build devcontainers
     secrets: inherit  # zizmor: ignore[secrets-inherit]
@@ -227,4 +228,4 @@ jobs:
       packages: write
     with:
       push: true
-      cuda: '["12.9", "13.2"]'
+      cuda: '["12.9", "13.3"]'

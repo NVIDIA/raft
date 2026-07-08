@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -59,7 +59,7 @@ inline auto get_managed_memory_resource_ref(resources const& res)
   -> raft::mr::host_device_resource_ref
 {
   if (!res.has_resource_factory(resource_type::MANAGED_MEMORY_RESOURCE)) {
-    res.add_resource_factory(std::make_shared<managed_memory_resource_factory>());
+    res.ensure_default_factory(std::make_shared<managed_memory_resource_factory>());
   }
   auto& mr =
     *res.get_resource<raft::mr::host_device_resource>(resource_type::MANAGED_MEMORY_RESOURCE);
@@ -72,7 +72,7 @@ inline auto get_managed_memory_resource_ref(resources const& res)
  * @param res raft resources object for managing resources
  * @param mr  host+device accessible memory resource
  */
-inline void set_managed_memory_resource(resources const& res, raft::mr::host_device_resource mr)
+inline void set_managed_memory_resource(resources& res, raft::mr::host_device_resource mr)
 {
   res.add_resource_factory(std::make_shared<managed_memory_resource_factory>(std::move(mr)));
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -39,8 +39,8 @@ namespace detail {
  * This class prevents users from doing anything other than that,
  * and makes it easier for the three cases to share a common implementation.
  * It also prevents duplication of run-time vector length checking
- * (`out` must have twice the number of elements as `out_src` and `out_dst`,
- * and `out_src` and `out_dst` must have the same length).
+ * (`out.extent(0)` must equal `out_src.extent(0)` and `out_dst.extent(0)`,
+ * and `out_src.extent(0)` and `out_dst.extent(0)` must have the same length).
  *
  * @tparam IdxT Type of each node index; must be integral.
  *
@@ -92,11 +92,11 @@ class rmat_rectangular_gen_output {
                   const out_dst_view_type& dst)
       : out_(out), pair_(src, dst)
     {
-      RAFT_EXPECTS(out.extent(0) == IdxT(2) * dst.extent(0),
+      RAFT_EXPECTS(out.extent(0) == dst.extent(0),
                    "rmat_rectangular_gen: "
-                   "out.extent(0) = %zu != 2 * out_dst.extent(0) = %zu",
+                   "out.extent(0) = %zu != out_dst.extent(0) = %zu",
                    static_cast<std::size_t>(out.extent(0)),
-                   static_cast<std::size_t>(IdxT(2) * dst.extent(0)));
+                   static_cast<std::size_t>(dst.extent(0)));
     }
 
     out_view_type out_view() const { return out_; }

@@ -75,6 +75,32 @@ class statistics_adaptor : public cuda::forward_property<statistics_adaptor<Upst
   {
   }
 
+  // NVCC injects __host__ __device__ on std::shared_ptr special members,
+  // which makes the *implicit* or *defaulted* special members __host__
+  // __device__ too.  That conflicts with Upstream types whose special
+  // members are __host__ only (e.g. rmm::device_async_resource_ref).
+  // User-defined bodies (not = default) force plain __host__ execution space.
+  statistics_adaptor(statistics_adaptor&& other) noexcept
+    : upstream_(std::move(other.upstream_)), stats_(std::move(other.stats_))
+  {
+  }
+  statistics_adaptor(statistics_adaptor const& other)
+    : upstream_(other.upstream_), stats_(other.stats_)
+  {
+  }
+  statistics_adaptor& operator=(statistics_adaptor&& other) noexcept
+  {
+    upstream_ = std::move(other.upstream_);
+    stats_    = std::move(other.stats_);
+    return *this;
+  }
+  statistics_adaptor& operator=(statistics_adaptor const& other)
+  {
+    upstream_ = other.upstream_;
+    stats_    = other.stats_;
+    return *this;
+  }
+
   /**
    * @brief Get the shared resource_stats object.
    *

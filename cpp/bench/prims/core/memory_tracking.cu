@@ -5,10 +5,10 @@
 
 #include <common/benchmark.hpp>
 
+#include <raft/core/memory_tracking_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resources.hpp>
-#include <raft/util/memory_tracking_resources.hpp>
 
 #include <rmm/cuda_stream_view.hpp>
 #include <rmm/resource_ref.hpp>

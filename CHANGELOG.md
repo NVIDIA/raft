@@ -1,3 +1,42 @@
+# raft 26.06.00 (3 Jun 2026)
+
+### 🚨 Breaking Changes
+* Unify memory resources by @achirkin in https://github.com/rapidsai/raft/pull/2968
+* Migrate RMM usage to CCCL MR design by @bdice in https://github.com/rapidsai/raft/pull/2996
+* Predictable raft::resources by @achirkin in https://github.com/rapidsai/raft/pull/3005
+### 🐛 Bug Fixes
+* Fix gbench 1.9.5 by @aamijar in https://github.com/rapidsai/raft/pull/3000
+* Fix eigDC version check for syevd by @lowener in https://github.com/rapidsai/raft/pull/3012
+* Fix off-by-one `num_segments` in `matrix::sort_cols_per_row` by @viclafargue in https://github.com/rapidsai/raft/pull/3010
+* Revert "Predictable raft::resources (#3005)" by @divyegala in https://github.com/rapidsai/raft/pull/3027
+### 📖 Documentation
+* Docs improvements by @aamijar in https://github.com/rapidsai/raft/pull/2993
+### 🚀 New Features
+* Tracking memory resources by @achirkin in https://github.com/rapidsai/raft/pull/2973
+* Add Randomized SVDs by @Intron7 in https://github.com/rapidsai/raft/pull/2999
+### 🛠️ Improvements
+* chore: bump `codespell` version for Python 3.14+ compatibility by @gforsyth in https://github.com/rapidsai/raft/pull/2989
+* pre-commit: consolidate duplicate entries, bump some versions by @jameslamb in https://github.com/rapidsai/raft/pull/2991
+* update pip devcontainers' base image tags by @trxcllnt in https://github.com/rapidsai/raft/pull/2995
+* Update to clang 20.1.8 by @bdice in https://github.com/rapidsai/raft/pull/3001
+* fix(ci): resolve all zizmor findings and add zizmor pre-commit checks by @gforsyth in https://github.com/rapidsai/raft/pull/3009
+* [REVIEW] Drop extra copy in `CudaRuntimeError` by @jakirkham in https://github.com/rapidsai/raft/pull/3007
+* Use `token.rapids.nvidia.com` when issuing S3 bucket creds in devcontainers by @trxcllnt in https://github.com/rapidsai/raft/pull/3008
+* Use cudaStream_t instead of cuda_stream_view in pylibraft Cython by @vyasr in https://github.com/rapidsai/raft/pull/3011
+* Fix symbol export by @vyasr in https://github.com/rapidsai/raft/pull/3006
+* Build and test with CUDA 13.2.0 by @bdice in https://github.com/rapidsai/raft/pull/3013
+* fix(ci): add explicit `actions: write` permission for `telemetry-summarize`
+ by @gforsyth in https://github.com/rapidsai/raft/pull/3014
+* Expose numpy_serializer helpers as public APIs by @julianmi in https://github.com/rapidsai/raft/pull/3003
+* Restore resource_cast guard for RAFT memory pool by @bdice in https://github.com/rapidsai/raft/pull/3020
+* skip CuPy 14.1.0 by @jameslamb in https://github.com/rapidsai/raft/pull/3045
+
+## New Contributors
+* @julianmi made their first contribution in https://github.com/rapidsai/raft/pull/3003
+* @Intron7 made their first contribution in https://github.com/rapidsai/raft/pull/2999
+
+**Full Changelog**: https://github.com/rapidsai/raft/compare/v26.06.00a...release/26.06
+
 # raft 26.04.00 (8 Apr 2026)
 
 ### 🚨 Breaking Changes
