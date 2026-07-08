@@ -135,7 +135,7 @@ void mgs2_orthogonalize(raft::resources const& handle,
   auto cublas_handle = resource::get_cublas_handle(handle);
   auto stream        = resource::get_cuda_stream(handle);
 
-  RAFT_CUBLAS_TRY(cublasSetPointerMode(cublas_handle, CUBLAS_POINTER_MODE_DEVICE));
+  raft::linalg::detail::cublas_device_pointer_mode<true> pointer_mode_guard(cublas_handle);
   for (int pass = 0; pass < 2; ++pass) {
     for (int j = 0; j < n_valid; ++j) {
       auto const* q_j = basis + static_cast<std::size_t>(j) * n_rows;
@@ -158,7 +158,6 @@ void mgs2_orthogonalize(raft::resources const& handle,
       }
     }
   }
-  RAFT_CUBLAS_TRY(cublasSetPointerMode(cublas_handle, CUBLAS_POINTER_MODE_HOST));
 }
 
 template <typename ValueTypeT>
