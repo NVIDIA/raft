@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -19,6 +19,7 @@
 #include <cublasLt.h>
 
 #include <type_traits>
+#include <utility>
 
 namespace raft {
 namespace linalg::detail {
@@ -108,12 +109,19 @@ struct cublastlt_matrix_layout {
   }
   inline cublastlt_matrix_layout(const cublastlt_matrix_layout&)                    = delete;
   inline auto operator=(const cublastlt_matrix_layout&) -> cublastlt_matrix_layout& = delete;
-  inline cublastlt_matrix_layout(cublastlt_matrix_layout&&)                         = default;
-  inline auto operator=(cublastlt_matrix_layout&&) -> cublastlt_matrix_layout&      = default;
+  inline cublastlt_matrix_layout(cublastlt_matrix_layout&& other) noexcept
+    : res(std::exchange(other.res, nullptr))
+  {
+  }
+  inline auto operator=(cublastlt_matrix_layout&& other) noexcept -> cublastlt_matrix_layout&
+  {
+    std::swap(res, other.res);
+    return *this;
+  }
 
   inline ~cublastlt_matrix_layout() noexcept
   {
-    RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatrixLayoutDestroy(res));
+    if (res != nullptr) { RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatrixLayoutDestroy(res)); }
   }
 
   // NOLINTNEXTLINE
@@ -137,12 +145,19 @@ struct cublastlt_matmul_desc {
   }
   inline cublastlt_matmul_desc(const cublastlt_matmul_desc&)                    = delete;
   inline auto operator=(const cublastlt_matmul_desc&) -> cublastlt_matmul_desc& = delete;
-  inline cublastlt_matmul_desc(cublastlt_matmul_desc&&)                         = default;
-  inline auto operator=(cublastlt_matmul_desc&&) -> cublastlt_matmul_desc&      = default;
+  inline cublastlt_matmul_desc(cublastlt_matmul_desc&& other) noexcept
+    : res(std::exchange(other.res, nullptr))
+  {
+  }
+  inline auto operator=(cublastlt_matmul_desc&& other) noexcept -> cublastlt_matmul_desc&
+  {
+    std::swap(res, other.res);
+    return *this;
+  }
 
   inline ~cublastlt_matmul_desc() noexcept
   {
-    RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatmulDescDestroy(res));
+    if (res != nullptr) { RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatmulDescDestroy(res)); }
   }
 
   // NOLINTNEXTLINE
