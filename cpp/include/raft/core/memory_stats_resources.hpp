@@ -218,7 +218,8 @@ class memory_stats_resources : public resources {
       device_stats_adaptor_t sa{rmm::device_async_resource_ref{old_device_}};
       device_stats_   = sa.get_stats();
       device_adaptor_ = std::make_unique<device_stats_adaptor_t>(std::move(sa));
-      rmm::mr::set_current_device_resource(*device_adaptor_);
+      rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                       *device_adaptor_);
     }
     // --- Workspace ---
     {
