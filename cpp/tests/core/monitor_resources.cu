@@ -34,6 +34,18 @@ struct device_resource_restore_guard {
   }
 };
 
+auto current_device_uses_pool_resource() -> bool
+{
+  auto current_mr = rmm::mr::get_current_device_resource_ref();
+  return cuda::mr::resource_cast<rmm::mr::pool_memory_resource>(&current_mr) != nullptr;
+}
+
+auto current_device_uses_default_cuda_resource() -> bool
+{
+  auto current_mr = rmm::mr::get_current_device_resource_ref();
+  return cuda::mr::resource_cast<rmm::mr::cuda_memory_resource>(&current_mr) != nullptr;
+}
+
 TEST(MemoryTrackingResources, TracksDeviceAllocations)
 {
   using namespace std::chrono_literals;
@@ -108,6 +120,63 @@ TEST(MemoryTrackingResources, RestoresDeviceResourceOnConstructionDevice)
     auto scoped_device = raft::device_setter{device1};
     auto current_mr    = rmm::mr::get_current_device_resource_ref();
     EXPECT_NE(cuda::mr::resource_cast<rmm::mr::cuda_memory_resource>(&current_mr), nullptr);
+  }
+}
+
+TEST(MemoryTrackingResources, InstallsTrackedResourceOnHandleDevice)
+{
+  if (raft::device_setter::get_device_count() < 2) {
+    GTEST_SKIP() << "Requires at least 2 CUDA devices";
+  }
+
+  auto device0 = 0;
+  auto device1 = 1;
+
+  auto device0_guard = [&]() {
+    auto scoped_device = raft::device_setter{device0};
+    auto upstream      = rmm::mr::get_current_device_resource_ref();
+    return device_resource_restore_guard{
+      device0,
+      rmm::mr::set_current_device_resource(
+        raft::mr::device_resource{rmm::mr::pool_memory_resource(upstream, 1 << 20, 2 << 20)})};
+  }();
+
+  auto device1_guard = [&]() {
+    auto scoped_device = raft::device_setter{device1};
+    return device_resource_restore_guard{device1, rmm::mr::reset_current_device_resource()};
+  }();
+
+  {
+    auto scoped_device = raft::device_setter{device0};
+    raft::resources res;
+    static_cast<void>(raft::resource::get_device_id(res));
+
+    auto wrong_device = raft::device_setter{device1};
+    static_cast<void>(wrong_device);
+    std::ostringstream oss;
+    auto tracked = std::make_unique<raft::memory_tracking_resources>(res, oss);
+
+    {
+      auto verify_device0 = raft::device_setter{device0};
+      EXPECT_FALSE(current_device_uses_pool_resource());
+    }
+
+    {
+      auto verify_device1 = raft::device_setter{device1};
+      EXPECT_TRUE(current_device_uses_default_cuda_resource());
+    }
+
+    tracked.reset();
+  }
+
+  {
+    auto scoped_device = raft::device_setter{device0};
+    EXPECT_TRUE(current_device_uses_pool_resource());
+  }
+
+  {
+    auto scoped_device = raft::device_setter{device1};
+    EXPECT_TRUE(current_device_uses_default_cuda_resource());
   }
 }
 
