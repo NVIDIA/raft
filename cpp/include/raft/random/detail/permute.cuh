@@ -96,9 +96,9 @@ inline feistel_permute_params make_feistel_permute_params(uint64_t N, uint64_t k
 
   // Per-round key schedule: diffuse the 64-bit key once, then derive a distinct
   // prefix per round with a golden-ratio round spread. Identical across threads.
-  const uint32_t klo           = uint32_t(key);
-  const uint32_t khi           = uint32_t(key >> 32);
-  const uint32_t golden_ration = 0x9e3779b9u;
+  const uint32_t klo          = uint32_t(key);
+  const uint32_t khi          = uint32_t(key >> 32);
+  const uint32_t golden_ratio = 0x9e3779b9u;
 
   const uint32_t kbase = feistel_fmix32(feistel_fmix32(klo) ^ khi);
   for (int i = 0; i < feistel_permute_params::ROUNDS; i++) {
