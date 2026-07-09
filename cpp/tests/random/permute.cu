@@ -13,7 +13,6 @@
 #include <raft/util/cudart_utils.hpp>
 
 #include <algorithm>
-#include <cstdint>
 #include <vector>
 
 namespace raft {
