@@ -4,7 +4,7 @@
  */
 #pragma once
 
-#include <raft/core/device_setter.hpp>
+#include <raft/core/resource/device_id.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/managed_memory_resource.hpp>
 #include <raft/core/resource/pinned_memory_resource.hpp>
@@ -77,9 +77,9 @@ class memory_stats_resources : public resources {
  public:
   explicit memory_stats_resources(const resources& existing)
     : resources(existing),
-      device_id_(device_setter::get_current_device()),
       old_host_(mr::get_default_host_resource()),
-      old_device_(rmm::mr::get_current_device_resource_ref())
+      old_device_(rmm::mr::get_per_device_resource_ref(
+        rmm::cuda_device_id{resource::get_device_id(*this)}))
   {
     init();
   }
@@ -87,7 +87,8 @@ class memory_stats_resources : public resources {
   ~memory_stats_resources() override
   {
     mr::set_default_host_resource(old_host_);
-    rmm::mr::set_per_device_resource(rmm::cuda_device_id{device_id_}, std::move(old_device_));
+    rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                     std::move(old_device_));
   }
 
   memory_stats_resources(memory_stats_resources const&)            = delete;
@@ -145,7 +146,6 @@ class memory_stats_resources : public resources {
 
   std::vector<std::shared_ptr<resource::resource_cell>> snapshot_;
 
-  int device_id_;
   raft::mr::host_resource old_host_;
   raft::mr::device_resource old_device_;
 
