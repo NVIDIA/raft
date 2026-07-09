@@ -16,7 +16,6 @@
 #include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
-#include <cstdint>
 #include <optional>
 #include <type_traits>
 
