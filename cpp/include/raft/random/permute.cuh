@@ -16,6 +16,7 @@
 #include <raft/core/resources.hpp>
 
 #include <optional>
+#include <random>
 #include <type_traits>
 
 namespace raft {
@@ -91,7 +92,7 @@ void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              std::optional<raft::device_vector_view<IntType, IdxType>> permsOut,
              std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out,
-             uint64_t seed = 0ULL)
+             std::optional<uint64_t> seed = std::nullopt)
 {
   static_assert(std::is_integral_v<IntType>,
                 "permute: The type of each element "
@@ -121,14 +122,17 @@ void permute(raft::resources const& handle,
   if (permsOut_ptr != nullptr || out_ptr != nullptr) {
     const IdxType N = in.extent(0);
     const IdxType D = in.extent(1);
-    detail::permute<InputOutputValueType, IntType, IdxType>(permsOut_ptr,
-                                                            out_ptr,
-                                                            in.data_handle(),
-                                                            D,
-                                                            N,
-                                                            is_row_major,
-                                                            resource::get_cuda_stream(handle),
-                                                            seed);
+    std::mt19937_64 gen(seed.has_value() ? *seed
+                                         : rand());  // use the given seed, else a random one
+    detail::permute<InputOutputValueType, IntType, IdxType>(
+      permsOut_ptr,
+      out_ptr,
+      in.data_handle(),
+      D,
+      N,
+      is_row_major,
+      resource::get_cuda_stream(handle),
+      gen);  // switched from seed for deterministic swap
   }
 }
 
@@ -193,9 +197,11 @@ void permute(IntType* perms,
              IntType N,
              bool rowMajor,
              cudaStream_t stream,
-             uint64_t seed = 0ULL)  // default seed
+             std::optional<uint64_t> seed = std::nullopt)
 {
-  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, seed);
+  std::mt19937_64 gen(seed.has_value() ? *seed : rand());
+  // generator build and passed
+  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, gen);
 }
 
 };  // namespace random

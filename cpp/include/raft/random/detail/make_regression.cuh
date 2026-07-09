@@ -240,6 +240,10 @@ void make_regression_caller(raft::resources const& handle,
   }
 
   if (shuffle) {
+    // creates shared generator. pulls 2 random numbers from
+    // internal sequence to generate a and b, remembers it gave out those numbers
+    std::mt19937_64 gen(seed);
+
     rmm::device_uvector<DataT> tmp_out(n_rows * n_cols, stream);
     rmm::device_uvector<IdxT> perms_samples(n_rows, stream);
     rmm::device_uvector<IdxT> perms_features(n_cols, stream);
@@ -247,23 +251,22 @@ void make_regression_caller(raft::resources const& handle,
     constexpr IdxT Nthreads = 256;
 
     // Shuffle the samples from out to tmp_out
-    raft::random::permute<DataT, IdxT, IdxT>(
-      perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream, seed);
+    raft::random::detail::permute<DataT, IdxT, IdxT>(perms_samples.data(),
+                                                     tmp_out.data(),
+                                                     out,
+                                                     n_cols,
+                                                     n_rows,
+                                                     true,
+                                                     stream,
+                                                     gen);  // now passes generator rather than seed
     IdxT nblks_rows = raft::ceildiv<IdxT>(n_rows, Nthreads);
     _gather2d_kernel<<<nblks_rows, Nthreads, 0, stream>>>(
       values, _values, perms_samples.data(), n_rows, n_targets);
     RAFT_CUDA_TRY(cudaPeekAtLastError());
 
     // Shuffle the features from tmp_out to out
-    raft::random::permute<DataT, IdxT, IdxT>(
-      perms_features.data(),
-      out,
-      tmp_out.data(),
-      n_rows,
-      n_cols,
-      false,
-      stream,
-      seed + 1);  // different derived seed for feature shuffle keeps sample and feature independent
+    raft::random::detail::permute<DataT, IdxT, IdxT>(
+      perms_features.data(), out, tmp_out.data(), n_rows, n_cols, false, stream, gen);
 
     // Shuffle the coefficients accordingly
     if (coef != nullptr) {

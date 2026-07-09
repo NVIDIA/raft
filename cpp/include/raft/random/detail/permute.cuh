@@ -122,12 +122,10 @@ void permute(IntType* perms,
              IntType N,
              bool rowMajor,
              cudaStream_t stream,
-             uint64_t seed)
+             std::mt19937_64& gen)  // switched from uint64_t seed
 {
   auto nblks = raft::ceildiv(N, (IntType)TPB);
 
-  // gen seeded once, deterministically, from seed param
-  std::mt19937_64 gen(seed);
   // maps gen's raw bit stream to a uniform integer
   std::uniform_int_distribution<IdxType> dist(0, N - 1);
 
