@@ -15,7 +15,6 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
 
-#include <cstdint>
 #include <optional>
 #include <type_traits>
 
