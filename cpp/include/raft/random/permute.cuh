@@ -75,6 +75,9 @@ using perms_out_view_t = typename perms_out_view<T, InputOutputValueType, IdxTyp
  * @param[out] out If provided, the output matrix, containing the
  *   permuted rows of the input matrix `in`.  (Not providing this
  *   is only useful if you provide `permsOut`.)
+ * @param[in] seed If provided, seeds the permutation so that it is
+ *   reproducible; if not provided, falls back to a non-deterministic
+ *   `rand()`-derived seed (matching this function's legacy behavior).
  *
  * @pre If `permsOut.has_value()` is `true`,
  *   then `(*permsOut).extent(0) == in.extent(0)` is `true`.
@@ -139,6 +142,10 @@ void permute(raft::resources const& handle,
 /**
  * @brief Overload of `permute` that compiles if users pass in `std::nullopt`
  *   for either or both of `permsOut` and `out`.
+ *
+ * @param[in] seed If provided, seeds the permutation so that it is
+ *   reproducible; if not provided, falls back to a non-deterministic
+ *   `rand()`-derived seed (matching this function's legacy behavior).
  */
 template <typename InputOutputValueType,
           typename IdxType,
@@ -148,7 +155,8 @@ template <typename InputOutputValueType,
 void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              PermsOutType&& permsOut,
-             OutType&& out)
+             OutType&& out,
+             std::optional<uint64_t> seed = std::nullopt)
 {
   // If PermsOutType is std::optional<device_vector_view<T, IdxType>>
   // for some T, then that type T need not be related to any of the
@@ -165,7 +173,7 @@ void permute(raft::resources const& handle,
 
   std::optional<perms_out_view_type> permsOut_arg = std::forward<PermsOutType>(permsOut);
   std::optional<out_view_type> out_arg            = std::forward<OutType>(out);
-  permute(handle, in, permsOut_arg, out_arg);
+  permute(handle, in, permsOut_arg, out_arg, seed);
 }
 
 /** @} */
@@ -188,6 +196,9 @@ void permute(raft::resources const& handle,
  * @param[in] rowMajor true if the matrices are row major,
  *   false if they are column major
  * @param[in] stream CUDA stream on which to run
+ * @param[in] seed If provided, seeds the permutation so that it is
+ *   reproducible; if not provided, falls back to a non-deterministic
+ *   `rand()`-derived seed (matching this function's legacy behavior).
  */
 template <typename Type, typename IntType = int, typename IdxType = int, int TPB = 256>
 void permute(IntType* perms,

@@ -344,6 +344,9 @@ INSTANTIATE_TEST_CASE_P(PermMdspanTests, PermMdspanTestD, ::testing::ValuesIn(in
 // seed must yield identical permutation indices across calls.
 template <typename T>
 class PermSeedTest : public ::testing::TestWithParam<PermInputs<T>> {
+ public:
+  using test_data_type = T;
+
  protected:
   PermSeedTest()
     : in(0, resource::get_cuda_stream(handle)),
@@ -385,8 +388,9 @@ class PermSeedTest : public ::testing::TestWithParam<PermInputs<T>> {
 using PermSeedTestF = PermSeedTest<float>;
 TEST_P(PermSeedTestF, SameSeedIsDeterministic)
 {
-  auto stream = resource::get_cuda_stream(handle);
-  int N       = params.N;
+  using test_data_type = PermSeedTestF::test_data_type;
+  auto stream          = resource::get_cuda_stream(handle);
+  int N                = params.N;
   std::vector<int> h1(N), h2(N);
   raft::update_host(h1.data(), perms1.data(), N, stream);
   raft::update_host(h2.data(), perms2.data(), N, stream);
@@ -398,7 +402,7 @@ TEST_P(PermSeedTestF, SameSeedIsDeterministic)
   // collision is astronomically unlikely.
   if (N >= 1024) {
     rmm::device_uvector<int> perms3(N, stream);
-    permute<float, int, int>(
+    permute<test_data_type, int, int>(
       perms3.data(), out.data(), in.data(), params.D, N, params.rowMajor, stream, params.seed + 1);
     resource::sync_stream(handle);
     std::vector<int> h3(N);
