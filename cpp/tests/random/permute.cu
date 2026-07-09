@@ -338,3 +338,6 @@ TEST_P(PermMdspanTestD, Result)
   _PERMTEST_BODY(test_data_type);
 }
 INSTANTIATE_TEST_CASE_P(PermMdspanTests, PermMdspanTestD, ::testing::ValuesIn(inputsd));
+
+}  // end namespace random
+}  // end namespace raft
