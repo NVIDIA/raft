@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -23,6 +23,12 @@ namespace raft {
 namespace random {
 
 namespace permute_impl {
+
+inline std::mt19937_64 make_permute_generator(std::optional<uint64_t> seed)
+{
+  // use the given seed, else a random one
+  return std::mt19937_64(seed.has_value() ? *seed : std::random_device{}());
+}
 
 template <typename T, typename InputOutputValueType, typename IdxType, typename Layout>
 struct perms_out_view {};
@@ -76,8 +82,8 @@ using perms_out_view_t = typename perms_out_view<T, InputOutputValueType, IdxTyp
  *   permuted rows of the input matrix `in`.  (Not providing this
  *   is only useful if you provide `permsOut`.)
  * @param[in] seed If provided, seeds the permutation so that it is
- *   reproducible; if not provided, falls back to a non-deterministic
- *   `rand()`-derived seed (matching this function's legacy behavior).
+ *   reproducible; if not provided, falls back to a non-deterministic,
+ *   thread-safe `std::random_device`-derived seed.
  *
  * @pre If `permsOut.has_value()` is `true`,
  *   then `(*permsOut).extent(0) == in.extent(0)` is `true`.
@@ -123,19 +129,17 @@ void permute(raft::resources const& handle,
   InputOutputValueType* out_ptr = out_has_value ? (*out).data_handle() : nullptr;
 
   if (permsOut_ptr != nullptr || out_ptr != nullptr) {
-    const IdxType N = in.extent(0);
-    const IdxType D = in.extent(1);
-    std::mt19937_64 gen(seed.has_value() ? *seed
-                                         : rand());  // use the given seed, else a random one
-    detail::permute<InputOutputValueType, IntType, IdxType>(
-      permsOut_ptr,
-      out_ptr,
-      in.data_handle(),
-      D,
-      N,
-      is_row_major,
-      resource::get_cuda_stream(handle),
-      gen);  // switched from seed for deterministic swap
+    const IdxType N     = in.extent(0);
+    const IdxType D     = in.extent(1);
+    std::mt19937_64 gen = permute_impl::make_permute_generator(seed);
+    detail::permute<InputOutputValueType, IntType, IdxType>(permsOut_ptr,
+                                                            out_ptr,
+                                                            in.data_handle(),
+                                                            D,
+                                                            N,
+                                                            is_row_major,
+                                                            resource::get_cuda_stream(handle),
+                                                            gen);
   }
 }
 
@@ -144,8 +148,8 @@ void permute(raft::resources const& handle,
  *   for either or both of `permsOut` and `out`.
  *
  * @param[in] seed If provided, seeds the permutation so that it is
- *   reproducible; if not provided, falls back to a non-deterministic
- *   `rand()`-derived seed (matching this function's legacy behavior).
+ *   reproducible; if not provided, falls back to a non-deterministic,
+ *   thread-safe `std::random_device`-derived seed.
  */
 template <typename InputOutputValueType,
           typename IdxType,
@@ -197,8 +201,8 @@ void permute(raft::resources const& handle,
  *   false if they are column major
  * @param[in] stream CUDA stream on which to run
  * @param[in] seed If provided, seeds the permutation so that it is
- *   reproducible; if not provided, falls back to a non-deterministic
- *   `rand()`-derived seed (matching this function's legacy behavior).
+ *   reproducible; if not provided, falls back to a non-deterministic,
+ *   thread-safe `std::random_device`-derived seed.
  */
 template <typename Type, typename IntType = int, typename IdxType = int, int TPB = 256>
 void permute(IntType* perms,
@@ -210,8 +214,7 @@ void permute(IntType* perms,
              cudaStream_t stream,
              std::optional<uint64_t> seed = std::nullopt)
 {
-  std::mt19937_64 gen(seed.has_value() ? *seed : rand());
-  // generator build and passed
+  std::mt19937_64 gen = permute_impl::make_permute_generator(seed);
   detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, gen);
 }
 

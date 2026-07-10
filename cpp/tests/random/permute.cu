@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -411,7 +411,37 @@ TEST_P(PermSeedTestF, SameSeedIsDeterministic)
     ASSERT_NE(h1, h3);
   }
 }
+
 INSTANTIATE_TEST_CASE_P(PermSeedTests, PermSeedTestF, ::testing::ValuesIn(inputsf));
+
+using PermSeedTestD = PermSeedTest<double>;
+TEST_P(PermSeedTestD, SameSeedIsDeterministic)
+{
+  using test_data_type = PermSeedTestD::test_data_type;
+  auto stream          = resource::get_cuda_stream(handle);
+  int N                = params.N;
+  std::vector<int> h1(N), h2(N);
+  raft::update_host(h1.data(), perms1.data(), N, stream);
+  raft::update_host(h2.data(), perms2.data(), N, stream);
+  RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
+  ASSERT_EQ(h1, h2);
+
+  // Different seeds should produce different permutations. Only checked for
+  // larger N, where the space of affine permutations is large enough that a
+  // collision is astronomically unlikely.
+  if (N >= 1024) {
+    rmm::device_uvector<int> perms3(N, stream);
+    permute<test_data_type, int, int>(
+      perms3.data(), out.data(), in.data(), params.D, N, params.rowMajor, stream, params.seed + 1);
+    resource::sync_stream(handle);
+    std::vector<int> h3(N);
+    raft::update_host(h3.data(), perms3.data(), N, stream);
+    RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
+    ASSERT_NE(h1, h3);
+  }
+}
+
+INSTANTIATE_TEST_CASE_P(PermSeedTests, PermSeedTestD, ::testing::ValuesIn(inputsd));
 
 }  // end namespace random
 }  // end namespace raft

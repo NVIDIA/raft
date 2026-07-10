@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -122,7 +122,7 @@ void permute(IntType* perms,
              IntType N,
              bool rowMajor,
              cudaStream_t stream,
-             std::mt19937_64& gen)  // switched from uint64_t seed
+             std::mt19937_64& gen)
 {
   auto nblks = raft::ceildiv(N, (IntType)TPB);
 

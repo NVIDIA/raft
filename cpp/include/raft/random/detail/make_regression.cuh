@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -24,6 +24,7 @@
 #include <rmm/device_uvector.hpp>
 
 #include <algorithm>
+#include <random>
 
 namespace raft {
 namespace random {
@@ -240,8 +241,9 @@ void make_regression_caller(raft::resources const& handle,
   }
 
   if (shuffle) {
-    // creates shared generator. pulls 2 random numbers from
-    // internal sequence to generate a and b, remembers it gave out those numbers
+    // One generator shared by both shuffles below: each consumes distinct draws
+    // from its sequence, so the sample and feature permutations stay independent
+    // while remaining reproducible for a given seed.
     std::mt19937_64 gen(seed);
 
     rmm::device_uvector<DataT> tmp_out(n_rows * n_cols, stream);
@@ -251,14 +253,8 @@ void make_regression_caller(raft::resources const& handle,
     constexpr IdxT Nthreads = 256;
 
     // Shuffle the samples from out to tmp_out
-    raft::random::detail::permute<DataT, IdxT, IdxT>(perms_samples.data(),
-                                                     tmp_out.data(),
-                                                     out,
-                                                     n_cols,
-                                                     n_rows,
-                                                     true,
-                                                     stream,
-                                                     gen);  // now passes generator rather than seed
+    raft::random::detail::permute<DataT, IdxT, IdxT>(
+      perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream, gen);
     IdxT nblks_rows = raft::ceildiv<IdxT>(n_rows, Nthreads);
     _gather2d_kernel<<<nblks_rows, Nthreads, 0, stream>>>(
       values, _values, perms_samples.data(), n_rows, n_targets);
