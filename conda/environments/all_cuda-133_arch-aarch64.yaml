@@ -9,7 +9,7 @@ dependencies:
 - c-compiler
 - clang-tools=20.1.8
 - clang==20.1.8
-- cmake>=4.0
+- cmake>=4.0,<4.4
 - cuda-bindings>=13.0.1,<14.0
 - cuda-nvcc
 - cuda-nvtx-dev
