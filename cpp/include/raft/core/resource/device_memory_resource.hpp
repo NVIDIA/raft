@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -174,7 +174,7 @@ namespace detail {
 inline auto get_workspace_adaptor(resources const& res) -> rmm::mr::limiting_resource_adaptor*
 {
   if (!res.has_resource_factory(resource_type::WORKSPACE_RESOURCE)) {
-    res.add_resource_factory(std::make_shared<workspace_resource_factory>());
+    res.ensure_default_factory(std::make_shared<workspace_resource_factory>());
   }
   return res.get_resource<rmm::mr::limiting_resource_adaptor>(resource_type::WORKSPACE_RESOURCE);
 }
@@ -254,7 +254,7 @@ inline auto get_workspace_free_bytes(resources const& res) -> size_t
  *   the total amount of memory in bytes available to the temporary workspace resources.
  * @param alignment optional alignment requirements passed to allocations
  */
-inline void set_workspace_resource(resources const& res,
+inline void set_workspace_resource(resources& res,
                                    raft::mr::device_resource mr,
                                    std::optional<std::size_t> allocation_limit = std::nullopt,
                                    std::optional<std::size_t> alignment        = std::nullopt)
@@ -274,7 +274,7 @@ inline void set_workspace_resource(resources const& res,
  *
  */
 inline void set_workspace_to_pool_resource(
-  resources const& res, std::optional<std::size_t> allocation_limit = std::nullopt)
+  resources& res, std::optional<std::size_t> allocation_limit = std::nullopt)
 {
   if (!allocation_limit.has_value()) { allocation_limit = get_workspace_total_bytes(res); }
   res.add_resource_factory(std::make_shared<workspace_resource_factory>(
@@ -295,7 +295,7 @@ inline void set_workspace_to_pool_resource(
  *   the total amount of memory in bytes available to the temporary workspace resources.
  */
 inline void set_workspace_to_global_resource(
-  resources const& res, std::optional<std::size_t> allocation_limit = std::nullopt)
+  resources& res, std::optional<std::size_t> allocation_limit = std::nullopt)
 {
   res.add_resource_factory(std::make_shared<workspace_resource_factory>(
     raft::mr::device_resource{rmm::mr::get_current_device_resource_ref()},
@@ -312,7 +312,7 @@ inline void set_workspace_to_global_resource(
 inline auto get_large_workspace_resource_ref(resources const& res) -> rmm::device_async_resource_ref
 {
   if (!res.has_resource_factory(resource_type::LARGE_WORKSPACE_RESOURCE)) {
-    res.add_resource_factory(std::make_shared<large_workspace_resource_factory>());
+    res.ensure_default_factory(std::make_shared<large_workspace_resource_factory>());
   }
   return rmm::device_async_resource_ref{
     *res.get_resource<raft::mr::device_resource>(resource_type::LARGE_WORKSPACE_RESOURCE)};
@@ -324,7 +324,7 @@ inline auto get_large_workspace_resource_ref(resources const& res) -> rmm::devic
  * @param res raft resources object for managing resources
  * @param mr device memory resource
  */
-inline void set_large_workspace_resource(resources const& res, raft::mr::device_resource mr)
+inline void set_large_workspace_resource(resources& res, raft::mr::device_resource mr)
 {
   res.add_resource_factory(std::make_shared<large_workspace_resource_factory>(std::move(mr)));
 }

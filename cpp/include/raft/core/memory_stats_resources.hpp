@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -141,7 +141,7 @@ class memory_stats_resources : public resources {
     };
   }
 
-  std::vector<pair_resource> snapshot_;
+  std::vector<std::shared_ptr<resource::resource_cell>> snapshot_;
 
   raft::mr::host_resource old_host_;
   raft::mr::device_resource old_device_;
@@ -182,7 +182,7 @@ class memory_stats_resources : public resources {
     auto pinned_ref  = resource::get_pinned_memory_resource_ref(*this);
     auto managed_ref = resource::get_managed_memory_resource_ref(*this);
 
-    snapshot_ = resources_;
+    snapshot_ = cells_;
 
     // --- Host (global) ---
     {
@@ -207,11 +207,10 @@ class memory_stats_resources : public resources {
 
     // --- Device (global) ---
     // Invalidate the cached thrust policy (the resource_ref it captured
-    // will be stale once we replace the global device resource).
-    factories_.at(resource::resource_type::THRUST_POLICY) = std::make_pair(
-      resource::resource_type::LAST_KEY, std::make_shared<resource::empty_resource_factory>());
-    resources_.at(resource::resource_type::THRUST_POLICY) = std::make_pair(
-      resource::resource_type::LAST_KEY, std::make_shared<resource::empty_resource>());
+    // will be stale once we replace the global device resource).  Swapping in a
+    // fresh cell drops the cached factory/resource locally while snapshot_ keeps
+    // the originals alive, so it gets lazily rebuilt against the new device MR.
+    cells_[resource::resource_type::THRUST_POLICY] = std::make_shared<resource::resource_cell>();
     {
       device_stats_adaptor_t sa{rmm::device_async_resource_ref{old_device_}};
       device_stats_   = sa.get_stats();
