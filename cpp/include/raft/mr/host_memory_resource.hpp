@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -69,7 +69,8 @@ RAFT_EXPORT inline auto get_default_host_resource() -> raft::mr::host_resource_r
  * @param res The resource to install.
  * @return The previous default host resource.
  */
-RAFT_EXPORT inline auto set_default_host_resource(raft::mr::host_resource res) -> raft::mr::host_resource
+RAFT_EXPORT inline auto set_default_host_resource(raft::mr::host_resource res)
+  -> raft::mr::host_resource
 {
   return detail::default_host_resource_holder_.set(res);
 }
