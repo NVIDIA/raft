@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -66,8 +66,8 @@ class cusolver_dn_resource_factory : public resource_factory {
 inline cusolverDnHandle_t get_cusolver_dn_handle(resources const& res)
 {
   if (!res.has_resource_factory(resource_type::CUSOLVER_DN_HANDLE)) {
-    cudaStream_t stream = get_cuda_stream(res);
-    res.add_resource_factory(std::make_shared<cusolver_dn_resource_factory>(stream));
+    res.ensure_default_factory(
+      std::make_shared<cusolver_dn_resource_factory>(get_cuda_stream(res)));
   }
   return *res.get_resource<cusolverDnHandle_t>(resource_type::CUSOLVER_DN_HANDLE);
 };

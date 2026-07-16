@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -51,12 +51,9 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
       trans_data(params.len, stream),
       trans_data_ref(params.len, stream),
       data(params.len, stream),
-      data_back(params.len, stream),
-      data2(params.len2, stream),
-      data2_back(params.len2, stream)
+      data_back(params.len, stream)
   {
     basicTest();
-    advancedTest();
   }
 
  protected:
@@ -135,6 +132,7 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
       handle, prms, trans_data_view, components_view, singular_vals_view, mu_view, data_back_view);
   }
 
+  template <typename LayoutPolicy>
   void advancedTest()
   {
     raft::random::Rng r(params.seed, raft::random::GenPC);
@@ -151,6 +149,8 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
     else if (params.algo == 1)
       prms.algorithm = solver::COV_EIG_JACOBI;
 
+    rmm::device_uvector<T> data2(len, stream);
+    rmm::device_uvector<T> data2_back(len, stream);
     r.uniform(data2.data(), len, T(-1.0), T(1.0), stream);
     rmm::device_uvector<T> data2_trans(n_rows * n_components, stream);
 
@@ -163,10 +163,10 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
     rmm::device_uvector<T> noise_vars2(1, stream);
 
     auto input_view =
-      raft::make_device_matrix_view<T, std::size_t, raft::col_major>(data2.data(), n_rows, n_cols);
-    auto trans_view = raft::make_device_matrix_view<T, std::size_t, raft::col_major>(
+      raft::make_device_matrix_view<T, std::size_t, LayoutPolicy>(data2.data(), n_rows, n_cols);
+    auto trans_view = raft::make_device_matrix_view<T, std::size_t, LayoutPolicy>(
       data2_trans.data(), n_rows, n_components);
-    auto comp_view = raft::make_device_matrix_view<T, std::size_t, raft::col_major>(
+    auto comp_view = raft::make_device_matrix_view<T, std::size_t, LayoutPolicy>(
       components2.data(), n_components, n_cols);
     auto ev_view =
       raft::make_device_vector_view<T, std::size_t>(explained_vars2.data(), n_components);
@@ -188,10 +188,13 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
                       mu_view,
                       noise_view);
 
-    auto data2_back_view = raft::make_device_matrix_view<T, std::size_t, raft::col_major>(
+    auto data2_back_view = raft::make_device_matrix_view<T, std::size_t, LayoutPolicy>(
       data2_back.data(), n_rows, n_cols);
 
     pca_inverse_transform(handle, prms, trans_view, comp_view, sv_view, mu_view, data2_back_view);
+
+    ASSERT_TRUE(devArrMatch(
+      data2.data(), data2_back.data(), len, raft::CompareApprox<T>(params.tolerance), stream));
   }
 
  protected:
@@ -201,7 +204,7 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
   PcaInputs<T> params;
 
   rmm::device_uvector<T> explained_vars, explained_vars_ref, components, components_ref, trans_data,
-    trans_data_ref, data, data_back, data2, data2_back;
+    trans_data_ref, data, data_back;
 };
 
 const std::vector<PcaInputs<float>> inputsf2 = {
@@ -295,21 +298,15 @@ TEST_P(PcaTestDataVecSmallD, Result)
 typedef PcaTest<float> PcaTestDataVecF;
 TEST_P(PcaTestDataVecF, Result)
 {
-  ASSERT_TRUE(devArrMatch(data2.data(),
-                          data2_back.data(),
-                          (params.n_col2 * params.n_col2),
-                          raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+  this->template advancedTest<raft::row_major>();
+  this->template advancedTest<raft::col_major>();
 }
 
 typedef PcaTest<double> PcaTestDataVecD;
 TEST_P(PcaTestDataVecD, Result)
 {
-  ASSERT_TRUE(devArrMatch(data2.data(),
-                          data2_back.data(),
-                          (params.n_col2 * params.n_col2),
-                          raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+  this->template advancedTest<raft::row_major>();
+  this->template advancedTest<raft::col_major>();
 }
 
 INSTANTIATE_TEST_CASE_P(PcaTests, PcaTestValF, ::testing::ValuesIn(inputsf2));
