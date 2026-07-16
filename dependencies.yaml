@@ -357,12 +357,13 @@ dependencies:
               use_cuda_wheels: "true"
             packages:
               - &cuda_toolkit_any_cu13 cuda-toolkit[cublas,curand,cusolver,cusparse]==13.*
-              - nvidia-nvjitlink>=13.0,<14
-          # if no matching matrix selectors passed, list the unsuffixed packages
+              - &nvjitlink_cu13 nvidia-nvjitlink>=13.3,<14
+          # if no matching matrix selectors passed, list the CUDA 13 requirement
           # (just as a source of documentation, as this populates pyproject.toml in source control)
           - matrix:
             packages:
-              - cuda-toolkit[cublas,curand,cusolver,cusparse,nvjitlink]>=12,<14
+              - *cuda_toolkit_any_cu13
+              - *nvjitlink_cu13
   depends_on_cupy:
     common:
       - output_types: conda
@@ -497,6 +498,21 @@ dependencies:
         packages:
           - pytest
           - pytest-cov
+    specific:
+      - output_types: [conda, requirements, pyproject]
+        matrices:
+          - matrix:
+              dependencies: "oldest"
+              cuda: "12.*"
+            packages:
+              - cuda-bindings==12.9.2
+          - matrix:
+              dependencies: "oldest"
+              cuda: "13.*"
+            packages:
+              - cuda-bindings==13.0.1
+          - matrix:
+            packages:
   test_pylibraft:
     common:
       - output_types: [conda, requirements, pyproject]
@@ -510,11 +526,11 @@ dependencies:
           - matrix:
               cuda: "12.*"
             packages:
-              - cuda-python>=12.9.2,<13.0
+              - cuda-bindings>=12.9.2,<13.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
             packages:
-              - cuda-python>=13.0.1,<14.0
+              - cuda-bindings>=13.0.1,<14.0
   depends_on_distributed_ucxx:
     common:
       - output_types: conda

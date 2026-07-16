@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -57,8 +57,8 @@ class device_properties_resource_factory : public resource_factory {
 inline cudaDeviceProp& get_device_properties(resources const& res)
 {
   if (!res.has_resource_factory(resource_type::DEVICE_PROPERTIES)) {
-    int dev_id = get_device_id(res);
-    res.add_resource_factory(std::make_shared<device_properties_resource_factory>(dev_id));
+    res.ensure_default_factory(
+      std::make_shared<device_properties_resource_factory>(get_device_id(res)));
   }
   return *res.get_resource<cudaDeviceProp>(resource_type::DEVICE_PROPERTIES);
 };
