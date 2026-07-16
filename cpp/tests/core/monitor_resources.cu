@@ -5,6 +5,7 @@
 
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/host_mdarray.hpp>
+#include <raft/core/memory_logging_resources.hpp>
 #include <raft/core/memory_tracking_resources.hpp>
 #include <raft/core/nvtx.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
@@ -58,12 +59,12 @@ TEST(MemoryTrackingResources, SamplingSingleThread)
                           << output;
 }
 
-TEST(MemoryTrackingResources, RecordingSingleThread)
+TEST(MemoryLoggingResources, RecordingSingleThread)
 {
   std::ostringstream oss;
   {
     raft::resources res;
-    raft::memory_tracking_resources tracked(res, oss);
+    raft::memory_logging_resources tracked(res, oss);
     {
       nvtx::range r{"1. expect 10 KB"};
       auto matrix = raft::make_host_vector<uint8_t>(tracked, 10 * 1024);
@@ -76,7 +77,7 @@ TEST(MemoryTrackingResources, RecordingSingleThread)
       nvtx::range r{"3. expect 4 MiB"};
       auto matrix = raft::make_host_vector<uint8_t>(tracked, 4 * MiB);
     }
-  }  // tracked destroyed here: stops the sampler and flushes the file
+  }  // tracked destroyed: stops the recorder and flushes the CSV
 
   auto output = oss.str();
   EXPECT_NE(output.find("timestamp_us"), std::string::npos);
@@ -104,7 +105,7 @@ TEST(MemoryTrackingResources, RecordingSingleThread)
 // Parallel-thread stress tests
 // ---------------------------------------------------------------------------
 
-TEST(MemoryTrackingResources, RecordingParallelThreads)
+TEST(MemoryLoggingResources, RecordingParallelThreads)
 {
   constexpr int kNumThreads        = 64;
   constexpr int kNumIters          = 200;
@@ -113,11 +114,10 @@ TEST(MemoryTrackingResources, RecordingParallelThreads)
   std::ostringstream oss;
   {
     raft::resources res;
-    raft::memory_tracking_resources tracked(res, oss);
+    raft::memory_logging_resources tracked(res, oss);
 
-    // Lambda captures tracked directly — no base-class cast needed.
-    // Each thread tags its allocations with a distinct NVTX range so the
-    // CSV output carries per-thread attribution.
+    // Each thread tags its allocations with a distinct NVTX range.
+    // NVTX range read is mutex-free: each allocating thread reads its own stack.
     auto run = [&](int t) {
       for (int i = 0; i < kNumIters; ++i) {
         std::string label = std::string("thread-") + std::to_string(t);

@@ -5,7 +5,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
-#include <raft/core/detail/nvtx_range_stack.hpp>  // thread_local_current_range
+#include <raft/core/detail/nvtx_range_stack.hpp>  // thread_local_current_path, thread_local_current_name_and_depth
 #include <raft/mr/recording_monitor.hpp>          // allocation_event, allocation_event_queue
 #include <raft/mr/statistics_adaptor.hpp>         // resource_stats (atomic counters, reused)
 
@@ -45,14 +45,15 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   std::shared_ptr<address_range_map> alloc_map_;
   int source_id_;
 
-  // Record the allocation at this memory address with the current nvtx stack
+  // Record the alloc-time NVTX path for this pointer.
+  // Called on the allocating thread — mutex-free NVTX read is safe.
+  // The alloc_map_ mutex still protects the shared map from concurrent alloc/dealloc across threads.
   auto record_allocation(void* ptr) noexcept -> std::string
   {
     std::string path = "";
     if (ptr != nullptr) {
-      auto current_range = raft::common::nvtx::thread_local_current_range();
-      if (current_range) {
-        path = current_range->get_path();
+      path = raft::common::nvtx::thread_local_current_path();
+      if (!path.empty()) {
         std::lock_guard<std::mutex> lock(alloc_map_->mtx);
         alloc_map_->paths[ptr] = path;
       }
@@ -60,8 +61,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
     return path;
   }
 
-  // Returns nvtx stack associated with the allocation at this memory address.
-  // Then, remove it from allocation map
+  // Returns the NVTX path recorded at alloc time for this pointer, then removes it.
   auto forget_allocation(void* ptr) noexcept -> std::string
   {
     std::string path = "";
@@ -74,26 +74,21 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
     return path;
   }
 
-  // Enqueue an event from the current snapshot and nvtx range
+  // Enqueue an event.  Called on the allocating/deallocating thread — mutex-free NVTX read.
   void emit(std::string alloc_range, std::int64_t signed_bytes) noexcept
   {
-    auto current_range = raft::common::nvtx::thread_local_current_range();
-    if (current_range) {
-      allocation_event event;
-      event.source_id   = source_id_;
-      event.current     = stats_->bytes_current.load(std::memory_order_relaxed);
-      event.total_alloc = stats_->bytes_total_allocated.load(std::memory_order_relaxed);
-      event.total_freed = stats_->bytes_total_deallocated.load(std::memory_order_relaxed);
-      event.timestamp   = std::chrono::steady_clock::now();
-      event.event_bytes = signed_bytes;
-      // Stores inner-range for backwards compatibility
-      auto range       = current_range->get();
-      event.nvtx_range = std::move(range.first);
-      event.nvtx_depth = range.second;
-      // Stores full-range
-      event.alloc_range = std::move(alloc_range);
-      queue_->push(std::move(event));
-    }
+    auto [name, depth] = raft::common::nvtx::thread_local_current_name_and_depth();
+    allocation_event event;
+    event.source_id   = source_id_;
+    event.current     = stats_->bytes_current.load(std::memory_order_relaxed);
+    event.total_alloc = stats_->bytes_total_allocated.load(std::memory_order_relaxed);
+    event.total_freed = stats_->bytes_total_deallocated.load(std::memory_order_relaxed);
+    event.timestamp   = std::chrono::steady_clock::now();
+    event.event_bytes = signed_bytes;
+    event.nvtx_range  = std::move(name);
+    event.nvtx_depth  = depth;
+    event.alloc_range = std::move(alloc_range);
+    queue_->push(std::move(event));
   }
 
  public:

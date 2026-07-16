@@ -95,6 +95,23 @@ struct nvtx_range_name_stack {
     return current_;
   }
 
+  /**
+   * Innermost NVTX range name and stack depth.
+   * Mutex-free — ONLY safe to call from the thread that owns this stack.
+   */
+  [[nodiscard]] auto current_name_and_depth() const noexcept
+    -> std::pair<std::string, std::size_t>
+  {
+    if (stack_.empty()) { return {"", 0}; }
+    return {stack_.back().second, stack_.size()};
+  }
+
+  /**
+   * Full NVTX range path "name#id > name#id > ...".
+   * Mutex-free — ONLY safe to call from the thread that owns this stack.
+   */
+  [[nodiscard]] auto current_path() const -> std::string { return build_path(); }
+
  private:
   void ensure_current() const
   {
@@ -130,6 +147,26 @@ RAFT_EXPORT inline thread_local nvtx_range_name_stack range_name_stack_instance{
 RAFT_EXPORT inline auto thread_local_current_range() -> std::shared_ptr<const current_range>
 {
   return detail::range_name_stack_instance.current();
+}
+
+/**
+ * Mutex-free read of the current thread's innermost NVTX range name and stack depth.
+ * ONLY safe to call from the thread that owns this range stack (the current thread).
+ * Use instead of thread_local_current_range()->get() when no cross-thread sharing is needed.
+ */
+RAFT_EXPORT inline auto thread_local_current_name_and_depth() -> std::pair<std::string, std::size_t>
+{
+  return detail::range_name_stack_instance.current_name_and_depth();
+}
+
+/**
+ * Mutex-free read of the current thread's full NVTX range path "name#id > name#id > ...".
+ * ONLY safe to call from the thread that owns this range stack (the current thread).
+ * Use instead of thread_local_current_range()->get_path() when no cross-thread sharing is needed.
+ */
+RAFT_EXPORT inline auto thread_local_current_path() -> std::string
+{
+  return detail::range_name_stack_instance.current_path();
 }
 
 }  // namespace common::nvtx
