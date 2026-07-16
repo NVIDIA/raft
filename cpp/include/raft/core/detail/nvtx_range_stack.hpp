@@ -99,8 +99,7 @@ struct nvtx_range_name_stack {
    * Innermost NVTX range name and stack depth.
    * Mutex-free — ONLY safe to call from the thread that owns this stack.
    */
-  [[nodiscard]] auto current_name_and_depth() const noexcept
-    -> std::pair<std::string, std::size_t>
+  [[nodiscard]] auto current_name_and_depth() const noexcept -> std::pair<std::string, std::size_t>
   {
     if (stack_.empty()) { return {"", 0}; }
     return {stack_.back().second, stack_.size()};

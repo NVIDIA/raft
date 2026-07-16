@@ -91,8 +91,8 @@ class memory_logging_resources : public resources {
 
  private:
   memory_logging_resources(const resources* existing,
-                            std::unique_ptr<std::ofstream> owned_stream,
-                            std::ostream* out_override)
+                           std::unique_ptr<std::ofstream> owned_stream,
+                           std::ostream* out_override)
     : resources(existing ? *existing : resources{}),
       owned_stream_(std::move(owned_stream)),
       old_host_(raft::mr::get_default_host_resource()),
@@ -186,8 +186,7 @@ class memory_logging_resources : public resources {
     {
       int id = recorder_->register_source("large_workspace");
       raft::resource::set_large_workspace_resource(
-        *this,
-        raft::mr::recording_adaptor<rmm::device_async_resource_ref>{lws_ref, queue, id});
+        *this, raft::mr::recording_adaptor<rmm::device_async_resource_ref>{lws_ref, queue, id});
     }
 
     recorder_->start();

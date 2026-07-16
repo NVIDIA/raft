@@ -6,8 +6,8 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/detail/nvtx_range_stack.hpp>  // thread_local_current_path, thread_local_current_name_and_depth
-#include <raft/mr/recording_monitor.hpp>          // allocation_event, allocation_event_queue
-#include <raft/mr/statistics_adaptor.hpp>         // resource_stats (atomic counters, reused)
+#include <raft/mr/recording_monitor.hpp>   // allocation_event, allocation_event_queue
+#include <raft/mr/statistics_adaptor.hpp>  // resource_stats (atomic counters, reused)
 
 #include <cuda/memory_resource>
 #include <cuda/stream_ref>
@@ -47,7 +47,8 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
 
   // Record the alloc-time NVTX path for this pointer.
   // Called on the allocating thread — mutex-free NVTX read is safe.
-  // The alloc_map_ mutex still protects the shared map from concurrent alloc/dealloc across threads.
+  // The alloc_map_ mutex still protects the shared map from concurrent alloc/dealloc across
+  // threads.
   auto record_allocation(void* ptr) noexcept -> std::string
   {
     std::string path = "";

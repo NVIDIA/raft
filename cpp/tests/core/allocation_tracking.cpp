@@ -1,11 +1,11 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <raft/mr/host_memory_resource.hpp>
 #include <raft/mr/notifying_adaptor.hpp>
-#include <raft/mr/sampling_monitor.hpp>
+#include <raft/mr/resource_monitor.hpp>
 #include <raft/mr/statistics_adaptor.hpp>
 
 #include <gtest/gtest.h>
@@ -69,7 +69,7 @@ TEST(AllocationReport, WritesCSVOnDirty)
   using namespace std::chrono_literals;
 
   std::ostringstream oss;
-  raft::mr::sampling_monitor report(oss, 1ms);
+  raft::mr::resource_monitor report(oss, 1ms);
 
   auto host_stats   = std::make_shared<raft::mr::resource_stats>();
   auto pinned_stats = std::make_shared<raft::mr::resource_stats>();
@@ -98,7 +98,7 @@ TEST(AllocationReport, StartStopIdempotent)
   using namespace std::chrono_literals;
 
   std::ostringstream oss;
-  raft::mr::sampling_monitor report(oss, 1ms);
+  raft::mr::resource_monitor report(oss, 1ms);
 
   auto stats = std::make_shared<raft::mr::resource_stats>();
   report.register_source("test", stats);
@@ -124,7 +124,7 @@ TEST(AllocationReport, DestructorCallsStop)
   std::ostringstream oss;
   {
     auto stats = std::make_shared<raft::mr::resource_stats>();
-    raft::mr::sampling_monitor report(oss, 1ms);
+    raft::mr::resource_monitor report(oss, 1ms);
     report.register_source("test", stats);
 
     stats->record_allocate(256);
