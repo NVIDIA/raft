@@ -5,6 +5,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/logger.hpp>
 
 #include <chrono>
 #include <condition_variable>
@@ -25,15 +26,14 @@ namespace mr {
  * @brief A single allocation or deallocation event, captured on the allocating thread.
  */
 struct allocation_event {
-  int source_id{0};             //< which registered source this belongs to
-  std::int64_t current{0};      //< current live bytes after this event
-  std::int64_t total_alloc{0};  //< cumulative bytes allocated
-  std::int64_t total_freed{0};  //< cumulative bytes freed
-  std::size_t nvtx_depth{0};    //< NVTX stack depth at event time
-  std::string nvtx_range;       //< NVTX range name active at event time
-  std::string nvtx_full_range;  //< full NVTX range path "name#id > ..." captured at ALLOCATION time
-  std::int64_t event_bytes{0};  //< signed bytes for THIS event (+alloc / -free)
-  std::chrono::steady_clock::time_point timestamp{};  //< when the event happened
+  std::chrono::steady_clock::time_point timestamp{};  //< (de)allocation timestamp
+  int source_id{0};  //< resource (host, pinned, workspace, etc.) which event belongs to
+  std::int64_t current_bytes{0};   //< live bytes after this event (i.e. incl. delta bytes)
+  std::int64_t delta_bytes{0};     //< signed delta bytes by this event (+alloc / -free)
+  std::size_t nvtx_depth{0};       //< NVTX stack depth at event time
+  std::string nvtx_inner_range{};  //< NVTX range name active at event time
+  std::string
+    nvtx_full_range{};  //< NVTX full path "name#id -> ..." captured at the ALLOCATION time
 };
 
 /**
@@ -107,10 +107,10 @@ class recording_monitor {
    */
   auto register_source(std::string name) -> int
   {
-    int id = static_cast<int>(source_names_.size());
-    source_names_.push_back(std::move(name));
-    view_.emplace_back();
-    return id;
+    int source_id = static_cast<int>(sources_.size());
+    sources_.push_back(std::move(name));
+    source_current_.push_back(0);  // last-known live bytes for this source (carried forward)
+    return source_id;
   }
 
   void start()
@@ -130,20 +130,14 @@ class recording_monitor {
   }
 
  private:
-  struct source_view {
-    std::int64_t current{0};
-    std::int64_t total_alloc{0};
-    std::int64_t total_freed{0};
-  };
-
   void write_header()
   {
-    out_ << "timestamp_us";
-    for (auto const& name : source_names_) {
-      out_ << ',' << name << "_current," << name << "_peak," << name << "_total_alloc," << name
-           << "_total_freed";
+    out_ << "timestamp_us,source";
+    for (auto const& name : sources_) {
+      out_ << ',' << name << "_current_bytes";
     }
-    out_ << ",nvtx_depth,nvtx_range,event_source,event_bytes,nvtx_full_range\n";
+    out_ << ",delta_bytes";
+    out_ << ",nvtx_depth,nvtx_inner_range,nvtx_full_range\n";
     out_.flush();
   }
 
@@ -162,29 +156,33 @@ class recording_monitor {
 
   void write_row(allocation_event const& event)
   {
-    if (event.source_id >= 0 && event.source_id < static_cast<int>(view_.size())) {
-      view_[event.source_id] = source_view{event.current, event.total_alloc, event.total_freed};
+    if (event.source_id < 0 || static_cast<std::size_t>(event.source_id) >= sources_.size()) {
+      RAFT_LOG_WARN("Event source id %d is out-of-bound (number of sources = %zu)",
+                    event.source_id,
+                    sources_.size());
+      return;
     }
 
-    auto us =
-      std::chrono::duration_cast<std::chrono::microseconds>(event.timestamp - start_).count();
-    out_ << us;
-    for (auto const& v : view_) {
-      out_ << ',' << v.current << ',' << v.current << ',' << v.total_alloc << ',' << v.total_freed;
+    // timestamp since start [us]
+    out_ << std::chrono::duration_cast<std::chrono::microseconds>(event.timestamp - start_).count();
+    out_ << "," << sources_[event.source_id];
+    // live bytes per source (last-known value for each)
+    source_current_[event.source_id] = event.current_bytes;
+    for (auto const& current_bytes : source_current_) {
+      out_ << "," << current_bytes;
     }
-    out_ << ',' << event.nvtx_depth << ",\"" << event.nvtx_range << "\"";
-
-    auto const* src_name =
-      (event.source_id >= 0 && event.source_id < static_cast<int>(source_names_.size()))
-        ? source_names_[event.source_id].c_str()
-        : "";
-    out_ << ',' << src_name << ',' << event.event_bytes << ",\"" << event.nvtx_full_range << "\"\n";
+    // delta bytes
+    out_ << "," << event.delta_bytes;
+    // nvtx
+    out_ << "," << event.nvtx_depth;
+    out_ << ",\"" << event.nvtx_inner_range << "\"";
+    out_ << ",\"" << event.nvtx_full_range << "\"\n";
   }
 
   std::ostream& out_;
   std::shared_ptr<allocation_event_queue> queue_{std::make_shared<allocation_event_queue>()};
-  std::vector<std::string> source_names_;
-  std::vector<source_view> view_;
+  std::vector<std::string> sources_;          // pinned, workspace, host, etc.
+  std::vector<std::int64_t> source_current_;  // last-known live bytes per source (carried forward)
   std::chrono::steady_clock::time_point start_{std::chrono::steady_clock::now()};
   std::thread worker_;
 };

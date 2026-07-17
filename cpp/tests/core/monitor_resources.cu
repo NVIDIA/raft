@@ -81,11 +81,13 @@ TEST(MemoryLoggingResources, RecordingSingleThread)
 
   auto output = oss.str();
   EXPECT_NE(output.find("timestamp_us"), std::string::npos);
-  EXPECT_NE(output.find("host_current"), std::string::npos);
-  EXPECT_NE(output.find("device_current"), std::string::npos);
-  EXPECT_NE(output.find("workspace_current"), std::string::npos);
-  EXPECT_NE(output.find("event_source"), std::string::npos);
-  EXPECT_NE(output.find("event_bytes"), std::string::npos);
+  EXPECT_NE(output.find("source"), std::string::npos);
+  EXPECT_NE(output.find("host_current_bytes"), std::string::npos);
+  EXPECT_NE(output.find("device_current_bytes"), std::string::npos);
+  EXPECT_NE(output.find("workspace_current_bytes"), std::string::npos);
+  EXPECT_NE(output.find("delta_bytes"), std::string::npos);
+  EXPECT_NE(output.find("nvtx_depth"), std::string::npos);
+  EXPECT_NE(output.find("nvtx_inner_range"), std::string::npos);
   EXPECT_NE(output.find("nvtx_full_range"), std::string::npos);
 
   auto num_lines                      = std::count(output.begin(), output.end(), '\n');
