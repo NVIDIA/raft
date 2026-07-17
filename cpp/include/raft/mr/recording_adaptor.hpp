@@ -50,7 +50,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   // Record the alloc-time NVTX path for this pointer.
   // Called on the allocating thread — mutex-free NVTX read is safe.
   // The mutex protects the shared map from concurrent alloc/dealloc threads.
-  auto record_allocation(void* ptr) noexcept -> std::string
+  auto record_allocation(void* ptr) -> std::string
   {
     std::string path = "";
     if (ptr != nullptr) {
@@ -64,7 +64,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   }
 
   // Returns the NVTX path recorded at alloc time for this pointer, then removes it.
-  auto forget_allocation(void* ptr) noexcept -> std::string
+  auto forget_allocation(void* ptr) -> std::string
   {
     std::string path = "";
     std::lock_guard<std::mutex> lock(alloc_map_->mtx);
@@ -116,7 +116,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
 
   void deallocate_sync(void* ptr,
                        std::size_t bytes,
-                       std::size_t alignment = alignof(std::max_align_t)) noexcept
+                       std::size_t alignment = alignof(std::max_align_t))
   {
     std::chrono::steady_clock::time_point timestamp = std::chrono::steady_clock::now();
     upstream_.deallocate_sync(ptr, bytes, alignment);
@@ -138,7 +138,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   void deallocate(cuda::stream_ref stream,
                   void* ptr,
                   std::size_t bytes,
-                  std::size_t alignment = alignof(std::max_align_t)) noexcept
+                  std::size_t alignment = alignof(std::max_align_t))
   {
     std::chrono::steady_clock::time_point timestamp = std::chrono::steady_clock::now();
     upstream_.deallocate(stream, ptr, bytes, alignment);

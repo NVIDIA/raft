@@ -5,7 +5,9 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/logger.hpp>  // RAFT_LOG_WARN
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -35,8 +37,14 @@ RAFT_EXPORT inline std::atomic<std::uint64_t> range_instance_counter{0};
 struct nvtx_full_range_stack {
   void push(const char* name)
   {
-    auto id = range_instance_counter.fetch_add(1, std::memory_order_relaxed) + 1;
-    stack_.emplace_back(id, name ? name : "");
+    auto id           = range_instance_counter.fetch_add(1, std::memory_order_relaxed) + 1;
+    std::string clean = name ? name : "";
+    if (clean.find(',') != std::string::npos) {
+      RAFT_LOG_WARN("NVTX range name '%s' contains ',' - removing it to keep CSV columns intact",
+                    clean.c_str());
+      clean.erase(std::remove(clean.begin(), clean.end(), ','), clean.end());
+    }
+    stack_.emplace_back(id, std::move(clean));
   }
 
   void pop()

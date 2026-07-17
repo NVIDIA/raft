@@ -5,6 +5,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/error.hpp>  // RAFT_EXPECTS
 #include <raft/core/logger.hpp>
 
 #include <chrono>
@@ -107,6 +108,9 @@ class recording_monitor {
    */
   auto register_source(std::string name) -> int
   {
+    RAFT_EXPECTS(name.find(',') == std::string::npos,
+                 "source name must not contain ',' (delimiter). This would break CSV columns: '%s'",
+                 name.c_str());
     int source_id = static_cast<int>(sources_.size());
     sources_.push_back(std::move(name));
     source_current_.push_back(0);  // last-known live bytes for this source (carried forward)
