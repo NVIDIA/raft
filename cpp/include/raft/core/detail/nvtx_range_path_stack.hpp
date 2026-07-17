@@ -45,7 +45,7 @@ struct nvtx_full_range_stack {
   }
 
   /** Innermost range name and stack depth (empty/0 when no range is active). */
-  [[nodiscard]] auto inner_range_and_depth() const noexcept -> std::pair<std::string, std::size_t>
+  [[nodiscard]] auto inner_range_and_depth() const -> std::pair<std::string, std::size_t>
   {
     if (stack_.empty()) { return {"", 0}; }
     return {stack_.back().second, stack_.size()};

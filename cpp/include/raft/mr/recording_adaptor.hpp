@@ -6,6 +6,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/detail/nvtx_range_path_stack.hpp>  // thread_local_nvtx_full_path, thread_local_inner_range_and_depth
+#include <raft/core/error.hpp>
 #include <raft/mr/recording_monitor.hpp>  // allocation_event, allocation_event_queue
 
 #include <cuda/memory_resource>
@@ -78,7 +79,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   // Enqueue an event. This is called on the allocating/deallocating thread
   void emit(std::string nvtx_full_range,
             std::int64_t signed_bytes,
-            std::chrono::steady_clock::time_point const& timestamp) noexcept
+            std::chrono::steady_clock::time_point const& timestamp)
   {
     auto [name, depth] = raft::common::nvtx::thread_local_inner_range_and_depth();
     allocation_event event{
@@ -102,6 +103,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
       source_id_(source_id),
       current_bytes_{std::make_shared<std::atomic<std::int64_t>>(0)}
   {
+    RAFT_EXPECTS(queue_ != nullptr, "event queue must be initialized");
   }
 
   void* allocate_sync(std::size_t bytes, std::size_t alignment = alignof(std::max_align_t))
