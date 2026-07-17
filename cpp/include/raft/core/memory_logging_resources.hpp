@@ -138,25 +138,27 @@ class memory_logging_resources : public resources {
 
     // --- Host (global) ---
     {
-      int id        = recorder_->register_source("host");
-      host_adaptor_ = std::make_unique<host_record_t>(old_host_, queue, id);
+      int source_id = recorder_->register_source("host");
+      host_adaptor_ = std::make_unique<host_record_t>(old_host_, queue, source_id);
       raft::mr::set_default_host_resource(*host_adaptor_);
     }
 
     // --- Pinned ---
     {
-      int id = recorder_->register_source("pinned");
+      int source_id = recorder_->register_source("pinned");
       raft::resource::set_pinned_memory_resource(
         *this,
-        raft::mr::recording_adaptor<raft::mr::host_device_resource_ref>{pinned_ref, queue, id});
+        raft::mr::recording_adaptor<raft::mr::host_device_resource_ref>{
+          pinned_ref, queue, source_id});
     }
 
     // --- Managed ---
     {
-      int id = recorder_->register_source("managed");
+      int source_id = recorder_->register_source("managed");
       raft::resource::set_managed_memory_resource(
         *this,
-        raft::mr::recording_adaptor<raft::mr::host_device_resource_ref>{managed_ref, queue, id});
+        raft::mr::recording_adaptor<raft::mr::host_device_resource_ref>{
+          managed_ref, queue, source_id});
     }
 
     // --- Device (global) ---
@@ -164,25 +166,26 @@ class memory_logging_resources : public resources {
       // Invalidate the cached thrust policy — its resource_ref will be stale
       // once we replace the global device resource.
       cells_[resource::resource_type::THRUST_POLICY] = std::make_shared<resource::resource_cell>();
-      int id                                         = recorder_->register_source("device");
-      device_adaptor_ = std::make_unique<device_record_t>(old_device_, queue, id);
+      int source_id                                  = recorder_->register_source("device");
+      device_adaptor_ = std::make_unique<device_record_t>(old_device_, queue, source_id);
       rmm::mr::set_current_device_resource(*device_adaptor_);
     }
 
     // --- Workspace (track upstream to preserve limiting_resource_adaptor) ---
     {
-      int id = recorder_->register_source("workspace");
+      int source_id = recorder_->register_source("workspace");
       raft::resource::set_workspace_resource(
         *this,
-        raft::mr::recording_adaptor<rmm::device_async_resource_ref>{upstream_ref, queue, id},
+        raft::mr::recording_adaptor<rmm::device_async_resource_ref>{upstream_ref, queue, source_id},
         ws_free);
     }
 
     // --- Large workspace ---
     {
-      int id = recorder_->register_source("large_workspace");
+      int source_id = recorder_->register_source("large_workspace");
       raft::resource::set_large_workspace_resource(
-        *this, raft::mr::recording_adaptor<rmm::device_async_resource_ref>{lws_ref, queue, id});
+        *this,
+        raft::mr::recording_adaptor<rmm::device_async_resource_ref>{lws_ref, queue, source_id});
     }
 
     recorder_->start();

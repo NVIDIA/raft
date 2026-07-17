@@ -5,7 +5,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
-#include <raft/core/detail/nvtx_range_stack.hpp>  // thread_local_current_path, thread_local_current_name_and_depth
+#include <raft/core/detail/nvtx_range_path_stack.hpp>  // thread_local_nvtx_full_path, thread_local_inner_range_and_depth
 #include <raft/mr/recording_monitor.hpp>   // allocation_event, allocation_event_queue
 #include <raft/mr/statistics_adaptor.hpp>  // resource_stats (atomic counters, reused)
 
@@ -53,7 +53,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   {
     std::string path = "";
     if (ptr != nullptr) {
-      path = raft::common::nvtx::thread_local_current_path();
+      path = raft::common::nvtx::thread_local_nvtx_full_path();
       if (!path.empty()) {
         std::lock_guard<std::mutex> lock(alloc_map_->mtx);
         alloc_map_->paths[ptr] = path;
@@ -78,7 +78,7 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   // Enqueue an event.  Called on the allocating/deallocating thread — mutex-free NVTX read.
   void emit(std::string nvtx_full_range, std::int64_t signed_bytes) noexcept
   {
-    auto [name, depth] = raft::common::nvtx::thread_local_current_name_and_depth();
+    auto [name, depth] = raft::common::nvtx::thread_local_inner_range_and_depth();
     allocation_event event;
     event.source_id       = source_id_;
     event.current         = stats_->bytes_current.load(std::memory_order_relaxed);
