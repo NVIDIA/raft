@@ -34,7 +34,7 @@ namespace raft {
  * raft::resources& is expected.
  *
  * Every allocation and deallocation is pushed as an event onto a thread-safe
- * queue.  The active NVTX range path is captured from the allocating/deallocating
+ * queue. The active NVTX range path is captured from the allocating/deallocating
  * thread at the moment of the event — no mutex is taken on the NVTX stack because
  * the read is always on the owning thread.  The per-pointer alloc_map that maps
  * addresses to their allocation-time NVTX path still uses a mutex because
@@ -108,17 +108,18 @@ class memory_logging_resources : public resources {
   // Declaration order matters: snapshot_ is destroyed last (keeps original resource
   // shared_ptrs alive); owned_stream_ outlives recorder_ (it writes to it);
   // recorder_ is stopped in the destructor body before member destruction.
-  std::vector<pair_resource> snapshot_;
+  std::vector<std::shared_ptr<resource::resource_cell>> snapshot_;
   std::unique_ptr<std::ofstream> owned_stream_;
   std::unique_ptr<raft::mr::recording_monitor> recorder_;
 
   raft::mr::host_resource old_host_;
   raft::mr::device_resource old_device_;
 
-  using host_record_t   = raft::mr::recording_adaptor<raft::mr::host_resource_ref>;
+  using host_record_t = raft::mr::recording_adaptor<raft::mr::host_resource_ref>;
+  std::unique_ptr<host_record_t> host_adaptor_;
+
   using device_record_t = raft::mr::recording_adaptor<rmm::device_async_resource_ref>;
-  std::unique_ptr<host_record_t> host_record_adaptor_;
-  std::unique_ptr<device_record_t> device_record_adaptor_;
+  std::unique_ptr<device_record_t> device_adaptor_;
 
   void init_recording()
   {
@@ -131,17 +132,15 @@ class memory_logging_resources : public resources {
     auto pinned_ref   = raft::resource::get_pinned_memory_resource_ref(*this);
     auto managed_ref  = raft::resource::get_managed_memory_resource_ref(*this);
 
-    snapshot_ = resources_;
+    snapshot_ = cells_;
 
     auto queue = recorder_->get_queue();
 
-    // Source ids are assigned in registration order and must match the CSV column-group order.
-
     // --- Host (global) ---
     {
-      int id               = recorder_->register_source("host");
-      host_record_adaptor_ = std::make_unique<host_record_t>(old_host_, queue, id);
-      raft::mr::set_default_host_resource(*host_record_adaptor_);
+      int id        = recorder_->register_source("host");
+      host_adaptor_ = std::make_unique<host_record_t>(old_host_, queue, id);
+      raft::mr::set_default_host_resource(*host_adaptor_);
     }
 
     // --- Pinned ---
@@ -164,13 +163,10 @@ class memory_logging_resources : public resources {
     {
       // Invalidate the cached thrust policy — its resource_ref will be stale
       // once we replace the global device resource.
-      factories_.at(resource::resource_type::THRUST_POLICY) = std::make_pair(
-        resource::resource_type::LAST_KEY, std::make_shared<resource::empty_resource_factory>());
-      resources_.at(resource::resource_type::THRUST_POLICY) = std::make_pair(
-        resource::resource_type::LAST_KEY, std::make_shared<resource::empty_resource>());
-      int id                 = recorder_->register_source("device");
-      device_record_adaptor_ = std::make_unique<device_record_t>(old_device_, queue, id);
-      rmm::mr::set_current_device_resource(*device_record_adaptor_);
+      cells_[resource::resource_type::THRUST_POLICY] = std::make_shared<resource::resource_cell>();
+      int id                                         = recorder_->register_source("device");
+      device_adaptor_ = std::make_unique<device_record_t>(old_device_, queue, id);
+      rmm::mr::set_current_device_resource(*device_adaptor_);
     }
 
     // --- Workspace (track upstream to preserve limiting_resource_adaptor) ---

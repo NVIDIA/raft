@@ -86,7 +86,7 @@ TEST(MemoryLoggingResources, RecordingSingleThread)
   EXPECT_NE(output.find("workspace_current"), std::string::npos);
   EXPECT_NE(output.find("event_source"), std::string::npos);
   EXPECT_NE(output.find("event_bytes"), std::string::npos);
-  EXPECT_NE(output.find("alloc_range"), std::string::npos);
+  EXPECT_NE(output.find("nvtx_full_range"), std::string::npos);
 
   auto num_lines                      = std::count(output.begin(), output.end(), '\n');
   constexpr size_t NUM_ALLOCS         = 3;

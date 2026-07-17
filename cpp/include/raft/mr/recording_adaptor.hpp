@@ -76,19 +76,19 @@ class recording_adaptor : public cuda::forward_property<recording_adaptor<Upstre
   }
 
   // Enqueue an event.  Called on the allocating/deallocating thread — mutex-free NVTX read.
-  void emit(std::string alloc_range, std::int64_t signed_bytes) noexcept
+  void emit(std::string nvtx_full_range, std::int64_t signed_bytes) noexcept
   {
     auto [name, depth] = raft::common::nvtx::thread_local_current_name_and_depth();
     allocation_event event;
-    event.source_id   = source_id_;
-    event.current     = stats_->bytes_current.load(std::memory_order_relaxed);
-    event.total_alloc = stats_->bytes_total_allocated.load(std::memory_order_relaxed);
-    event.total_freed = stats_->bytes_total_deallocated.load(std::memory_order_relaxed);
-    event.timestamp   = std::chrono::steady_clock::now();
-    event.event_bytes = signed_bytes;
-    event.nvtx_range  = std::move(name);
-    event.nvtx_depth  = depth;
-    event.alloc_range = std::move(alloc_range);
+    event.source_id       = source_id_;
+    event.current         = stats_->bytes_current.load(std::memory_order_relaxed);
+    event.total_alloc     = stats_->bytes_total_allocated.load(std::memory_order_relaxed);
+    event.total_freed     = stats_->bytes_total_deallocated.load(std::memory_order_relaxed);
+    event.timestamp       = std::chrono::steady_clock::now();
+    event.event_bytes     = signed_bytes;
+    event.nvtx_range      = std::move(name);
+    event.nvtx_depth      = depth;
+    event.nvtx_full_range = std::move(nvtx_full_range);
     queue_->push(std::move(event));
   }
 
