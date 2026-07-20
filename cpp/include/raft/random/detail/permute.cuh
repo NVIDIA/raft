@@ -14,6 +14,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <type_traits>
 
 namespace raft {
 namespace random {
@@ -141,6 +142,28 @@ HDI IdxType feistel_permute_index(IdxType idx, const feistel_permute_params& p)
   return IdxType(x);
 }
 
+template <int TPB, int ITEMS_PER_THREAD>
+RAFT_KERNEL permsOnlyKernel32(uint32_t* perms, feistel_permute_params fp, uint32_t N)
+{
+  uint32_t base = uint32_t(blockIdx.x) * uint32_t(TPB * ITEMS_PER_THREAD) + threadIdx.x;
+#pragma unroll
+  for (int i = 0; i < ITEMS_PER_THREAD; i++) {
+    uint32_t idx = base + uint32_t(i * TPB);
+    if (idx < N) { perms[idx] = feistel_permute_index<uint32_t>(idx, fp); }
+  }
+}
+
+template <typename IntType, typename IdxType, int TPB, int ITEMS_PER_THREAD>
+RAFT_KERNEL permsOnlyKernel(IntType* perms, feistel_permute_params fp, IdxType N)
+{
+  IdxType base = IdxType(blockIdx.x) * IdxType(TPB * ITEMS_PER_THREAD) + threadIdx.x;
+#pragma unroll
+  for (int i = 0; i < ITEMS_PER_THREAD; i++) {
+    IdxType idx = base + IdxType(i * TPB);
+    if (idx < N) { perms[idx] = IntType(feistel_permute_index<IdxType>(idx, fp)); }
+  }
+}
+
 template <typename Type, typename IntType, typename IdxType, int TPB, bool rowMajor>
 RAFT_KERNEL permuteKernel(
   IntType* perms, Type* out, const Type* in, feistel_permute_params fp, IdxType N, IdxType D)
@@ -240,6 +263,21 @@ void permute(IntType* perms,
              cudaStream_t stream,
              uint64_t key)
 {
+  if (out == nullptr) {
+    constexpr int ITEMS_PER_THREAD          = 8;
+    feistel_permute_params fp               = make_feistel_permute_params(uint64_t(N), key);
+    if constexpr (std::is_same_v<IntType, uint32_t>) {
+      auto nblks = raft::ceildiv(N, IntType(TPB * ITEMS_PER_THREAD));
+      permsOnlyKernel32<TPB, ITEMS_PER_THREAD><<<nblks, TPB, 0, stream>>>(perms, fp, N);
+    } else {
+      auto nblks = raft::ceildiv(N, (IntType)(TPB * ITEMS_PER_THREAD));
+      permsOnlyKernel<IntType, IdxType, TPB, ITEMS_PER_THREAD>
+        <<<nblks, TPB, 0, stream>>>(perms, fp, N);
+    }
+    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    return;
+  }
+
   auto nblks = raft::ceildiv(N, (IntType)TPB);
 
   // build the keyed Feistel schedule for [0, N) once on the host from the
