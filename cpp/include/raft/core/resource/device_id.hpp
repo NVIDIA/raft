@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -56,7 +56,7 @@ class device_id_resource_factory : public resource_factory {
 inline int get_device_id(resources const& res)
 {
   if (!res.has_resource_factory(resource_type::DEVICE_ID)) {
-    res.add_resource_factory(std::make_shared<device_id_resource_factory>());
+    res.ensure_default_factory(std::make_shared<device_id_resource_factory>());
   }
   return *res.get_resource<int>(resource_type::DEVICE_ID);
 };

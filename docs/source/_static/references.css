@@ -1,15 +1,4 @@
 
-/* Constrain navbar logo size and add spacing */
-.navbar-brand.logo .logo__image {
-  height: 32px !important;
-  width: auto !important;
-  margin-right: 0.75rem;
-}
-
-.navbar-brand.logo {
-  padding: 0.5rem 0;
-}
-
 /* Fix references to not look like parameters */
 dl.citation > dt.label {
   display: unset !important;
