@@ -11,6 +11,7 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/mdspan.hpp>
 #include <raft/core/mdspan_types.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/axpy.cuh>
 #include <raft/linalg/dot.cuh>
@@ -74,8 +75,19 @@ struct rmat_lanczos_inputs {
   float sparsity;
 };
 
-// Frobenius norm of the sparse matrix, used to scale residual/orthogonality
-// tolerances to the magnitude of the problem instead of an absolute value.
+/**
+ * @brief Compute the Frobenius norm of a sparse matrix from its stored values.
+ *
+ * Used to scale residual/orthogonality tolerances to the magnitude of the
+ * problem instead of an absolute value.
+ *
+ * @tparam ValueType data type of the matrix values (float or double)
+ * @tparam NnzType integral type of the nonzero count
+ * @param[in] handle raft resources
+ * @param[in] vals device pointer to the nnz stored values of the matrix
+ * @param[in] nnz number of stored values
+ * @return the Frobenius norm sqrt(sum(vals[i]^2))
+ */
 template <typename ValueType, typename NnzType>
 ValueType compute_frobenius_norm(raft::resources const& handle, ValueType const* vals, NnzType nnz)
 {
@@ -83,26 +95,42 @@ ValueType compute_frobenius_norm(raft::resources const& handle, ValueType const*
     raft::make_device_vector_view<const ValueType, uint32_t>(vals, static_cast<uint32_t>(nnz));
   ValueType sum_sq{};
   raft::linalg::dot(handle, vals_view, vals_view, raft::make_host_scalar_view<ValueType>(&sum_sq));
+  raft::resource::sync_stream(handle);
   return std::sqrt(sum_sq);
 }
 
-// Validates that (eigenvalues[i], eigenvectors[:, i]) are genuine eigenpairs
-// of `A`, without relying on hardcoded golden eigenvalues. This checks the
-// defining characteristics of a converged real-symmetric eigensolve:
-//   - ||A*v_i - lambda_i*v_i|| is within the noise floor implied by the
-//     solver's own convergence criterion (see lanczos_solver_config::tolerance,
-//     which is documented as governing exactly this residual).
-//   - lambda_i matches the Rayleigh quotient of v_i. This pins the eigenvalue
-//     down more sharply than the residual alone on matrices with a large
-//     ||A||, where a small eigenvalue's residual budget is dominated by the
-//     matrix scale.
-//   - each eigenvector is unit-normalized.
-//   - distinct eigenvectors are mutually orthogonal (catches "ghost"
-//     duplicate eigenpairs from loss of orthogonality, which a residual-only
-//     check would miss).
-//   - eigenvalues are returned in ascending algebraic order (verified
-//     against every previously-hardcoded golden array in this file, which
-//     were all ascending regardless of `which`).
+/**
+ * @brief Validate that (eigenvalues[i], eigenvectors[:, i]) are genuine
+ * eigenpairs of `A`, without relying on hardcoded golden eigenvalues.
+ *
+ * Checks the defining characteristics of a converged real-symmetric
+ * eigensolve:
+ *   - ||A*v_i - lambda_i*v_i|| is within the noise floor implied by the
+ *     solver's own convergence criterion (see lanczos_solver_config::tolerance,
+ *     which is documented as governing exactly this residual).
+ *   - lambda_i matches the Rayleigh quotient of v_i. This pins the eigenvalue
+ *     down more sharply than the residual alone on matrices with a large
+ *     ||A||, where a small eigenvalue's residual budget is dominated by the
+ *     matrix scale.
+ *   - each eigenvector is unit-normalized.
+ *   - distinct eigenvectors are mutually orthogonal (catches "ghost"
+ *     duplicate eigenpairs from loss of orthogonality, which a residual-only
+ *     check would miss).
+ *   - eigenvalues are returned in ascending algebraic order (verified
+ *     against every previously-hardcoded golden array in this file, which
+ *     were all ascending regardless of `which`).
+ *
+ * @tparam IndexType integral type of the matrix indices
+ * @tparam ValueType data type of matrix values and eigenpairs (float or double)
+ * @param[in] handle raft resources
+ * @param[in] A sparse matrix wrapper providing the A*v product
+ * @param[in] eigenvalues device pointer to n_components computed eigenvalues
+ * @param[in] eigenvectors device pointer to the column-major n x n_components
+ *   eigenvector matrix
+ * @param[in] n dimension of the (square) matrix
+ * @param[in] n_components number of eigenpairs to validate
+ * @param[in] frobenius_norm Frobenius norm of A, used to scale tolerances
+ */
 template <typename IndexType, typename ValueType>
 void expect_valid_eigenpairs(raft::resources const& handle,
                              raft::spectral::matrix::sparse_matrix_t<IndexType, ValueType> const& A,
@@ -139,7 +167,7 @@ void expect_valid_eigenpairs(raft::resources const& handle,
 
   std::vector<ValueType> host_eigenvalues(n_components);
   raft::update_host(host_eigenvalues.data(), eigenvalues, n_components, stream);
-  RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
+  raft::resource::sync_stream(handle);
 
   for (int i = 1; i < n_components; ++i) {
     EXPECT_LE(host_eigenvalues[i - 1], host_eigenvalues[i] + matrix_tol)
@@ -176,6 +204,10 @@ void expect_valid_eigenpairs(raft::resources const& handle,
     raft::linalg::dot(
       handle, v_i_view, v_i_view, raft::make_host_scalar_view<ValueType>(&v_norm_sq));
 
+    // dot with a host-scalar output is not guaranteed to have synchronized;
+    // make the host-side reads below safe.
+    raft::resource::sync_stream(handle);
+
     ValueType residual_norm = std::sqrt(residual_sq);
     ValueType v_norm        = std::sqrt(v_norm_sq);
 
@@ -202,6 +234,7 @@ void expect_valid_eigenpairs(raft::resources const& handle,
       ValueType dot_ij{};
       raft::linalg::dot(
         handle, v_i_view, v_j_view, raft::make_host_scalar_view<ValueType>(&dot_ij));
+      raft::resource::sync_stream(handle);
       EXPECT_LE(std::abs(dot_ij), ortho_tol)
         << "eigenvectors " << i << " and " << j
         << " are not orthogonal: |v_i . v_j|=" << std::abs(dot_ij);
