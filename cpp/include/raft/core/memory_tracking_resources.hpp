@@ -5,6 +5,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/device_id.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/managed_memory_resource.hpp>
 #include <raft/core/resource/pinned_memory_resource.hpp>
@@ -108,7 +109,8 @@ class memory_tracking_resources : public resources {
   {
     report_.stop();
     raft::mr::set_default_host_resource(old_host_);
-    rmm::mr::set_current_device_resource(old_device_);
+    rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                     std::move(old_device_));
   }
 
   memory_tracking_resources(memory_tracking_resources const&)            = delete;
@@ -128,7 +130,8 @@ class memory_tracking_resources : public resources {
       owned_stream_(std::move(owned_stream)),
       report_(out_override ? *out_override : *owned_stream_, sample_interval),
       old_host_(raft::mr::get_default_host_resource()),
-      old_device_(rmm::mr::get_current_device_resource_ref())
+      old_device_(rmm::mr::get_per_device_resource_ref(
+        rmm::cuda_device_id{resource::get_device_id(*this)}))
   {
     init();
   }
@@ -217,7 +220,8 @@ class memory_tracking_resources : public resources {
       device_stats_t sa{rmm::device_async_resource_ref{old_device_}};
       report_.register_source("device", sa.get_stats());
       device_adaptor_ = std::make_unique<device_notify_t>(std::move(sa), report_.get_notifier());
-      rmm::mr::set_current_device_resource(*device_adaptor_);
+      rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                       *device_adaptor_);
     }
 
     // --- Workspace (track upstream to preserve limiting_resource_adaptor) ---
