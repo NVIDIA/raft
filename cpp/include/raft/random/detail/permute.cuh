@@ -111,17 +111,19 @@ inline feistel_permute_params make_feistel_permute_params(uint64_t N, uint64_t k
 // Feistel permutation on m.
 // The 4 rounds are unrolled by hand: even rounds mix the low part into the high
 // part (a bits), odd rounds mix the high part into the low part (b bits).
-HDI uint64_t feistel_mix_nbits(uint64_t m, const feistel_permute_params& p)
+// WordType is uint32_t for 32-bit domains and uint64_t for larger ones.
+template <typename WordType>
+HDI WordType feistel_mix_nbits(WordType m, const feistel_permute_params& p)
 {
-  m &= p.mask_n;
-  uint32_t L = uint32_t(m & p.b);          // low b_bits
-  uint32_t H = uint32_t(m >> p.b_bits);    // high a_bits
+  m &= WordType(p.mask_n);
+  uint32_t L = uint32_t(m & p.b);        // low b_bits
+  uint32_t H = uint32_t(m >> p.b_bits);  // high a_bits
 
   H ^= feistel_fmix32(L ^ p.prefix[0]) & p.a;  // round 0 (even): H from L
   L ^= feistel_fmix32(H ^ p.prefix[1]) & p.b;  // round 1 (odd):  L from H
   H ^= feistel_fmix32(L ^ p.prefix[2]) & p.a;  // round 2 (even): H from L
   L ^= feistel_fmix32(H ^ p.prefix[3]) & p.b;  // round 3 (odd):  L from H
-  return (uint64_t(H) << p.b_bits) | uint64_t(L);
+  return (WordType(H) << p.b_bits) | WordType(L);
 }
 
 // Keyed permutation of [0, N): returns the index that output slot idx pulls
@@ -133,12 +135,16 @@ HDI IdxType feistel_permute_index(IdxType idx, const feistel_permute_params& p)
 {
   if (p.N <= 1) return idx;  // 0- or 1-element domain: identity
 
+  // Use a 32-bit word for 32-bit (or narrower) index types to avoid unnecessary
+  // 32->64->32 promotion. For larger types, stay in 64 bits.
+  using WordType = std::conditional_t<sizeof(IdxType) <= 4, uint32_t, uint64_t>;
+
   // Cycle walk: re-permute over [0, 2^n) until the result falls in [0, N). When
   // N is a power of two this is a single application (the loop body runs once).
-  uint64_t x = uint64_t(idx);
+  WordType x = WordType(idx);
   do {
     x = feistel_mix_nbits(x, p);
-  } while (x >= p.N);
+  } while (x >= WordType(p.N));
   return IdxType(x);
 }
 
