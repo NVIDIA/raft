@@ -38,10 +38,11 @@ namespace detail {
  * Reference: https://en.wikipedia.org/wiki/Feistel_cipher
  */
 
-// MurmurHash3 32-bit finalizer. Diffuses all input bits into all output bits;
+// Simplified version of MurmurHash3 32-bit finalizer.
+// Diffuses all input bits into all output bits;
 // used as the Feistel round function. Reference:
 // https://github.com/aappleby/smhasher/blob/07bb4de10a63e8cc2e1724865454eba635742383/src/MurmurHash3.cpp#L68
-HDI uint32_t feistel_fmix32(uint32_t h)
+HDI uint32_t fmix32(uint32_t h)
 {
   // h ^= h >> 16;
   h *= 0x85ebca6bu;
@@ -56,7 +57,7 @@ HDI uint32_t feistel_fmix32(uint32_t h)
 //
 // The round count is fixed at ROUNDS (4), which is enough for near-ideal
 // avalanche at these widths.
-struct feistel_permute_params {
+struct kperm_params {
   static constexpr int ROUNDS = 4;
 
   uint64_t N;               // N (domain size); N <= 1 selects the identity permutation
@@ -69,9 +70,9 @@ struct feistel_permute_params {
 
 // Build the Feistel schedule for permuting [0, N) with the given 64-bit key.
 // Runs once on the host per permute() call.
-inline feistel_permute_params make_feistel_permute_params(uint64_t N, uint64_t key)
+inline kperm_params make_kperm_params(uint64_t N, uint64_t key)
 {
-  feistel_permute_params p{};
+  kperm_params p{};
   p.N = N;
   if (N <= 1) return p;  // identity domain; remaining fields go unused
 
@@ -101,9 +102,9 @@ inline feistel_permute_params make_feistel_permute_params(uint64_t N, uint64_t k
   const uint32_t khi          = uint32_t(key >> 32);
   const uint32_t golden_ratio = 0x9e3779b9u;
 
-  const uint32_t kbase = feistel_fmix32(feistel_fmix32(klo) ^ khi);
-  for (int i = 0; i < feistel_permute_params::ROUNDS; i++) {
-    p.prefix[i] = feistel_fmix32(kbase ^ (uint32_t(i) + golden_ratio));
+  const uint32_t kbase = fmix32(fmix32(klo) ^ khi);
+  for (int i = 0; i < kperm_params::ROUNDS; i++) {
+    p.prefix[i] = fmix32(kbase ^ (uint32_t(i) + golden_ratio));
   }
   return p;
 }
@@ -113,16 +114,16 @@ inline feistel_permute_params make_feistel_permute_params(uint64_t N, uint64_t k
 // part (a bits), odd rounds mix the high part into the low part (b bits).
 // WordType is uint32_t for 32-bit domains and uint64_t for larger ones.
 template <typename WordType>
-HDI WordType feistel_mix_nbits(WordType m, const feistel_permute_params& p)
+HDI WordType kperm_mix_nbits(WordType m, const kperm_params& p)
 {
   m &= WordType(p.mask_n);
   uint32_t L = uint32_t(m & p.b);        // low b_bits
   uint32_t H = uint32_t(m >> p.b_bits);  // high a_bits
 
-  H ^= feistel_fmix32(L ^ p.prefix[0]) & p.a;  // round 0 (even): H from L
-  L ^= feistel_fmix32(H ^ p.prefix[1]) & p.b;  // round 1 (odd):  L from H
-  H ^= feistel_fmix32(L ^ p.prefix[2]) & p.a;  // round 2 (even): H from L
-  L ^= feistel_fmix32(H ^ p.prefix[3]) & p.b;  // round 3 (odd):  L from H
+  H ^= fmix32(L ^ p.prefix[0]) & p.a;  // round 0 (even): H from L
+  L ^= fmix32(H ^ p.prefix[1]) & p.b;  // round 1 (odd):  L from H
+  H ^= fmix32(L ^ p.prefix[2]) & p.a;  // round 2 (even): H from L
+  L ^= fmix32(H ^ p.prefix[3]) & p.b;  // round 3 (odd):  L from H
   return (WordType(H) << p.b_bits) | WordType(L);
 }
 
@@ -131,7 +132,7 @@ HDI WordType feistel_mix_nbits(WordType m, const feistel_permute_params& p)
 //
 // idx MUST lie in [0, N) for the cycle walk to halt.
 template <typename IdxType>
-HDI IdxType feistel_permute_index(IdxType idx, const feistel_permute_params& p)
+HDI IdxType kperm_index(IdxType idx, const kperm_params& p)
 {
   if (p.N <= 1) return idx;  // 0- or 1-element domain: identity
 
@@ -143,25 +144,25 @@ HDI IdxType feistel_permute_index(IdxType idx, const feistel_permute_params& p)
   // N is a power of two this is a single application (the loop body runs once).
   WordType x = WordType(idx);
   do {
-    x = feistel_mix_nbits(x, p);
+    x = kperm_mix_nbits(x, p);
   } while (x >= WordType(p.N));
   return IdxType(x);
 }
 
 template <typename IntType, typename IdxType, int TPB, int ITEMS_PER_THREAD>
-RAFT_KERNEL permsOnlyKernel(IntType* perms, feistel_permute_params fp, IdxType N)
+RAFT_KERNEL permsOnlyKernel(IntType* perms, kperm_params fp, IdxType N)
 {
   IdxType base = IdxType(blockIdx.x) * IdxType(TPB * ITEMS_PER_THREAD) + threadIdx.x;
 #pragma unroll
   for (int i = 0; i < ITEMS_PER_THREAD; i++) {
     IdxType idx = base + IdxType(i * TPB);
-    if (idx < N) { perms[idx] = IntType(feistel_permute_index<IdxType>(idx, fp)); }
+    if (idx < N) { perms[idx] = IntType(kperm_index<IdxType>(idx, fp)); }
   }
 }
 
 template <typename Type, typename IntType, typename IdxType, int TPB, bool rowMajor>
 RAFT_KERNEL permuteKernel(
-  IntType* perms, Type* out, const Type* in, feistel_permute_params fp, IdxType N, IdxType D)
+  IntType* perms, Type* out, const Type* in, kperm_params fp, IdxType N, IdxType D)
 {
   namespace cg        = cooperative_groups;
   const int WARP_SIZE = 32;
@@ -169,7 +170,7 @@ RAFT_KERNEL permuteKernel(
   int tid = threadIdx.x + blockIdx.x * blockDim.x;
 
   IntType outIdx = tid;
-  IntType inIdx  = (tid < N) ? feistel_permute_index<IntType>(IntType(tid), fp) : IntType(0);
+  IntType inIdx  = (tid < N) ? kperm_index<IntType>(IntType(tid), fp) : IntType(0);
 
   if (perms != nullptr && tid < N) { perms[outIdx] = inIdx; }
 
@@ -209,7 +210,7 @@ struct permute_impl_t {
                           IdxType N,
                           IdxType D,
                           int nblks,
-                          feistel_permute_params fp,
+                          kperm_params fp,
                           cudaStream_t stream)
   {
     // determine vector type and set new pointers
@@ -239,7 +240,7 @@ struct permute_impl_t<Type, IntType, IdxType, TPB, rowMajor, 1> {
                           IdxType N,
                           IdxType D,
                           int nblks,
-                          feistel_permute_params fp,
+                          kperm_params fp,
                           cudaStream_t stream)
   {
     permuteKernel<Type, IntType, IdxType, TPB, rowMajor>
@@ -260,7 +261,7 @@ void permute(IntType* perms,
 {
   if (out == nullptr) {
     constexpr int ITEMS_PER_THREAD = 8;
-    feistel_permute_params fp      = make_feistel_permute_params(uint64_t(N), key);
+    kperm_params fp      = make_kperm_params(uint64_t(N), key);
     auto nblks                     = raft::ceildiv(N, IntType(TPB * ITEMS_PER_THREAD));
     permsOnlyKernel<IntType, IntType, TPB, ITEMS_PER_THREAD>
       <<<nblks, TPB, 0, stream>>>(perms, fp, N);
@@ -272,7 +273,7 @@ void permute(IntType* perms,
 
   // build the keyed Feistel schedule for [0, N) once on the host from the
   // caller-supplied key; the same schedule is passed as an argument
-  feistel_permute_params fp = make_feistel_permute_params(uint64_t(N), key);
+  kperm_params fp = make_kperm_params(uint64_t(N), key);
 
   if (rowMajor) {
     permute_impl_t<Type,
