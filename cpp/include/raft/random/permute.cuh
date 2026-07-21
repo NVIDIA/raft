@@ -203,11 +203,20 @@ void permute(IntType* perms,
   detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, key);
 }
 
-/** @deprecated Pass an explicit uint64_t key. This overload uses key=0. */
+/**
+ * @deprecated Use the overload that takes an explicit @c uint64_t key.
+ *
+ * @warning BEHAVIOR CHANGE: this shim always uses @c key=0 and therefore
+ *   returns the same fixed permutation for every call with the same
+ *   @c in.extent(0). The old implementation drew the permutation from
+ *   @c rand() and produced a different result on each call. Pass a varying
+ *   key to the keyed overload to restore per-call variation.
+ */
 template <typename InputOutputValueType, typename IntType, typename IdxType, typename Layout>
 [[deprecated(
-  "permute() now requires an explicit key argument (uint64_t). "
-  "This overload forwards with key=0 and will be removed in a future release.")]]
+  "permute() now requires an explicit key (uint64_t). "
+  "BEHAVIOR CHANGE: this shim uses key=0 (same fixed permutation every call). "
+  "The old overload used rand() -- pass a varying key to restore per-call variation.")]]
 void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              std::optional<raft::device_vector_view<IntType, IdxType>> permsOut,
@@ -216,15 +225,24 @@ void permute(raft::resources const& handle,
   permute(handle, in, permsOut, out, uint64_t{0});
 }
 
-/** @deprecated Pass an explicit uint64_t key. This overload uses key=0. */
+/**
+ * @deprecated Use the overload that takes an explicit @c uint64_t key.
+ *
+ * @warning BEHAVIOR CHANGE: this shim always uses @c key=0 and therefore
+ *   returns the same fixed permutation for every call with the same
+ *   @c in.extent(0). The old implementation drew the permutation from
+ *   @c rand() and produced a different result on each call. Pass a varying
+ *   key to the keyed overload to restore per-call variation.
+ */
 template <typename InputOutputValueType,
           typename IdxType,
           typename Layout,
           typename PermsOutType,
           typename OutType>
 [[deprecated(
-  "permute() now requires an explicit key argument (uint64_t). "
-  "This overload forwards with key=0 and will be removed in a future release.")]]
+  "permute() now requires an explicit key (uint64_t). "
+  "BEHAVIOR CHANGE: this shim uses key=0 (same fixed permutation every call). "
+  "The old overload used rand() -- pass a varying key to restore per-call variation.")]]
 void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              PermsOutType&& permsOut,
@@ -234,11 +252,20 @@ void permute(raft::resources const& handle,
     handle, in, std::forward<PermsOutType>(permsOut), std::forward<OutType>(out), uint64_t{0});
 }
 
-/** @deprecated Pass an explicit uint64_t key. This overload uses key=0. */
+/**
+ * @deprecated Use the overload that takes an explicit @c uint64_t key.
+ *
+ * @warning BEHAVIOR CHANGE: this shim always uses @c key=0 and therefore
+ *   returns the same fixed permutation for every call with the same @c N.
+ *   The old implementation drew the permutation from @c rand() and produced
+ *   a different result on each call. Pass a varying key to the keyed overload
+ *   to restore per-call variation.
+ */
 template <typename Type, typename IntType = int, typename IdxType = int, int TPB = 256>
 [[deprecated(
-  "permute() now requires an explicit key argument (uint64_t). "
-  "This overload forwards with key=0 and will be removed in a future release.")]]
+  "permute() now requires an explicit key (uint64_t). "
+  "BEHAVIOR CHANGE: this shim uses key=0 (same fixed permutation every call). "
+  "The old overload used rand() -- pass a varying key to restore per-call variation.")]]
 void permute(IntType* perms,
              Type* out,
              const Type* in,
