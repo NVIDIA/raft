@@ -415,6 +415,7 @@ TEST(PermTest, SeedDiversity)
 
   kperm_seed_diversity_kernel<<<nblocks, TPB, 0, stream>>>(
     d_ref.data(), N, base_seed, d_matches.data());
+  RAFT_CUDA_TRY(cudaPeekAtLastError());
 
   std::vector<int> h_matches(total_threads);
   raft::update_host(h_matches.data(), d_matches.data(), total_threads, stream);
