@@ -43,11 +43,11 @@ namespace detail {
 // https://github.com/aappleby/smhasher/blob/07bb4de10a63e8cc2e1724865454eba635742383/src/MurmurHash3.cpp#L68
 HDI uint32_t feistel_fmix32(uint32_t h)
 {
-  h ^= h >> 16;
+  // h ^= h >> 16;
   h *= 0x85ebca6bu;
   h ^= h >> 13;
-  h *= 0xc2b2ae35u;
-  h ^= h >> 16;
+  // h *= 0xc2b2ae35u;
+  // h ^= h >> 16;
   return h;
 }
 
@@ -61,9 +61,9 @@ struct feistel_permute_params {
 
   uint64_t N;               // N (domain size); N <= 1 selects the identity permutation
   uint64_t mask_n;          // low-n-bit mask, n = ceil(log2(N))
-  uint32_t mask_b;          // low-half mask (b bits);
-  uint32_t a;               // widht of the high part
-  uint32_t b;               // width of the low part
+  uint32_t b_bits;          // width of the low part (shift to extract H = m >> b_bits)
+  uint32_t a;               // low-bit mask for the high part: (1 << a_bits) - 1
+  uint32_t b;               // low-bit mask for the low part:  (1 << b_bits) - 1
   uint32_t prefix[ROUNDS];  // per-round key-derived mixing constant
 };
 
@@ -88,12 +88,12 @@ inline feistel_permute_params make_feistel_permute_params(uint64_t N, uint64_t k
   // guard against a zero-width low half.
   if (n < 2) n = 2;
 
-  const uint32_t a = uint32_t((n + 1) / 2);  // high part width
-  const uint32_t b = uint32_t(n / 2);        // low part width
-  p.a              = a;
-  p.b              = b;
-  p.mask_n         = (n >= 64) ? ~uint64_t(0) : ((uint64_t(1) << n) - 1);
-  p.mask_b         = (b >= 32) ? ~uint32_t(0) : ((uint32_t(1) << b) - 1);  // b >= 1 here
+  const uint32_t a_bits = uint32_t((n + 1) / 2);  // high part width
+  const uint32_t b_bits = uint32_t(n / 2);        // low part width
+  p.b_bits = b_bits;
+  p.a      = (a_bits >= 32) ? ~uint32_t(0) : ((uint32_t(1) << a_bits) - 1);
+  p.b      = (b_bits >= 32) ? ~uint32_t(0) : ((uint32_t(1) << b_bits) - 1);  // b_bits >= 1 here
+  p.mask_n = (n >= 64) ? ~uint64_t(0) : ((uint64_t(1) << n) - 1);
 
   // Per-round key schedule: diffuse the 64-bit key once, then derive a distinct
   // prefix per round with a golden-ratio round spread. Identical across threads.
@@ -114,14 +114,14 @@ inline feistel_permute_params make_feistel_permute_params(uint64_t N, uint64_t k
 HDI uint64_t feistel_mix_nbits(uint64_t m, const feistel_permute_params& p)
 {
   m &= p.mask_n;
-  uint32_t L = uint32_t(m & p.mask_b);  // low
-  uint32_t H = uint32_t(m >> p.b);      // high
+  uint32_t L = uint32_t(m & p.b);          // low b_bits
+  uint32_t H = uint32_t(m >> p.b_bits);    // high a_bits
 
-  H ^= feistel_fmix32(L ^ p.prefix[0]) >> (32 - p.a);  // round 0 (even): H from L
-  L ^= feistel_fmix32(H ^ p.prefix[1]) >> (32 - p.b);  // round 1 (odd):  L from H
-  H ^= feistel_fmix32(L ^ p.prefix[2]) >> (32 - p.a);  // round 2 (even): H from L
-  L ^= feistel_fmix32(H ^ p.prefix[3]) >> (32 - p.b);  // round 3 (odd):  L from H
-  return (uint64_t(H) << p.b) | uint64_t(L);
+  H ^= feistel_fmix32(L ^ p.prefix[0]) & p.a;  // round 0 (even): H from L
+  L ^= feistel_fmix32(H ^ p.prefix[1]) & p.b;  // round 1 (odd):  L from H
+  H ^= feistel_fmix32(L ^ p.prefix[2]) & p.a;  // round 2 (even): H from L
+  L ^= feistel_fmix32(H ^ p.prefix[3]) & p.b;  // round 3 (odd):  L from H
+  return (uint64_t(H) << p.b_bits) | uint64_t(L);
 }
 
 // Keyed permutation of [0, N): returns the index that output slot idx pulls
