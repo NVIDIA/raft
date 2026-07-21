@@ -99,7 +99,9 @@ struct permute_perms_only : public fixture {
   rmm::device_uvector<IntType> perms;
 };
 
-RAFT_BENCH_REGISTER((permute_perms_only<int>), "", std::vector<int>({32 * 1024, 1024 * 1024, 32 * 1024 * 1024}));
+RAFT_BENCH_REGISTER((permute_perms_only<int>),
+                    "",
+                    std::vector<int>({32 * 1024, 1024 * 1024, 32 * 1024 * 1024}));
 RAFT_BENCH_REGISTER((permute_perms_only<uint32_t>), "", std::vector<int>({1024 * 1024 * 1024}));
 
 }  // namespace raft::bench::random
