@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -34,8 +34,14 @@ struct permute : public fixture {
   {
     raft::random::RngState r(123456ULL);
     loop_on_state(state, [this, &r]() {
-      raft::random::permute(
-        perms.data(), out.data(), in.data(), params.cols, params.rows, params.rowMajor, stream);
+      raft::random::permute(perms.data(),
+                            out.data(),
+                            in.data(),
+                            params.cols,
+                            params.rows,
+                            params.rowMajor,
+                            stream,
+                            123456ULL);
     });
   }
 
@@ -65,5 +71,37 @@ const std::vector<permute_inputs> permute_input_vecs = {
 
 RAFT_BENCH_REGISTER(permute<float>, "", permute_input_vecs);
 RAFT_BENCH_REGISTER(permute<double>, "", permute_input_vecs);
+
+template <typename IntType>
+struct permute_perms_only : public fixture {
+  permute_perms_only(int rows) : n_rows(rows), perms(rows, stream) {}
+
+  void run_benchmark(::benchmark::State& state) override
+  {
+    size_t bytes_processed = 0;
+    loop_on_state(state, [this, &bytes_processed]() {
+      raft::random::permute(perms.data(),
+                            (float*)nullptr,
+                            (const float*)nullptr,
+                            IntType(0),
+                            IntType(n_rows),
+                            true,
+                            stream,
+                            123456ULL);
+      bytes_processed += size_t(n_rows) * sizeof(IntType);
+    });
+    state.SetBytesProcessed(bytes_processed);
+  }
+
+ private:
+  raft::device_resources handle;
+  int n_rows;
+  rmm::device_uvector<IntType> perms;
+};
+
+RAFT_BENCH_REGISTER((permute_perms_only<int>),
+                    "",
+                    std::vector<int>({32 * 1024, 1024 * 1024, 32 * 1024 * 1024}));
+RAFT_BENCH_REGISTER((permute_perms_only<uint32_t>), "", std::vector<int>({1024 * 1024 * 1024}));
 
 }  // namespace raft::bench::random
