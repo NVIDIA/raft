@@ -31,6 +31,15 @@ RAFT_KERNEL test_reduction_kernel(const int* input, int* reduction_res, ReduceLa
   if (threadIdx.x == 0) { reduction_res[0] = th_val; }
 }
 
+// regression: warpReduce(val, raft::add_op{}) must not cause ambiguity with CUB on CUDA 13.2+
+RAFT_KERNEL test_warp_reduce_with_add_op_kernel(const int* input, int* reduction_res)
+{
+  assert(gridDim.x == 1);
+  int th_val = input[threadIdx.x];
+  th_val     = raft::warpReduce(th_val, raft::add_op{});
+  if (threadIdx.x % 32 == 0) { atomicAdd(reduction_res, th_val); }
+}
+
 template <typename ReduceLambda>
 RAFT_KERNEL test_ranked_reduction_kernel(const int* input,
                                          int* reduction_res,
@@ -131,6 +140,20 @@ struct reduction_launch {
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);
   }
+
+  static void run_warp_reduce_with_add_op(const rmm::device_uvector<int>& arr_d,
+                                          int ref_val,
+                                          rmm::cuda_stream_view stream)
+  {
+    rmm::device_scalar<int> ref_d(0, stream);
+    const int block_dim = 64;
+    const int grid_dim  = 1;
+    test_warp_reduce_with_add_op_kernel<<<grid_dim, block_dim, 0, stream>>>(arr_d.data(),
+                                                                             ref_d.data());
+    stream.synchronize();
+    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    ASSERT_EQ(ref_d.value(stream), ref_val);
+  }
 };
 
 template <typename T>
@@ -162,6 +185,12 @@ class ReductionTest : public testing::TestWithParam<std::vector<int>> {  // NOLI
   }
 
   void run_binary_reduction() { reduction_launch::run_binary(arr_d, 24, stream); }
+
+  void run_warp_reduce_with_add_op()
+  {
+    // two warps of 32 threads; warp 0 sums elements 0-31 (=78), warp 1 sums 32-63 (=80)
+    reduction_launch::run_warp_reduce_with_add_op(arr_d, 158, stream);
+  }
 };
 
 const std::vector<int> test_vector{1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 4, 1, 2, 3, 5, 1, 2, 3, 4, 1, 2,
@@ -173,13 +202,18 @@ const std::vector<int> binary_test_vector{
 auto reduction_input        = ::testing::Values(test_vector);
 auto binary_reduction_input = ::testing::Values(binary_test_vector);
 
-using ReductionTestInt       = ReductionTest<int>;  // NOLINT
-using BinaryReductionTestInt = ReductionTest<int>;  // NOLINT
+using ReductionTestInt              = ReductionTest<int>;  // NOLINT
+using BinaryReductionTestInt        = ReductionTest<int>;  // NOLINT
+using WarpReduceAddOpTestInt        = ReductionTest<int>;  // NOLINT
 TEST_P(ReductionTestInt, REDUCTIONS) { run_reduction(); }
 INSTANTIATE_TEST_CASE_P(ReductionTest, ReductionTestInt, reduction_input);    // NOLINT
 TEST_P(BinaryReductionTestInt, BINARY_REDUCTION) { run_binary_reduction(); }  // NOLINT
 INSTANTIATE_TEST_CASE_P(BinaryReductionTest,
                         BinaryReductionTestInt,
                         binary_reduction_input);  // NOLINT
+TEST_P(WarpReduceAddOpTestInt, WARP_REDUCE_WITH_ADD_OP) { run_warp_reduce_with_add_op(); }  // NOLINT
+INSTANTIATE_TEST_CASE_P(WarpReduceAddOpTest,
+                        WarpReduceAddOpTestInt,
+                        reduction_input);  // NOLINT
 
 }  // namespace raft::util
