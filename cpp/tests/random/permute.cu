@@ -348,9 +348,9 @@ __global__ void kperm_seed_diversity_kernel(const uint32_t* ref_perm,
                                             uint64_t base_seed,
                                             int* match_counts)
 {
-  int tid                  = blockIdx.x * blockDim.x + threadIdx.x;
-  detail::kperm_params p   = detail::make_kperm_params(uint64_t(N), base_seed + uint64_t(tid) + 1);
-  int count                = 0;
+  int tid                = blockIdx.x * blockDim.x + threadIdx.x;
+  detail::kperm_params p = detail::make_kperm_params(uint64_t(N), base_seed + uint64_t(tid) + 1);
+  int count              = 0;
   for (uint32_t i = 0; i < N; i++) {
     uint32_t val = detail::kperm_index<uint32_t>(i, p);
     if (val == ref_perm[i] || val == i) { count++; }
@@ -389,7 +389,9 @@ TEST(PermTest, SeedDiversity)
   resource::sync_stream(handle);
 
   int total_matches = 0;
-  for (int c : h_matches) { total_matches += c; }
+  for (int c : h_matches) {
+    total_matches += c;
+  }
 
   int max_allowed = static_cast<int>(max_match_frac * float(N) * float(total_threads));
   EXPECT_LT(total_matches, max_allowed)

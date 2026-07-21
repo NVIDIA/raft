@@ -91,8 +91,8 @@ HDI kperm_params make_kperm_params(uint64_t N, uint64_t key)
 
   const uint32_t a_bits = uint32_t((n + 1) / 2);  // high part width
   const uint32_t b_bits = uint32_t(n / 2);        // low part width
-  p.b_bits = b_bits;
-  p.a      = (a_bits >= 32) ? ~uint32_t(0) : ((uint32_t(1) << a_bits) - 1);
+  p.b_bits              = b_bits;
+  p.a                   = (a_bits >= 32) ? ~uint32_t(0) : ((uint32_t(1) << a_bits) - 1);
   p.b      = (b_bits >= 32) ? ~uint32_t(0) : ((uint32_t(1) << b_bits) - 1);  // b_bits >= 1 here
   p.mask_n = (n >= 64) ? ~uint64_t(0) : ((uint64_t(1) << n) - 1);
 
@@ -261,7 +261,7 @@ void permute(IntType* perms,
 {
   if (out == nullptr) {
     constexpr int ITEMS_PER_THREAD = 8;
-    kperm_params fp      = make_kperm_params(uint64_t(N), key);
+    kperm_params fp                = make_kperm_params(uint64_t(N), key);
     auto nblks                     = raft::ceildiv(N, IntType(TPB * ITEMS_PER_THREAD));
     permsOnlyKernel<IntType, IntType, TPB, ITEMS_PER_THREAD>
       <<<nblks, TPB, 0, stream>>>(perms, fp, N);
