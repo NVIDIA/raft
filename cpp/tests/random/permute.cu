@@ -217,6 +217,13 @@ template <typename T, typename L>
 
 const std::vector<PermInputs<float>> inputsf = {
   // only generate permutations
+  // small-N: identity path (N=1), 2-bit minimum domain (N=2), non-power-of-two
+  // cycle-walk cases (N=3, N=7), and sub-warp size (N=15)
+  {1, 8, true, false, true, 1234ULL},
+  {2, 8, true, false, true, 1234ULL},
+  {3, 8, true, false, true, 1234ULL},
+  {7, 8, true, false, true, 1234ULL},
+  {15, 8, true, false, true, 1234ULL},
   {32, 8, true, false, true, 1234ULL},
   {32, 8, true, false, true, 1234567890ULL},
   {1024, 32, true, false, true, 1234ULL},
@@ -229,6 +236,11 @@ const std::vector<PermInputs<float>> inputsf = {
   {100000, 32, true, false, true, 1234567890ULL},
   {100001, 33, true, false, true, 1234567890ULL},
   // permute and shuffle the data row major
+  {1, 8, true, true, true, 1234ULL},
+  {2, 8, true, true, true, 1234ULL},
+  {3, 8, true, true, true, 1234ULL},
+  {7, 8, true, true, true, 1234ULL},
+  {15, 8, true, true, true, 1234ULL},
   {32, 8, true, true, true, 1234ULL},
   {32, 8, true, true, true, 1234567890ULL},
   {1024, 32, true, true, true, 1234ULL},
@@ -241,6 +253,11 @@ const std::vector<PermInputs<float>> inputsf = {
   {100000, 32, true, true, true, 1234567890ULL},
   {100001, 31, true, true, true, 1234567890ULL},
   // permute and shuffle the data column major
+  {1, 8, true, true, false, 1234ULL},
+  {2, 8, true, true, false, 1234ULL},
+  {3, 8, true, true, false, 1234ULL},
+  {7, 8, true, true, false, 1234ULL},
+  {15, 8, true, true, false, 1234ULL},
   {32, 8, true, true, false, 1234ULL},
   {32, 8, true, true, false, 1234567890ULL},
   {1024, 32, true, true, false, 1234ULL},
@@ -287,6 +304,11 @@ INSTANTIATE_TEST_CASE_P(PermMdspanTests, PermMdspanTestF, ::testing::ValuesIn(in
 
 const std::vector<PermInputs<double>> inputsd = {
   // only generate permutations
+  {1, 8, true, false, true, 1234ULL},
+  {2, 8, true, false, true, 1234ULL},
+  {3, 8, true, false, true, 1234ULL},
+  {7, 8, true, false, true, 1234ULL},
+  {15, 8, true, false, true, 1234ULL},
   {32, 8, true, false, true, 1234ULL},
   {32, 8, true, false, true, 1234567890ULL},
   {1024, 32, true, false, true, 1234ULL},
@@ -299,6 +321,11 @@ const std::vector<PermInputs<double>> inputsd = {
   {100000, 32, true, false, true, 1234567890ULL},
   {100001, 33, true, false, true, 1234567890ULL},
   // permute and shuffle the data row major
+  {1, 8, true, true, true, 1234ULL},
+  {2, 8, true, true, true, 1234ULL},
+  {3, 8, true, true, true, 1234ULL},
+  {7, 8, true, true, true, 1234ULL},
+  {15, 8, true, true, true, 1234ULL},
   {32, 8, true, true, true, 1234ULL},
   {32, 8, true, true, true, 1234567890ULL},
   {1024, 32, true, true, true, 1234ULL},
@@ -311,6 +338,11 @@ const std::vector<PermInputs<double>> inputsd = {
   {100000, 32, true, true, true, 1234567890ULL},
   {100001, 31, true, true, true, 1234567890ULL},
   // permute and shuffle the data column major
+  {1, 8, true, true, false, 1234ULL},
+  {2, 8, true, true, false, 1234ULL},
+  {3, 8, true, true, false, 1234ULL},
+  {7, 8, true, true, false, 1234ULL},
+  {15, 8, true, true, false, 1234ULL},
   {32, 8, true, true, false, 1234ULL},
   {32, 8, true, true, false, 1234567890ULL},
   {1024, 32, true, true, false, 1234ULL},
