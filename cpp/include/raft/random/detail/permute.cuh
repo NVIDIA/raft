@@ -70,7 +70,7 @@ struct kperm_params {
 
 // Build the Feistel schedule for permuting [0, N) with the given 64-bit key.
 // Runs once on the host per permute() call.
-inline kperm_params make_kperm_params(uint64_t N, uint64_t key)
+HDI kperm_params make_kperm_params(uint64_t N, uint64_t key)
 {
   kperm_params p{};
   p.N = N;
@@ -79,7 +79,7 @@ inline kperm_params make_kperm_params(uint64_t N, uint64_t key)
   // n = ceil(log2(N)): smallest n with 2^n >= N (the cycle-walking domain).
   int n         = 0;
   uint64_t pow2 = 1;
-  while (pow2 < N) {
+  while (pow2 < N && n < 64) {
     pow2 <<= 1;
     ++n;
   }
