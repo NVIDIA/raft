@@ -225,6 +225,184 @@ class TestSvds:
         assert S.shape == (k,)
         assert Vt.shape == (k, n)
 
+    @pytest.mark.parametrize("dtype", [numpy.float32, numpy.float64])
+    @pytest.mark.parametrize("orthogonalization", ["cgs2", "mgs2"])
+    def test_lanczos_diagonal_spectrum(self, dtype, orthogonalization):
+        """Lanczos SVD must recover the leading singular triplets."""
+        diag = cupy.asarray([8, 7, 6, 5, 4, 3, 2, 1], dtype=dtype)
+        A = sparse.diags(diag, offsets=0, shape=(12, 8), format="csr")
+        U, S, Vt = svds(
+            A,
+            k=3,
+            solver="lanczos",
+            ncv=6,
+            tol=1e-6,
+            maxiter=20,
+            seed=42,
+            orthogonalization=orthogonalization,
+        )
+
+        tol = 2e-3 if dtype == numpy.float32 else 1e-8
+        assert cupy.allclose(S, diag[:3], atol=tol)
+        assert cupy.allclose(U.T @ U, cupy.eye(3, dtype=dtype), atol=tol)
+        assert cupy.allclose(Vt @ Vt.T, cupy.eye(3, dtype=dtype), atol=tol)
+
+    def test_lanczos_return_singular_vectors_modes(self):
+        """Lanczos supports scipy-style vector return modes."""
+        diag = cupy.asarray([8, 7, 6, 5, 4, 3, 2, 1], dtype=numpy.float32)
+        A = sparse.diags(diag, offsets=0, shape=(12, 8), format="csr")
+
+        U_ref, S_ref, Vt_ref = svds(A, k=3, solver="lanczos", ncv=6, seed=42)
+
+        U_f, S_f, Vt_f = svds(
+            A,
+            k=3,
+            solver="lanczos",
+            ncv=6,
+            seed=42,
+            return_singular_vectors=False,
+        )
+        assert U_f is None
+        assert Vt_f is None
+        assert cupy.allclose(S_f, S_ref)
+
+        U_u, S_u, Vt_u = svds(
+            A,
+            k=3,
+            solver="lanczos",
+            ncv=6,
+            seed=42,
+            return_singular_vectors="u",
+        )
+        assert U_u.shape == U_ref.shape
+        assert Vt_u is None
+        assert cupy.allclose(S_u, S_ref)
+
+        U_v, S_v, Vt_v = svds(
+            A,
+            k=3,
+            solver="lanczos",
+            ncv=6,
+            seed=42,
+            return_singular_vectors="vh",
+        )
+        assert U_v is None
+        assert Vt_v.shape == Vt_ref.shape
+        assert cupy.allclose(S_v, S_ref)
+
+    def test_lanczos_rotated_clustered_spectrum(self):
+        """Lanczos recovers clustered singular values for a non-diagonal sparse matrix."""
+        m, n, k = 64, 48, 8
+        expected = numpy.asarray(
+            [10.0, 9.9995, 9.999, 9.5, 9.4995, 9.0, 8.5, 8.0],
+            dtype=numpy.float32,
+        )
+        all_s = numpy.concatenate(
+            [expected, numpy.asarray([0.75, 0.25], dtype=numpy.float32)]
+        )
+        indptr = [0]
+        indices = []
+        values = []
+        for block in range(len(all_s) // 2):
+            col0 = 2 * block
+            s0, s1 = all_s[2 * block], all_s[2 * block + 1]
+            theta = 0.17 + 0.11 * block
+            phi = 0.31 + 0.07 * block
+            cu, su = numpy.cos(theta), numpy.sin(theta)
+            cv, sv = numpy.cos(phi), numpy.sin(phi)
+            block_values = [
+                cu * s0 * cv + su * s1 * sv,
+                cu * s0 * sv - su * s1 * cv,
+                su * s0 * cv - cu * s1 * sv,
+                su * s0 * sv + cu * s1 * cv,
+            ]
+            indices.extend([col0, col0 + 1])
+            values.extend(block_values[:2])
+            indptr.append(len(values))
+            indices.extend([col0, col0 + 1])
+            values.extend(block_values[2:])
+            indptr.append(len(values))
+        indptr.extend([len(values)] * (m + 1 - len(indptr)))
+
+        A = sparse.csr_matrix(
+            (
+                cupy.asarray(values, dtype=numpy.float32),
+                cupy.asarray(indices, dtype=numpy.int32),
+                cupy.asarray(indptr, dtype=numpy.int32),
+            ),
+            shape=(m, n),
+        )
+
+        U, S, Vt = svds(
+            A,
+            k=k,
+            solver="lanczos",
+            ncv=20,
+            tol=1e-5,
+            maxiter=120,
+            seed=2027,
+        )
+
+        assert cupy.allclose(S, cupy.asarray(expected), atol=2e-3)
+        eye = cupy.eye(k, dtype=numpy.float64)
+        U64 = U.astype(cupy.float64, copy=False)
+        Vt64 = Vt.astype(cupy.float64, copy=False)
+        assert cupy.linalg.norm(U64.T @ U64 - eye) < 2e-3
+        assert cupy.linalg.norm(Vt64 @ Vt64.T - eye) < 2e-3
+        residual = cupy.linalg.norm(A @ Vt.T - U * S[None, :]) / S[0]
+        assert residual < 1e-4
+
+    @pytest.mark.parametrize("shape", [(96, 28), (24, 96)])
+    def test_lanczos_rank_deficient_and_edge_shapes(self, shape):
+        """Lanczos handles rank deficiency and tall/wide sparse inputs."""
+        diag = cupy.zeros(min(shape), dtype=numpy.float32)
+        diag[:8] = cupy.asarray([12, 8, 6, 3, 1, 0, 0, 0], dtype=diag.dtype)
+        A = sparse.diags(diag, offsets=0, shape=shape, format="csr")
+
+        U, S, Vt = svds(
+            A,
+            k=4,
+            solver="lanczos",
+            ncv=12,
+            tol=1e-5,
+            maxiter=80,
+            seed=2026,
+        )
+
+        assert cupy.allclose(S, diag[:4], atol=2e-3)
+        eye = cupy.eye(4, dtype=numpy.float64)
+        U64 = U.astype(cupy.float64, copy=False)
+        Vt64 = Vt.astype(cupy.float64, copy=False)
+        assert cupy.linalg.norm(U64.T @ U64 - eye) < 2e-3
+        assert cupy.linalg.norm(Vt64 @ Vt64.T - eye) < 2e-3
+        residual = cupy.linalg.norm(A @ Vt.T - U * S[None, :]) / S[0]
+        assert residual < 1e-4
+
+    def test_lanczos_non_convergence_raises(self):
+        """Lanczos reports non-convergence instead of returning forced Ritz vectors."""
+        diag = cupy.zeros(40, dtype=numpy.float32)
+        diag[:6] = cupy.asarray([10, 9, 8, 7, 6, 5], dtype=diag.dtype)
+        A = sparse.diags(diag, offsets=0, shape=(64, 40), format="csr")
+
+        with pytest.raises(RuntimeError, match="failed to converge"):
+            svds(
+                A,
+                k=4,
+                solver="lanczos",
+                ncv=6,
+                tol=0,
+                maxiter=1,
+                seed=2026,
+            )
+
+    def test_invalid_solver(self):
+        """Unknown sparse SVD solvers must be rejected."""
+        A = sparse.random(20, 15, density=0.3, format="csr")
+        with pytest.raises(ValueError, match="solver"):
+            svds(A, k=3, solver="bogus")
+        with pytest.raises(ValueError, match="orthogonalization"):
+            svds(A, k=3, solver="lanczos", orthogonalization="bogus")
+
     def test_int64_indices(self):
         """int64 indices should be auto-converted and work, with a warning."""
         m, n, k = 50, 30, 3

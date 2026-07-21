@@ -13,3 +13,11 @@ Sparse Randomized SVD
     :project: RAFT
     :members:
     :content-only:
+
+Sparse Lanczos SVD
+------------------
+
+.. doxygengroup:: sparse_lanczos_svd
+    :project: RAFT
+    :members:
+    :content-only:
