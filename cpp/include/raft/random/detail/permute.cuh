@@ -259,6 +259,8 @@ void permute(IntType* perms,
              cudaStream_t stream,
              uint64_t key)
 {
+  if (N <= 0) { return; }
+
   if (out == nullptr) {
     constexpr int ITEMS_PER_THREAD = 8;
     kperm_params fp                = make_kperm_params(uint64_t(N), key);
