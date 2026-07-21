@@ -142,17 +142,6 @@ HDI IdxType feistel_permute_index(IdxType idx, const feistel_permute_params& p)
   return IdxType(x);
 }
 
-template <int TPB, int ITEMS_PER_THREAD>
-RAFT_KERNEL permsOnlyKernel32(uint32_t* perms, feistel_permute_params fp, uint32_t N)
-{
-  uint32_t base = uint32_t(blockIdx.x) * uint32_t(TPB * ITEMS_PER_THREAD) + threadIdx.x;
-#pragma unroll
-  for (int i = 0; i < ITEMS_PER_THREAD; i++) {
-    uint32_t idx = base + uint32_t(i * TPB);
-    if (idx < N) { perms[idx] = feistel_permute_index<uint32_t>(idx, fp); }
-  }
-}
-
 template <typename IntType, typename IdxType, int TPB, int ITEMS_PER_THREAD>
 RAFT_KERNEL permsOnlyKernel(IntType* perms, feistel_permute_params fp, IdxType N)
 {
@@ -264,16 +253,11 @@ void permute(IntType* perms,
              uint64_t key)
 {
   if (out == nullptr) {
-    constexpr int ITEMS_PER_THREAD          = 8;
-    feistel_permute_params fp               = make_feistel_permute_params(uint64_t(N), key);
-    if constexpr (std::is_same_v<IntType, uint32_t>) {
-      auto nblks = raft::ceildiv(N, IntType(TPB * ITEMS_PER_THREAD));
-      permsOnlyKernel32<TPB, ITEMS_PER_THREAD><<<nblks, TPB, 0, stream>>>(perms, fp, N);
-    } else {
-      auto nblks = raft::ceildiv(N, (IntType)(TPB * ITEMS_PER_THREAD));
-      permsOnlyKernel<IntType, IdxType, TPB, ITEMS_PER_THREAD>
-        <<<nblks, TPB, 0, stream>>>(perms, fp, N);
-    }
+    constexpr int ITEMS_PER_THREAD = 8;
+    feistel_permute_params fp      = make_feistel_permute_params(uint64_t(N), key);
+    auto nblks                     = raft::ceildiv(N, IntType(TPB * ITEMS_PER_THREAD));
+    permsOnlyKernel<IntType, IntType, TPB, ITEMS_PER_THREAD>
+      <<<nblks, TPB, 0, stream>>>(perms, fp, N);
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     return;
   }
