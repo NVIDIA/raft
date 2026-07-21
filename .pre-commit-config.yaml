@@ -85,7 +85,7 @@ repos:
                   (?x)
                     ^CHANGELOG[.]md$|
       - repo: https://github.com/rapidsai/pre-commit-hooks
-        rev: v1.6.0
+        rev: v1.6.1
         hooks:
           - id: verify-copyright
             name: verify-copyright-raft
@@ -160,7 +160,7 @@ repos:
                 [.](md|rst|svg)$
           - id: verify-hardcoded-version
             name: verify-hardcoded-version-ucxx
-            args: [--fix, --version-file=UCXX_VERSION]
+            args: [--fix, --version-file=UCXX_VERSION, --version-scheme=semver]
             exclude: |
               (?x)
                 (^|/)devcontainer[.]json$|
