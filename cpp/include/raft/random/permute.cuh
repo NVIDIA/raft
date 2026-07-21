@@ -203,6 +203,53 @@ void permute(IntType* perms,
   detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, key);
 }
 
+/** @deprecated Pass an explicit uint64_t key. This overload uses key=0. */
+template <typename InputOutputValueType, typename IntType, typename IdxType, typename Layout>
+[[deprecated(
+  "permute() now requires an explicit key argument (uint64_t). "
+  "This overload forwards with key=0 and will be removed in a future release.")]]
+void permute(raft::resources const& handle,
+             raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
+             std::optional<raft::device_vector_view<IntType, IdxType>> permsOut,
+             std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out)
+{
+  permute(handle, in, permsOut, out, uint64_t{0});
+}
+
+/** @deprecated Pass an explicit uint64_t key. This overload uses key=0. */
+template <typename InputOutputValueType,
+          typename IdxType,
+          typename Layout,
+          typename PermsOutType,
+          typename OutType>
+[[deprecated(
+  "permute() now requires an explicit key argument (uint64_t). "
+  "This overload forwards with key=0 and will be removed in a future release.")]]
+void permute(raft::resources const& handle,
+             raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
+             PermsOutType&& permsOut,
+             OutType&& out)
+{
+  permute(
+    handle, in, std::forward<PermsOutType>(permsOut), std::forward<OutType>(out), uint64_t{0});
+}
+
+/** @deprecated Pass an explicit uint64_t key. This overload uses key=0. */
+template <typename Type, typename IntType = int, typename IdxType = int, int TPB = 256>
+[[deprecated(
+  "permute() now requires an explicit key argument (uint64_t). "
+  "This overload forwards with key=0 and will be removed in a future release.")]]
+void permute(IntType* perms,
+             Type* out,
+             const Type* in,
+             IntType D,
+             IntType N,
+             bool rowMajor,
+             cudaStream_t stream)
+{
+  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, uint64_t{0});
+}
+
 };  // namespace random
 }  // namespace raft
 #endif
