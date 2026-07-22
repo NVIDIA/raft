@@ -181,13 +181,15 @@ const std::vector<MeanInputs<half, float>> inputshf = {
   {0.15f, -1.f, 1024, 64, true, 1234ULL},
   {0.0001f, 0.1f, 1 << 27, 2, false, 1234ULL, 0.0001f}};
 
-const std::vector<MeanInputs<int8_t, half>> inputsi8h = {{0.95f, -5, 8096, 32, false, 1234ULL, 1},
-                                                         {0.5f, 1, 8096, 10, false, 1234ULL, 10},
-                                                         {0.15f, 0, 60000, 128, false, 1234ULL, 6},
-                                                         {0.5f, -1, 8096, 256, false, 1234ULL, 2},
-                                                         {1.0f, 8, 2000, 32, true, 1234ULL, 1},
-                                                         {0.50f, -1, 20000, 64, true, 1234ULL, 5},
-                                                         {1.0f, 6, 10024, 2, false, 1234ULL, 10}};
+const std::vector<MeanInputs<int8_t, half>> inputsi8h = {
+  {0.95f, -5, 8096, 32, false, 1234ULL, 1},
+  {0.5f, 1, 8096, 10, false, 1234ULL, 10},
+  {0.15f, 0, 60000, 128, false, 1234ULL, 6},
+  {0.5f, -1, 8096, 256, false, 1234ULL, 2},
+  {1.0f, 8, 2000, 32, true, 1234ULL, 1},
+  // rapids-pre-commit-hooks: disable-next-line[verify-hardcoded-version]
+  {0.50f, -1, 20000, 64, true, 1234ULL, 5},
+  {1.0f, 6, 10024, 2, false, 1234ULL, 10}};
 
 typedef MeanTest<float> MeanTestF;
 TEST_P(MeanTestF, Result)

@@ -149,6 +149,7 @@ if(BUILD_TESTS)
     linalg/binary_op.cu
     linalg/cholesky_r1.cu
     linalg/coalesced_reduction.cu
+    linalg/cublaslt_wrappers.cpp
     linalg/divide.cu
     linalg/dot.cu
     linalg/eig.cu
