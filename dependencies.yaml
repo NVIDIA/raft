@@ -82,7 +82,6 @@ files:
       - build_common
       - depends_on_librmm
       - depends_on_rapids_logger
-      - depends_on_nccl
   py_run_libraft:
     output: pyproject
     pyproject_dir: python/libraft
@@ -92,7 +91,6 @@ files:
       - cuda_wheels
       - depends_on_librmm
       - depends_on_rapids_logger
-      - depends_on_nccl
   py_build_pylibraft:
     output: pyproject
     pyproject_dir: python/pylibraft

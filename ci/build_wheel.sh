@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -58,8 +58,10 @@ if [[ ${package_name} != "libraft" ]]; then
     )
 fi
 
-SKBUILD_CMAKE_ARGS="-DUSE_NCCL_RUNTIME_WHEEL=ON"
-export SKBUILD_CMAKE_ARGS
+if [[ ${package_name} == "raft-dask" ]]; then
+  SKBUILD_CMAKE_ARGS="-DUSE_NCCL_RUNTIME_WHEEL=ON"
+  export SKBUILD_CMAKE_ARGS
+fi
 
 sccache --stop-server 2>/dev/null || true
 
