@@ -58,8 +58,10 @@ if [[ ${package_name} != "libraft" ]]; then
     )
 fi
 
-SKBUILD_CMAKE_ARGS="-DUSE_NCCL_RUNTIME_WHEEL=ON"
-export SKBUILD_CMAKE_ARGS
+if [[ ${package_name} == "raft-dask" ]]; then
+  SKBUILD_CMAKE_ARGS="-DUSE_NCCL_RUNTIME_WHEEL=ON"
+  export SKBUILD_CMAKE_ARGS
+fi
 
 sccache --stop-server 2>/dev/null || true
 
