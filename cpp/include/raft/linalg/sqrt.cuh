@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __SQRT_H
@@ -11,6 +11,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/unary_op.cuh>
 
 namespace raft {
@@ -52,6 +53,7 @@ template <typename InType,
           typename = raft::enable_if_output_device_mdspan<OutType>>
 void sqrt(raft::resources const& handle, InType in, OutType out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   using in_value_t  = typename InType::value_type;
   using out_value_t = typename OutType::value_type;
 

@@ -325,6 +325,8 @@ if(BUILD_TESTS)
     util/popc.cu
     util/pow2_utils.cu
     util/reduction.cu
+    util/dry_run_resources.cpp
+    util/dry_run_guards.cu
   )
 endif()
 

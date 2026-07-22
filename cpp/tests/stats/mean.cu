@@ -92,17 +92,24 @@ class MeanTest : public ::testing::TestWithParam<MeanInputs<InputT, OutputT>> {
   void meanSGtest()
   {
     int rows = params.rows, cols = params.cols;
-    if (params.rowMajor) {
-      using layout = raft::row_major;
-      mean(handle,
-           raft::make_device_matrix_view<const InputT, int, layout>(data.data_handle(), rows, cols),
-           raft::make_device_vector_view<OutputT, int>(mean_act.data_handle(), cols));
-    } else {
-      using layout = raft::col_major;
-      mean(handle,
-           raft::make_device_matrix_view<const InputT, int, layout>(data.data_handle(), rows, cols),
-           raft::make_device_vector_view<OutputT, int>(mean_act.data_handle(), cols));
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.rowMajor) {
+          using layout = raft::row_major;
+          mean(h,
+               raft::make_device_matrix_view<const InputT, int, layout>(
+                 data.data_handle(), rows, cols),
+               raft::make_device_vector_view<OutputT, int>(mean_act.data_handle(), cols));
+        } else {
+          using layout = raft::col_major;
+          mean(h,
+               raft::make_device_matrix_view<const InputT, int, layout>(
+                 data.data_handle(), rows, cols),
+               raft::make_device_vector_view<OutputT, int>(mean_act.data_handle(), cols));
+        }
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
   }
 
  protected:

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -178,7 +178,7 @@ class sparse_matrix {
 
   ~sparse_matrix() noexcept(std::is_nothrow_destructible<container_type>::value) = default;
 
-  void initialize_sparsity(nnz_type nnz) { c_elements_.resize(nnz); };
+  void initialize_sparsity(nnz_type nnz) { c_elements_.reallocate(nnz); };
 
   raft::span<ElementType, is_device> get_elements()
   {
