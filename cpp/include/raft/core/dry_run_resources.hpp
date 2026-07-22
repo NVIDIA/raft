@@ -69,8 +69,7 @@ class dry_run_resources : public resources {
 
     // Drop all base-class entries so that probe container RAII cleanup runs
     // while old_device_ and snapshot_ are still alive
-    resources_.clear();
-    factories_.clear();
+    cells_.clear();
   }
 
   dry_run_resources(dry_run_resources const&)            = delete;
@@ -110,7 +109,7 @@ class dry_run_resources : public resources {
   // while dry-run adaptors hold non-owning refs into them).
   // old_device_ is destroyed after device_adaptor_ so the probe can
   // deallocate through it during device_adaptor_ destruction.
-  std::vector<pair_resource> snapshot_;
+  std::vector<std::shared_ptr<resource::resource_cell>> snapshot_;
 
   bool active_;
   raft::mr::host_resource old_host_;
@@ -154,7 +153,7 @@ class dry_run_resources : public resources {
 
     // Snapshot keeps original resource objects alive while dry-run
     // adaptors hold non-owning refs into them.
-    snapshot_ = resources_;
+    snapshot_ = cells_;
 
     // --- Host (global) ---
     {
@@ -179,11 +178,10 @@ class dry_run_resources : public resources {
 
     // --- Device (global) ---
     // Invalidate the cached thrust policy (the resource_ref it captured
-    // will be stale once we replace the global device resource).
-    factories_.at(resource::resource_type::THRUST_POLICY) = std::make_pair(
-      resource::resource_type::LAST_KEY, std::make_shared<resource::empty_resource_factory>());
-    resources_.at(resource::resource_type::THRUST_POLICY) = std::make_pair(
-      resource::resource_type::LAST_KEY, std::make_shared<resource::empty_resource>());
+    // will be stale once we replace the global device resource).  Swapping in a
+    // fresh cell drops the cached factory/resource locally while snapshot_ keeps
+    // the originals alive, so it gets lazily rebuilt against the new device MR.
+    cells_[resource::resource_type::THRUST_POLICY] = std::make_shared<resource::resource_cell>();
     {
       device_dry_run_t dr{rmm::device_async_resource_ref{old_device_}};
       device_stats_   = dr.get_counter();

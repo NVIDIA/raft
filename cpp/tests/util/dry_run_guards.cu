@@ -236,14 +236,18 @@ TEST(DryRunE2E, NestedDryRunIsNoop)
 {
   raft::resources res;
 
-  // dry_run_execute is already running, setting the flag again inside should not interfere
+  // Nested dry_run_execute must be a no-op (flag already set) and still allocate via the outer
+  // dry-run adaptors.
   auto stats = dry_run_execute(res, [&](raft::resources const& r) {
     EXPECT_TRUE(resource::get_dry_run_flag(r));
-    // Manually set it again (should be harmless)
-    resource::set_dry_run_flag(r, true);
-    EXPECT_TRUE(resource::get_dry_run_flag(r));
 
-    rmm::device_uvector<float> buf(256, resource::get_cuda_stream(r));
+    auto nested = dry_run_execute(r, [&](raft::resources const& inner) {
+      EXPECT_TRUE(resource::get_dry_run_flag(inner));
+      rmm::device_uvector<float> buf(256, resource::get_cuda_stream(inner));
+    });
+    // Nested wrapper did not activate, so it reports empty peaks.
+    EXPECT_EQ(nested.device_global, 0u);
+    EXPECT_TRUE(resource::get_dry_run_flag(r));
   });
 
   EXPECT_FALSE(resource::get_dry_run_flag(res));

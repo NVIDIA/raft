@@ -62,7 +62,7 @@ class dry_run_flag_resource_factory : public resource_factory {
 inline auto get_dry_run_flag(resources const& res) -> bool
 {
   if (!res.has_resource_factory(resource_type::DRY_RUN_FLAG)) {
-    res.add_resource_factory(std::make_shared<dry_run_flag_resource_factory>());
+    res.ensure_default_factory(std::make_shared<dry_run_flag_resource_factory>());
   }
   return *res.get_resource<bool>(resource_type::DRY_RUN_FLAG);
 }
@@ -73,14 +73,11 @@ inline auto get_dry_run_flag(resources const& res) -> bool
  * @param res raft resources object
  * @param value true to enable dry-run mode, false to disable
  */
-inline void set_dry_run_flag(resources const& res, bool value)
+inline void set_dry_run_flag(resources& res, bool value)
 {
-  if (!res.has_resource_factory(resource_type::DRY_RUN_FLAG)) {
-    res.add_resource_factory(std::make_shared<dry_run_flag_resource_factory>(value));
-  } else {
-    // The resource may already be instantiated; update it directly
-    auto* flag = res.get_resource<bool>(resource_type::DRY_RUN_FLAG);
-    *flag      = value;
+  if (get_dry_run_flag(res) != value) {
+    // Ensure the resource exists and check its value; set only if different.
+    *res.get_resource<bool>(resource_type::DRY_RUN_FLAG) = value;
   }
 }
 
