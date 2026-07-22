@@ -87,7 +87,6 @@ requirements:
   run:
     - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
     - libraft =${{ version }}
-    - libraft-headers =${{ version }}
     - python
     - numpy >=2.0,<3.0
     - rmm =${{ minor_version }}
