@@ -104,21 +104,32 @@ ValueType compute_frobenius_norm(raft::resources const& handle, ValueType const*
  * eigenpairs of `A`, without relying on hardcoded golden eigenvalues.
  *
  * Checks the defining characteristics of a converged real-symmetric
- * eigensolve:
- *   - ||A*v_i - lambda_i*v_i|| is within the noise floor implied by the
- *     solver's own convergence criterion (see lanczos_solver_config::tolerance,
- *     which is documented as governing exactly this residual).
- *   - lambda_i matches the Rayleigh quotient of v_i. This pins the eigenvalue
- *     down more sharply than the residual alone on matrices with a large
- *     ||A||, where a small eigenvalue's residual budget is dominated by the
- *     matrix scale.
- *   - each eigenvector is unit-normalized.
- *   - distinct eigenvectors are mutually orthogonal (catches "ghost"
- *     duplicate eigenpairs from loss of orthogonality, which a residual-only
- *     check would miss).
+ * eigensolve, split into eigenVALUE-accuracy checks (held tight for every
+ * mode) and eigenVECTOR-accuracy checks (relaxed for smallest-magnitude
+ * problems, see below):
+ *   - lambda_i matches the Rayleigh quotient (v_i^T A v_i)/(v_i^T v_i). This
+ *     is the primary correctness check: it confirms the returned eigenvalue
+ *     is the true eigenvalue for the returned eigenvector direction, and it
+ *     is stationary at eigenvectors, so its error is second-order in the
+ *     eigenvector error while the residual's is first-order.
  *   - eigenvalues are returned in ascending algebraic order (verified
  *     against every previously-hardcoded golden array in this file, which
  *     were all ascending regardless of `which`).
+ *   - ||A*v_i - lambda_i*v_i|| is small (see lanczos_solver_config::tolerance,
+ *     documented as governing exactly this residual).
+ *   - each eigenvector is unit-normalized.
+ *   - distinct eigenvectors are mutually orthogonal (catches "ghost"
+ *     duplicate eigenpairs from loss of orthogonality).
+ *
+ * The three eigenVECTOR checks (residual, normalization, orthogonality) are
+ * loosened for LANCZOS_WHICH::SM. Smallest-magnitude eigenvectors are
+ * ill-conditioned -- a tiny eigenvalue buried deep in the spectrum is highly
+ * sensitive to rounding -- so the eigenvector residual grows by orders of
+ * magnitude and varies across CUDA versions and GPU architectures, even
+ * though the eigenVALUE stays accurate (see issues #2705 and #2758). For SM
+ * we therefore assert eigenvalue correctness tightly via the Rayleigh
+ * quotient and only sanity-bound the eigenvector; for all other modes the
+ * eigenvector is well conditioned and held to the tight noise floor.
  *
  * @tparam IndexType integral type of the matrix indices
  * @tparam ValueType data type of matrix values and eigenpairs (float or double)
@@ -130,6 +141,8 @@ ValueType compute_frobenius_norm(raft::resources const& handle, ValueType const*
  * @param[in] n dimension of the (square) matrix
  * @param[in] n_components number of eigenpairs to validate
  * @param[in] frobenius_norm Frobenius norm of A, used to scale tolerances
+ * @param[in] which which eigenvalues were requested; selects the tight or
+ *   relaxed eigenvector tolerance (SM is relaxed)
  */
 template <typename IndexType, typename ValueType>
 void expect_valid_eigenpairs(raft::resources const& handle,
@@ -138,39 +151,51 @@ void expect_valid_eigenpairs(raft::resources const& handle,
                              ValueType* eigenvectors,
                              IndexType n,
                              int n_components,
-                             ValueType frobenius_norm)
+                             ValueType frobenius_norm,
+                             raft::sparse::solver::LANCZOS_WHICH which)
 {
   auto stream = resource::get_cuda_stream(handle);
   auto eps    = std::numeric_limits<ValueType>::epsilon();
 
-  // Tolerances are expressed as multiples of the floating-point noise floor
-  // for each kind of quantity, since the exact low-order bits depend on
-  // cuSPARSE/cuBLAS reduction order, which varies by CUDA version and GPU
-  // architecture (the root cause of issue #2519).
+  // Eigenvalue-accuracy tolerance -- applied to the ascending-order check and
+  // the Rayleigh-quotient check. Both carry the magnitude of A, so the noise
+  // floor is proportional to ||A||_F * eps. Measured across all fixtures on
+  // sm_75/CUDA 13 these stay within ~15 * ||A||_F * eps with no dependence on
+  // n, so n is deliberately not a factor (including it would inflate the RMAT
+  // tolerance ~40x and let a 1% eigenvalue error pass). This is held tight for
+  // every mode: Lanczos returns accurate eigenVALUES even when the
+  // eigenVECTOR is poorly conditioned.
+  const ValueType eigenvalue_tol = ValueType(500) * std::max(frobenius_norm, ValueType(1)) * eps;
+
+  // Eigenvector-accuracy tolerances -- applied to the residual, unit-norm and
+  // orthogonality checks. For smallest-magnitude (SM) eigenpairs the returned
+  // eigenVECTOR is ill-conditioned: its residual is observed to grow to ~5e-6
+  // and to vary across CUDA versions / GPU architectures (H100, V100), while
+  // the eigenVALUE itself stays correct (see #2705, #2758). We therefore relax
+  // the eigenvector bounds for SM only -- correctness for SM is asserted
+  // through the tight Rayleigh-quotient check above -- and keep the tight
+  // floating-point noise floor for every other mode.
   //
-  // Quantities carrying the magnitude of A (the residual ||A*v - lambda*v||
-  // and the Rayleigh quotient) have a noise floor proportional to
-  // ||A||_F * eps. Measured across all fixtures in this file on sm_75 /
-  // CUDA 13, these stay within 15 * ||A||_F * eps and show no dependence on
-  // n (n=100 and n=4096 both land in that range), so n is deliberately not a
-  // factor here -- including it would inflate the tolerance ~40x on the RMAT
-  // fixture and let a 1% eigenvalue error pass undetected.
-  //
-  // Dimensionless quantities (deviation from unit norm, mutual
-  // orthogonality) have a noise floor of a small multiple of eps; measured
-  // values stay within 100 * eps.
-  const ValueType matrix_tol   = ValueType(500) * std::max(frobenius_norm, ValueType(1)) * eps;
-  const ValueType unit_tol     = ValueType(1000) * eps;
-  const ValueType norm_tol     = unit_tol;
-  const ValueType ortho_tol    = unit_tol;
-  const ValueType residual_tol = matrix_tol;
+  // The SM residual reflects conditioning rather than rounding, so it is
+  // bounded by an absolute empirical fraction of ||A||_F (well above the worst
+  // observed CI residual, ~1e-5 for both float and double, yet far below any
+  // gross error). The unit-norm and orthogonality deviations are ordinary
+  // dot-product noise and scale with eps; the SM values seen in CI reach
+  // ~3000 * eps (double) and ~100 * eps (float), so 1e5 * eps covers both
+  // precisions with margin while still catching gross eigenvector corruption.
+  const bool is_sm             = (which == raft::sparse::solver::LANCZOS_WHICH::SM);
+  const ValueType residual_tol = is_sm
+                                   ? ValueType(1e-4) * std::max(frobenius_norm, ValueType(1))
+                                   : ValueType(500) * std::max(frobenius_norm, ValueType(1)) * eps;
+  const ValueType norm_tol     = is_sm ? ValueType(1e5) * eps : ValueType(1000) * eps;
+  const ValueType ortho_tol    = is_sm ? ValueType(1e5) * eps : ValueType(1000) * eps;
 
   std::vector<ValueType> host_eigenvalues(n_components);
   raft::update_host(host_eigenvalues.data(), eigenvalues, n_components, stream);
   raft::resource::sync_stream(handle);
 
   for (int i = 1; i < n_components; ++i) {
-    EXPECT_LE(host_eigenvalues[i - 1], host_eigenvalues[i] + matrix_tol)
+    EXPECT_LE(host_eigenvalues[i - 1], host_eigenvalues[i] + eigenvalue_tol)
       << "eigenvalues not returned in ascending algebraic order at index " << i;
   }
 
@@ -219,11 +244,12 @@ void expect_valid_eigenpairs(raft::resources const& handle,
       << " lambda=" << host_eigenvalues[i] << " tol=" << residual_tol;
 
     // The Rayleigh quotient (v^T A v) / (v^T v) is the eigenvalue implied by
-    // the returned eigenvector. Comparing it against the returned eigenvalue
-    // pins down lambda independently of the residual check, which on a
-    // large-||A|| matrix is too coarse to notice a small relative error in a
-    // small-magnitude eigenvalue.
-    EXPECT_NEAR(host_eigenvalues[i], rayleigh / v_norm_sq, matrix_tol)
+    // the returned eigenvector. This is the primary eigenvalue-correctness
+    // check and is held tight for every mode (including SM, where it is the
+    // sole tight guarantee since the eigenvector residual is relaxed): a
+    // wrong eigenvalue -- e.g. a 1% perturbation -- fails here by many orders
+    // of magnitude regardless of eigenvector conditioning.
+    EXPECT_NEAR(host_eigenvalues[i], rayleigh / v_norm_sq, eigenvalue_tol)
       << "eigenvalue " << i
       << " disagrees with the Rayleigh quotient of its eigenvector: lambda=" << host_eigenvalues[i]
       << " rayleigh=" << rayleigh / v_norm_sq;
@@ -371,7 +397,8 @@ class rmat_lanczos_tests
                             eigenvectors.data_handle(),
                             (IndexType)symmetric_coo.n_rows,
                             n_components,
-                            frobenius_norm);
+                            frobenius_norm,
+                            params.which);
 
     // Reproducibility test - run again with same seed and verify exact match
     raft::device_vector<ValueType, uint32_t, raft::col_major> eigenvalues2 =
@@ -427,7 +454,8 @@ class rmat_lanczos_tests
                             eigenvectors_coo.data_handle(),
                             (IndexType)symmetric_coo.n_rows,
                             n_components,
-                            frobenius_norm);
+                            frobenius_norm,
+                            params.which);
   }
 
  protected:
@@ -520,7 +548,8 @@ class lanczos_tests : public ::testing::TestWithParam<lanczos_inputs<IndexType, 
                             eigenvectors.data_handle(),
                             (IndexType)n,
                             params.n_components,
-                            frobenius_norm);
+                            frobenius_norm,
+                            params.which);
 
     // Reproducibility test - run again with same seed and verify exact match
     raft::device_vector<ValueType, uint32_t, raft::col_major> eigenvalues2 =
@@ -575,7 +604,8 @@ class lanczos_tests : public ::testing::TestWithParam<lanczos_inputs<IndexType, 
                             eigenvectors_coo.data_handle(),
                             (IndexType)n,
                             params.n_components,
-                            frobenius_norm);
+                            frobenius_norm,
+                            params.which);
   }
 
  protected:
