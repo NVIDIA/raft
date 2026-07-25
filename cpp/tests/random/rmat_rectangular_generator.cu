@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -282,7 +282,7 @@ class RmatGenMdspanTest : public ::testing::TestWithParam<RmatInputs> {
     using out_view_type = raft::device_mdspan<index_type,
                                               raft::extents<index_type, raft::dynamic_extent, 2>,
                                               raft::row_major>;
-    out_view_type out_view(out.data(), out.size());
+    out_view_type out_view(out.data(), params.n_edges);
 
     using out_src_view_type = raft::device_vector_view<index_type, index_type>;
     out_src_view_type out_src_view(out_src.data(), out_src.size());

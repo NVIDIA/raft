@@ -1,6 +1,6 @@
 # =============================================================================
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 cmake_minimum_required(VERSION 4.0 FATAL_ERROR)
@@ -191,7 +191,7 @@ target_include_directories(
 # Keep RAFT as lightweight as possible. Only CUDA libs and rmm should be used in global target.
 target_link_libraries(raft INTERFACE rapids_logger::rapids_logger rmm::rmm CCCL::CCCL)
 
-target_compile_features(raft INTERFACE cxx_std_17 $<BUILD_INTERFACE:cuda_std_17>)
+target_compile_features(raft INTERFACE cxx_std_20 $<BUILD_INTERFACE:cuda_std_20>)
 target_compile_options(
   raft INTERFACE $<$<COMPILE_LANG_AND_ID:CUDA,NVIDIA>:--expt-extended-lambda
                  --expt-relaxed-constexpr>

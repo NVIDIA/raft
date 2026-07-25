@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -37,10 +37,8 @@
 #include <cusparse.h>
 
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string>
-#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -60,9 +58,10 @@ class device_resources : public resources {
     resource::set_workspace_resource(*this, std::move(workspace_resource), allocation_limit);
   }
 
-  device_resources(const device_resources& handle) : resources{handle} {}
-  device_resources(device_resources&&)            = delete;
-  device_resources& operator=(device_resources&&) = delete;
+  device_resources(const device_resources&)            = default;
+  device_resources(device_resources&&)                 = default;
+  device_resources& operator=(const device_resources&) = default;
+  device_resources& operator=(device_resources&&)      = default;
 
   /**
    * @brief Construct a resources instance with a stream view and stream pool

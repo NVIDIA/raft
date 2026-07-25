@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -13,14 +13,14 @@ rapids-logger "Configuring conda strict channel priority"
 conda config --set channel_priority strict
 
 rapids-logger "Downloading artifacts from previous jobs"
-CPP_CHANNEL=$(rapids-download-conda-from-github cpp)
-PYTHON_CHANNEL=$(rapids-download-from-github "$(rapids-package-name "conda_python" raft --stable --cuda "$RAPIDS_CUDA_VERSION")")
+CPP_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_cpp libraft raft --cuda "$RAPIDS_CUDA_VERSION")")
+PYTHON_CHANNEL=$(rapids-download-from-github "$(rapids-artifact-name conda_python raft raft --stable --cuda "$RAPIDS_CUDA_VERSION")")
 
 rapids-logger "Generate Python testing dependencies"
 rapids-dependency-file-generator \
   --output conda \
   --file-key test_python \
-  --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION}" \
+  --matrix "cuda=${RAPIDS_CUDA_VERSION%.*};arch=$(arch);py=${RAPIDS_PY_VERSION};dependencies=${RAPIDS_DEPENDENCIES}" \
   --prepend-channel "${CPP_CHANNEL}" \
   --prepend-channel "${PYTHON_CHANNEL}" \
   | tee env.yaml

@@ -1,0 +1,70 @@
+# SPDX-FileCopyrightText: Copyright (c) 2025 NVIDIA CORPORATION & AFFILIATES. All rights reserved.
+# SPDX-License-Identifier: Apache-2.0
+
+reviews:
+  profile: chill
+  high_level_summary: true
+  high_level_summary_in_walkthrough: true
+  poem: false
+  sequence_diagrams: false
+  collapse_walkthrough: true
+  request_changes_workflow: false
+  review_status: false
+
+  # Exclude generated build trees from review noise
+  path_filters:
+    - "!**/build/**"
+    - "!python/**/build/**"
+
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "^main$"
+      - "^release/.*"
+      - "^hotfix/.*"
+    ignore_usernames: ["rapids-bot", "GPUtester", "nv-automation-bot", "copy-pr-bot"]
+
+  tools:
+    markdownlint:
+      enabled: true
+    shellcheck:
+      enabled: true
+    gitleaks:
+      enabled: true
+
+  # Detailed review guidelines are in cpp/REVIEW_GUIDELINES.md and python/REVIEW_GUIDELINES.md.
+  # RAFT design idioms and preferred APIs are in docs/source/developer_guide.md.
+  path_instructions:
+    - path: "docs/**/*"
+      instructions: |
+        For documentation changes, focus on:
+        - Accuracy: verify code examples match current API
+        - Completeness: flag missing docs for public API changes
+        - Consistency: terminology and types match code
+
+    - path: "cpp/**/*"
+      instructions: |
+        For C++/CUDA changes, apply cpp/REVIEW_GUIDELINES.md and verify the code
+        follows the idioms in docs/source/developer_guide.md, especially the
+        "Preferred APIs and idioms" section (raft::resources over raw handles,
+        public API over detail, mdarray over device_uvector/std::vector, and
+        avoiding deprecated functions). For public headers under cpp/include/raft,
+        also require Doxygen on new APIs and deprecation warnings on breaking changes.
+
+    - path: "python/**/*"
+      instructions: |
+        For Python/Cython changes, apply python/REVIEW_GUIDELINES.md.
+
+    - path: "ci/**/*"
+      instructions: |
+        CI scripts: meaningful errors, GPU checks before GPU tests, correct env handling.
+
+knowledge_base:
+  opt_out: false
+  code_guidelines:
+    filePatterns:
+      - "cpp/REVIEW_GUIDELINES.md"
+      - "python/REVIEW_GUIDELINES.md"
+      - "docs/source/contributing.md"
+      - "docs/source/developer_guide.md"

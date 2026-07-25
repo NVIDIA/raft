@@ -45,10 +45,10 @@ sync_stream(res);
 
 int n_streams = get_stream_pool_size(res);
 
-#pragma omp parallel for num_threads(n_threads)
+#pragma omp parallel for num_threads(n_streams)
 for(int i = 0; i < n; i++) {
-    int thread_num = omp_get_thread_num() % n_threads;
-    cudaStream_t s = get_stream_from_stream_pool(res, thread_num);
+    int thread_num    = omp_get_thread_num() % n_streams;
+    auto s            = get_stream_from_stream_pool(res, thread_num);  // rmm::cuda_stream_view
     ... possible light cpu pre-processing ...
     my_kernel1<<<b, tpb, 0, s>>>(...);
     ...
@@ -75,7 +75,7 @@ The use of threads in third-party libraries is allowed, though they should still
 
 ### General guidelines
 Functions exposed via the C++ API must be stateless. Things that are OK to be exposed on the interface:
-1. Any [POD](https://en.wikipedia.org/wiki/Passive_data_structure) - see [std::is_pod](https://en.cppreference.com/w/cpp/types/is_pod) as a reference for C++11  POD types.
+1. Any [POD](https://en.wikipedia.org/wiki/Passive_data_structure) type. Since `std::is_pod` is deprecated as of C++20, check for [std::is_standard_layout](https://en.cppreference.com/w/cpp/types/is_standard_layout) together with [std::is_trivial](https://en.cppreference.com/w/cpp/types/is_trivial) as a reference for POD types.
 2. `raft::resources` - since it stores resource-related state which has nothing to do with model/algo state.
 3. Avoid using pointers to POD types (explicitly putting it out, even though it can be considered as a POD) and pass the structures by reference instead.
    Internal to the C++ API, these stateless functions are free to use their own temporary classes, as long as they are not exposed on the interface.
@@ -98,10 +98,10 @@ class ivf_pq {
 
 public:
   ivf_pq(raft::resources const& res);
-  void train(raft::device_matrix<value_t, idx_t, raft::row_major> dataset);
-  void search(raft::device_matrix<value_t, idx_t, raft::row_major> queries,
-              raft::device_matrix<value_t, idx_t, raft::row_major> out_inds,
-              raft::device_matrix<value_t, idx_t, raft::row_major> out_dists);
+  void train(raft::device_matrix_view<const value_t, idx_t, raft::row_major> dataset);
+  void search(raft::device_matrix_view<const value_t, idx_t, raft::row_major> queries,
+              raft::device_matrix_view<idx_t, idx_t, raft::row_major> out_inds,
+              raft::device_matrix_view<value_t, idx_t, raft::row_major> out_dists);
 };
 ```
 
@@ -109,15 +109,15 @@ An alternative correct way to expose this could be:
 ```cpp
 namespace raft::ivf_pq {
 
-template<typename value_t, typename value_idx>
-void ivf_pq_train(raft::resources const& res, const raft::ivf_pq_params &params, raft::ivf_pq_index &index,
-raft::device_matrix<value_t, idx_t, raft::row_major> dataset);
+template<typename value_t, typename idx_t>
+void ivf_pq_train(raft::resources const& res, const raft::ivf_pq_params& params, raft::ivf_pq_index& index,
+raft::device_matrix_view<const value_t, idx_t, raft::row_major> dataset);
 
-template<typename value_t, typename value_idx>
-void ivf_pq_search(raft::resources const& res, raft::ivf_pq_params const&params, raft::ivf_pq_index const & index,
-raft::device_matrix<value_t, idx_t, raft::row_major> queries,
-raft::device_matrix<value_t, idx_t, raft::row_major> out_inds,
-raft::device_matrix<value_t, idx_t, raft::row_major> out_dists);
+template<typename value_t, typename idx_t>
+void ivf_pq_search(raft::resources const& res, raft::ivf_pq_params const& params, raft::ivf_pq_index const& index,
+raft::device_matrix_view<const value_t, idx_t, raft::row_major> queries,
+raft::device_matrix_view<idx_t, idx_t, raft::row_major> out_inds,
+raft::device_matrix_view<value_t, idx_t, raft::row_major> out_dists);
 }
 ```
 
@@ -126,8 +126,8 @@ raft::device_matrix<value_t, idx_t, raft::row_major> out_dists);
 These guidelines also mean that it is the responsibility of C++ API to expose methods to load and store (aka marshalling) such a data structure. Further continuing the IVF-PQ example,  the following methods could achieve this:
 ```cpp
 namespace raft::ivf_pq {
-   void save(raft::ivf_pq_index const& model, std::ostream &os);
-   void load(raft::ivf_pq_index& model, std::istream &is);
+   void save(raft::resources const& res, raft::ivf_pq_index const& model, std::ostream& os);
+   void load(raft::resources const& res, raft::ivf_pq_index& model, std::istream& is);
 }
 ```
 
@@ -187,7 +187,7 @@ RAFT relies on `clang-format` to enforce code style across all C++ and CUDA sour
 1. Do not split empty functions/records/namespaces.
 2. Two-space indentation everywhere, including the line continuations.
 3. Disable reflowing of comments.
-   The reasons behind these deviations from the Google style guide are given in comments [here](https://github.com/rapidsai/raft/blob/main/cpp/.clang-format).
+   The reasons behind these deviations from the Google style guide are given in comments [here](https://github.com/NVIDIA/raft/blob/main/cpp/.clang-format).
 
 [`doxygen`](https://doxygen.nl/) is used as documentation generator and also as a documentation linter.
 In order to run doxygen as a linter on C++/CUDA code, run
@@ -205,7 +205,7 @@ you can run  `codespell -i 3 -w .` from the repository root directory.
 This will bring up an interactive prompt to select which spelling fixes to apply.
 
 ### #include style
-[include_checker.py](https://github.com/rapidsai/raft/blob/main/cpp/scripts/include_checker.py) is used to enforce the include style as follows:
+[include_checker.py](https://github.com/NVIDIA/raft/blob/main/cpp/scripts/include_checker.py) is used to enforce the include style as follows:
 1. `#include "..."` should be used for referencing local files only. It is acceptable to be used for referencing files in a sub-folder/parent-folder of the same algorithm, but should never be used to include files in other algorithms or between algorithms and the primitives or other dependencies.
 2. `#include <...>` should be used for referencing everything else
 
@@ -230,7 +230,7 @@ Call CUDA APIs via the provided helper macros `RAFT_CUDA_TRY`, `RAFT_CUBLAS_TRY`
 ## Logging
 
 ### Introduction
-Anything and everything about logging is defined inside [logger.hpp](https://github.com/rapidsai/raft/blob/main/cpp/include/raft/core/logger.hpp). It uses [spdlog](https://github.com/gabime/spdlog) underneath, but this information is transparent to all.
+Anything and everything about logging is defined inside [logger.hpp](https://github.com/NVIDIA/raft/blob/main/cpp/include/raft/core/logger.hpp). RAFT logging is built on top of [rapids-logger](https://github.com/rapidsai/rapids-logger) (which wraps [spdlog](https://github.com/gabime/spdlog) underneath), but this information is transparent to all. The global logger is obtained via `raft::default_logger()`.
 
 ### Usage
 ```cpp
@@ -279,8 +279,8 @@ Sometimes, we need to temporarily change the log pattern (eg: for reporting deci
 ```
 
 ### Tips
-* Do NOT end your logging messages with a newline! It is automatically added by spdlog.
-* The `RAFT_LOG_TRACE()` is by default not compiled due to the `RAFT_ACTIVE_LEVEL` macro setup, for performance reasons. If you need it to be enabled, change this macro accordingly during compilation time
+* Do NOT end your logging messages with a newline! It is automatically added by the logger.
+* The `RAFT_LOG_TRACE()` is by default not compiled due to the `RAFT_LOG_ACTIVE_LEVEL` macro setup, for performance reasons. If you need it to be enabled, change this macro accordingly during compilation time
 
 ## Common Design Considerations
 
@@ -291,6 +291,29 @@ Sometimes, we need to temporarily change the log pattern (eg: for reporting deci
 3. Documentation for public APIs should be well documented, easy to use, and it is highly preferred that they include usage instructions.
 
 4. Before creating a new primitive, check to see if one exists already. If one exists but the API isn't flexible enough to include your use-case, consider first refactoring the existing primitive. If that is not possible without an extreme number of changes, consider how the public API could be made more flexible. If the new primitive is different enough from all existing primitives, consider whether an existing public API could invoke the new primitive as an option or argument. If the new primitive is different enough from what exists already, add a header for the new public API function to the appropriate subdirectory and namespace.
+
+## Preferred APIs and idioms
+
+When writing new code, re-using functionality, or reviewing changes, prefer:
+
+1. **`raft::resources` over raw handles/streams.** Prefer function overloads that
+   take `const raft::resources&` over overloads that take a raw `cudaStream_t` and/or
+   library handles (cuBLAS, cuSOLVER, etc.). See [Resource Management](#resource-management)
+   and [Asynchronous operations and stream ordering](#asynchronous-operations-and-stream-ordering).
+
+2. **Public API over `detail`.** When re-using functionality or writing tests, call the
+   public API rather than functions in the `detail` namespace, unless you are implementing
+   that public API. Public APIs are thin wrappers over `detail` (see
+   [General guidelines](#general-guidelines)), so tests stay aligned with what users get.
+
+3. **mdarray over raw containers.** Allocate owning data with `raft` mdarray types
+   (`raft::device_mdarray`, `raft::host_mdarray`, etc.) instead of `rmm::device_uvector`
+   or `std::vector` when representing device/multi-dimensional data, and pass views
+   (`raft::mdspan`) across APIs.
+
+4. **Avoid deprecated functions.** Use any reasonable non-deprecated substitute over a
+   deprecated function; when adding a replacement, deprecate the old one per
+   [API stability](#api-stability).
 
 ## Header organization of expensive function templates
 
@@ -373,7 +396,7 @@ template void raft::expensive<float>(float);
 
 **Design considerations**:
 
-1. In the `-ext.cuh` header, do not include implementation headers. Only include function parameter types and types that are used to instantiate the templates. If a primitive takes custom parameter types, define them in a separate header called `<primitive_name>_types.hpp`. (see [Common Design Considerations](https://github.com/rapidsai/raft/blob/7b065aff81a0b1976e2a9e2f3de6690361a1111b/docs/source/developer_guide.md#common-design-considerations)).
+1. In the `-ext.cuh` header, do not include implementation headers. Only include function parameter types and types that are used to instantiate the templates. If a primitive takes custom parameter types, define them in a separate header called `<primitive_name>_types.hpp`. (see [Common Design Considerations](https://github.com/NVIDIA/raft/blob/7b065aff81a0b1976e2a9e2f3de6690361a1111b/docs/source/developer_guide.md#common-design-considerations)).
 
 2. Keep docstrings in the `-inl.cuh` header, as it is closer to the code. Remove docstrings from template definitions in the `-ext.cuh` header. Make sure to explicitly include public APIs in the RAFT API docs. That is, add `#include <raft/expensive.cuh>` to the docs in `docs/source/cpp_api/expensive.rst` (instead of `#include <raft/expensive-inl.cuh>`).
 
@@ -381,7 +404,7 @@ template void raft::expensive<float>(float);
 
 4. If a header file defines multiple expensive templates, it can be that one of them is not instantiated. In this case, **do define** the template with `RAFT_EXPLICIT` in the `-ext` header. This way, when the template is instantiated, the developer gets a helpful error message instead of a confusing "function not found".
 
-This header structure was proposed in [issue #1416](https://github.com/rapidsai/raft/issues/1416), which contains more background on the motivation of this structure and the mechanics of C++ template instantiation.
+This header structure was proposed in [issue #1416](https://github.com/NVIDIA/raft/issues/1416), which contains more background on the motivation of this structure and the mechanics of C++ template instantiation.
 
 ## Testing
 
@@ -402,32 +425,40 @@ All RAFT algorithms should be as asynchronous as possible avoiding the use of th
 
 void foo(const raft::resources& res, ...)
 {
-    cudaStream_t stream = get_cuda_stream(res);
+    auto stream = get_cuda_stream(res);  // rmm::cuda_stream_view
 }
 ```
-When multiple streams are needed, e.g. to manage a pipeline, use the internal streams available in `raft::resources` (see [CUDA Resources](#cuda-resources)). If multiple streams are used all operations still must be ordered according to `raft::resource::get_cuda_stream()` (from `raft/core/resource/cuda_stream.hpp`). Before any operation in any of the internal CUDA streams is started, all previous work in `raft::resource::get_cuda_stream()` must have completed. Any work enqueued in `raft::resource::get_cuda_stream()` after a RAFT function returns should not start before all work enqueued in the internal streams has completed. E.g. if a RAFT algorithm is called like this:
+When multiple streams are needed, e.g. to manage a pipeline, use the internal streams available in `raft::resources` (see [Resource Management](#resource-management)). If multiple streams are used all operations still must be ordered according to `raft::resource::get_cuda_stream()` (from `raft/core/resource/cuda_stream.hpp`). Before any operation in any of the internal CUDA streams is started, all previous work in `raft::resource::get_cuda_stream()` must have completed. Any work enqueued in `raft::resource::get_cuda_stream()` after a RAFT function returns should not start before all work enqueued in the internal streams has completed. E.g. if a RAFT algorithm is called like this:
 ```cpp
+#include <raft/core/copy.hpp>           // raft::copy
+#include <raft/core/device_mdspan.hpp>
+#include <raft/core/host_mdspan.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
-void foo(const double* srcdata, double* result)
+
+#include <rmm/cuda_stream.hpp>
+
+void foo(raft::device_vector_view<double> srcdata,
+         raft::device_vector_view<double> result,
+         raft::host_vector_view<const double> h_srcdata,
+         raft::host_vector_view<double> h_result)
 {
-    cudaStream_t stream;
-    CUDA_RT_CALL( cudaStreamCreate( &stream ) );
+    rmm::cuda_stream stream;  // owns the stream; destroyed automatically
     raft::resources res;
-    set_cuda_stream(res, stream);
+    set_cuda_stream(res, stream.view());
 
     ...
 
-    RAFT_CUDA_TRY( cudaMemcpyAsync( srcdata, h_srcdata.data(), n*sizeof(double), cudaMemcpyHostToDevice, stream ) );
+    raft::copy(res, srcdata, h_srcdata );  // host -> device, ordered on res's stream
 
-    raft::algo(raft::resources, dopredict, srcdata, result, ... );
+    raft::algo(res, dopredict, srcdata, result, ... );
 
-    RAFT_CUDA_TRY( cudaMemcpyAsync( h_result.data(), result, m*sizeof(int), cudaMemcpyDeviceToHost, stream ) );
+    raft::copy(res, h_result, result );    // device -> host, ordered on res's stream
 
     ...
 }
 ```
-No work in any stream should start in `raft::algo` before the `cudaMemcpyAsync` in `stream` launched before the call to `raft::algo` is done. And all work in all streams used in `raft::algo` should be done before the `cudaMemcpyAsync` in `stream` launched after the call to `raft::algo` starts.
+No work in any stream should start in `raft::algo` before the `raft::copy` in `stream` launched before the call to `raft::algo` is done. And all work in all streams used in `raft::algo` should be done before the `raft::copy` in `stream` launched after the call to `raft::algo` starts.
 
 This can be ensured by introducing interstream dependencies with CUDA events and `cudaStreamWaitEvent`. For convenience, the header `raft/core/device_resources.hpp` provides the class `raft::stream_syncer` which lets all `raft::resources` internal CUDA streams wait on `raft::resource::get_cuda_stream()` in its constructor and in its destructor and lets `raft::resource::get_cuda_stream()` wait on all work enqueued in the `raft::resources` internal CUDA streams. The intended use would be to create a `raft::stream_syncer` object as the first thing in an entry function of the public RAFT API:
 
@@ -435,7 +466,7 @@ This can be ensured by introducing interstream dependencies with CUDA events and
 namespace raft {
    void algo(const raft::resources& res, ...)
    {
-       raft::streamSyncer _(res);
+       raft::stream_syncer _(res);
    }
 }
 ```
@@ -461,12 +492,12 @@ The resources can be obtained like this
 #include <raft/core/resources.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream_pool.hpp>
-void foo(const raft::resources& h, ...)
+void foo(const raft::resources& res, ...)
 {
-    cublasHandle_t cublasHandle = get_cublas_handle(h);
-    const int num_streams       = get_stream_pool_size(h);
+    cublasHandle_t cublasHandle = get_cublas_handle(res);
+    const int num_streams       = get_stream_pool_size(res);
     const int stream_idx        = ...
-    cudaStream_t stream         = get_stream_from_stream_pool(stream_idx);
+    auto stream                 = get_stream_from_stream_pool(res, stream_idx);  // rmm::cuda_stream_view
     ...
 }
 ```
@@ -488,7 +519,7 @@ int main(int argc, char** argv)
 
 ## Multi-GPU
 
-The multi-GPU paradigm of RAFT is **O**ne **P**rocess per **G**PU (OPG). Each algorithm should be implemented in a way that it can run with a single GPU without any specific dependencies to a particular communication library. A multi-GPU implementation should use the methods offered by the class `raft::comms::comms_t` from [raft/core/comms.hpp] for inter-rank/GPU communication. It is the responsibility of the user of cuML to create an initialized instance of `raft::comms::comms_t`.
+The multi-GPU paradigm of RAFT is **O**ne **P**rocess per **G**PU (OPG). Each algorithm should be implemented in a way that it can run with a single GPU without any specific dependencies to a particular communication library. A multi-GPU implementation should use the methods offered by the class `raft::comms::comms_t` from `raft/core/comms.hpp` for inter-rank/GPU communication. It is the responsibility of the user of RAFT to create an initialized instance of `raft::comms::comms_t`.
 
 E.g. with a CUDA-aware MPI, a RAFT user could use code like this to inject an initialized instance of `raft::comms::mpi_comms` into a `raft::resources`:
 

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import datetime
@@ -64,7 +64,7 @@ source_suffix = {".rst": "restructuredtext", ".md": "markdown"}
 master_doc = "index"
 
 # General information about the project.
-project = "RAFT"
+project = "NVIDIA RAFT"
 copyright = f"2023-{datetime.datetime.today().year}, NVIDIA Corporation"
 author = "NVIDIA Corporation"
 
@@ -105,8 +105,6 @@ todo_include_todos = False
 #
 
 html_theme = "nvidia_sphinx_theme"
-html_logo = "../../img/logo-purple-bg-white-text.svg"
-html_favicon = "../../img/icon-512x512.png"
 
 
 # Theme options are theme-specific and customize the look and feel of a theme
@@ -115,10 +113,14 @@ html_favicon = "../../img/icon-512x512.png"
 #
 html_theme_options = {
     "external_links": [],
-    # https://github.com/pydata/pydata-sphinx-theme/issues/1220
-    "icon_links": [],
-    "github_url": "https://github.com/rapidsai/raft",
-    "twitter_url": "https://twitter.com/rapidsai",
+    "icon_links": [
+        {
+            "name": "GitHub",
+            "url": "https://github.com/NVIDIA/raft",
+            "icon": "fa-brands fa-github",
+            "type": "fontawesome",
+        },
+    ],
     "show_toc_level": 1,
     "navbar_align": "right",
 }
@@ -159,7 +161,7 @@ latex_documents = [
     (
         master_doc,
         "raft.tex",
-        "RAFT Documentation",
+        f"{project} Documentation",
         "NVIDIA Corporation",
         "manual",
     ),
@@ -169,7 +171,7 @@ latex_documents = [
 
 # One entry per manual page. List of tuples
 # (source start file, name, description, authors, manual section).
-man_pages = [(master_doc, "raft", "RAFT Documentation", [author], 1)]
+man_pages = [(master_doc, "raft", f"{project} Documentation", [author], 1)]
 
 # -- Options for Texinfo output -------------------------------------------
 
@@ -180,7 +182,7 @@ texinfo_documents = [
     (
         master_doc,
         "raft",
-        "RAFT Documentation",
+        f"{project} Documentation",
         author,
         "raft",
         "One line description of project.",
@@ -201,17 +203,13 @@ numpydoc_class_members_toctree = False
 
 def setup(app):
     app.add_css_file("references.css")
-    app.add_css_file("https://docs.rapids.ai/assets/css/custom.css")
-    app.add_js_file(
-        "https://docs.rapids.ai/assets/js/custom.js", loading_method="defer"
-    )
     app.add_js_file("collapse_overloads.js")
 
 
 # The following is used by sphinx.ext.linkcode to provide links to github
 linkcode_resolve = make_linkcode_resolve(
     "pylibraft",
-    "https://github.com/rapidsai/raft"
+    "https://github.com/NVIDIA/raft"
     "/blob/{revision}/python/pylibraft/"
     "{package}/{path}#L{lineno}",
 )

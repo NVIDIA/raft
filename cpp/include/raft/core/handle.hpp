@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -27,10 +27,10 @@ class handle_t : public raft::device_resources {
   {
   }
 
-  handle_t(const handle_t& handle) : device_resources{handle} {}
-
-  handle_t(handle_t&&)            = delete;
-  handle_t& operator=(handle_t&&) = delete;
+  handle_t(const handle_t&)            = default;
+  handle_t(handle_t&&)                 = default;
+  handle_t& operator=(const handle_t&) = default;
+  handle_t& operator=(handle_t&&)      = default;
 
   /**
    * @brief Construct a resources instance with a stream view and stream pool

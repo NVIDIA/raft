@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -61,7 +61,7 @@ namespace random {
  * @param[in]  r_scale 2^r_scale represents the number of source nodes
  * @param[in]  c_scale 2^c_scale represents the number of destination nodes
  *
- * @pre `out.extent(0) == 2 * `out_src.extent(0)` is `true`
+ * @pre `out.extent(0) == out_src.extent(0)` is `true`
  * @pre `out_src.extent(0) == out_dst.extent(0)` is `true`
  *
  * We call the `r_scale != c_scale` case the "rectangular adjacency matrix" case
@@ -150,10 +150,10 @@ void rmat_rectangular_gen(
  *   and `out_src` and `out_dst` with the struct-of-arrays
  *   output representation).
  *
- * `a`, `b, and `c` effectively replace the above overloads'
+ * `a`, `b`, and `c` effectively replace the above overloads'
  * `theta` parameter.
  *
- * @pre `out.extent(0) == 2 * `out_src.extent(0)` is `true`
+ * @pre `out.extent(0) == out_src.extent(0)` is `true`
  * @pre `out_src.extent(0) == out_dst.extent(0)` is `true`
  */
 template <typename IdxT, typename ProbT>
@@ -179,7 +179,7 @@ void rmat_rectangular_gen(
  *   and takes only two output vectors
  *   (the struct-of-arrays output representation).
  *
- * `a`, `b, and `c` effectively replace the above overloads'
+ * `a`, `b`, and `c` effectively replace the above overloads'
  * `theta` parameter.
  *
  * @pre `out_src.extent(0) == out_dst.extent(0)` is `true`
@@ -205,7 +205,7 @@ void rmat_rectangular_gen(raft::resources const& handle,
  *   and takes only one output vector
  *   (the array-of-structs output representation).
  *
- * `a`, `b, and `c` effectively replace the above overloads'
+ * `a`, `b`, and `c` effectively replace the above overloads'
  * `theta` parameter.
  */
 template <typename IdxT, typename ProbT>

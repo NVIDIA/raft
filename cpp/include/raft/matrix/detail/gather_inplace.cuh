@@ -54,7 +54,7 @@ void gatherInplaceImpl(raft::resources const& handle,
                       transform_op,
                       batch_offset,
                       map_length,
-                      cols_per_batch = raft::util::FastIntDiv(cols_per_batch),
+                      cols_per_batch = raft::util::FastIntDiv<IndexT>(cols_per_batch),
                       n,
                       ld] __device__(auto idx) {
       IndexT row   = idx / cols_per_batch;
@@ -74,7 +74,7 @@ void gatherInplaceImpl(raft::resources const& handle,
                     scratch_space = scratch_space.data_handle(),
                     batch_offset,
                     map_length,
-                    cols_per_batch = raft::util::FastIntDiv(cols_per_batch),
+                    cols_per_batch = raft::util::FastIntDiv<IndexT>(cols_per_batch),
                     n,
                     ld] __device__(auto idx) {
       IndexT row                           = idx / cols_per_batch;

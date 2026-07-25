@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -107,8 +107,8 @@ class memory_tracking_resources : public resources {
   ~memory_tracking_resources() override
   {
     report_.stop();
-    raft::mr::set_default_host_resource(old_host_ref_);
-    rmm::mr::set_current_device_resource(old_device_ref_);
+    raft::mr::set_default_host_resource(old_host_);
+    rmm::mr::set_current_device_resource(old_device_);
   }
 
   memory_tracking_resources(memory_tracking_resources const&)            = delete;
@@ -127,8 +127,8 @@ class memory_tracking_resources : public resources {
     : resources(existing ? *existing : resources{}),
       owned_stream_(std::move(owned_stream)),
       report_(out_override ? *out_override : *owned_stream_, sample_interval),
-      old_host_ref_(raft::mr::get_default_host_resource()),
-      old_device_ref_(rmm::mr::get_current_device_resource_ref())
+      old_host_(raft::mr::get_default_host_resource()),
+      old_device_(rmm::mr::get_current_device_resource_ref())
   {
     init();
   }
@@ -137,13 +137,12 @@ class memory_tracking_resources : public resources {
   // snapshot_ is destroyed last  (keeps original resource shared_ptrs alive).
   // owned_stream_ outlives report_ (report_ writes to it).
   // report_ is destroyed first of the three (stops background thread).
-  std::vector<pair_resource> snapshot_;
+  std::vector<std::shared_ptr<resource::resource_cell>> snapshot_;
   std::unique_ptr<std::ofstream> owned_stream_;
   raft::mr::resource_monitor report_;
 
-  raft::mr::host_resource_ref old_host_ref_;
-  rmm::device_async_resource_ref old_device_ref_;
-  std::size_t saved_ws_limit_{};
+  raft::mr::host_resource old_host_;
+  raft::mr::device_resource old_device_;
 
   using host_stats_t  = raft::mr::statistics_adaptor<raft::mr::host_resource_ref>;
   using host_notify_t = raft::mr::notifying_adaptor<host_stats_t>;
@@ -156,19 +155,33 @@ class memory_tracking_resources : public resources {
 
   void init()
   {
+    // Independent-counting invariant
+    // ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    // 1. Force-initialize all lazily-created resources (workspace, large workspace,
+    //    pinned, managed) so that their factories resolve against the *original*
+    //    global device MR, not a tracking wrapper we install later.
+    // 2. Capture every upstream ref while it still points to the original resource.
+    // 3. Snapshot the resource map to keep the originals alive.
+    // 4. Only *then* replace the global device resource with the tracking bridge.
+    // 5. Wrap each captured upstream with a separate statistics/notifying adaptor.
+    //
+    // Because step 2 happens before step 4, workspace/lws allocations flow through
+    // their own adaptor directly to the original device MR, bypassing the device adaptor.
+    // Each allocation is therefore counted in exactly one category, and
+    // memory_stats::total() returns an accurate, non-overlapping sum.
     auto* ws          = raft::resource::get_workspace_resource(*this);
-    saved_ws_limit_   = ws->get_allocation_limit();
+    auto ws_free      = raft::resource::get_workspace_free_bytes(*this);
     auto upstream_ref = ws->get_upstream_resource();
     auto lws_ref      = raft::resource::get_large_workspace_resource_ref(*this);
     auto pinned_ref   = raft::resource::get_pinned_memory_resource_ref(*this);
     auto managed_ref  = raft::resource::get_managed_memory_resource_ref(*this);
 
     // Keeps original resource objects alive while tracking refs point into them.
-    snapshot_ = resources_;
+    snapshot_ = cells_;
 
     // --- Host (global) ---
     {
-      host_stats_t sa{old_host_ref_};
+      host_stats_t sa{raft::mr::host_resource_ref{old_host_}};
       report_.register_source("host", sa.get_stats());
       host_adaptor_ = std::make_unique<host_notify_t>(std::move(sa), report_.get_notifier());
       raft::mr::set_default_host_resource(*host_adaptor_);
@@ -195,8 +208,13 @@ class memory_tracking_resources : public resources {
     }
 
     // --- Device (global) ---
+    // Invalidate the cached thrust policy (the resource_ref it captured
+    // will be stale once we replace the global device resource).  Swapping in a
+    // fresh cell drops the cached factory/resource locally while snapshot_ keeps
+    // the originals alive, so it gets lazily rebuilt against the new device MR.
+    cells_[resource::resource_type::THRUST_POLICY] = std::make_shared<resource::resource_cell>();
     {
-      device_stats_t sa{old_device_ref_};
+      device_stats_t sa{rmm::device_async_resource_ref{old_device_}};
       report_.register_source("device", sa.get_stats());
       device_adaptor_ = std::make_unique<device_notify_t>(std::move(sa), report_.get_notifier());
       rmm::mr::set_current_device_resource(*device_adaptor_);
@@ -209,7 +227,7 @@ class memory_tracking_resources : public resources {
       ws_stats_t sa{upstream_ref};
       report_.register_source("workspace", sa.get_stats());
       raft::resource::set_workspace_resource(
-        *this, ws_notify_t{std::move(sa), report_.get_notifier()}, saved_ws_limit_);
+        *this, ws_notify_t{std::move(sa), report_.get_notifier()}, ws_free);
     }
 
     // --- Large workspace ---

@@ -1,29 +1,30 @@
 #cpp code owners
-cpp/               @rapidsai/raft-cpp-codeowners
+cpp/               @NVIDIA/raft-cpp-codeowners
 
 #python code owners
-python/            @rapidsai/raft-python-codeowners
+python/            @NVIDIA/raft-python-codeowners
 
 #cmake code owners
-CMakeLists.txt     @rapidsai/raft-cmake-codeowners
-**/cmake/          @rapidsai/raft-cmake-codeowners
-*.cmake            @rapidsai/raft-cmake-codeowners
-python/setup.py    @rapidsai/raft-cmake-codeowners
-build.sh           @rapidsai/raft-cmake-codeowners
-**/build.sh        @rapidsai/raft-cmake-codeowners
+CMakeLists.txt     @NVIDIA/raft-cmake-codeowners
+**/cmake/          @NVIDIA/raft-cmake-codeowners
+*.cmake            @NVIDIA/raft-cmake-codeowners
+python/setup.py    @NVIDIA/raft-cmake-codeowners
+build.sh           @NVIDIA/raft-cmake-codeowners
+**/build.sh        @NVIDIA/raft-cmake-codeowners
 
 #CI code owners
-/.github/                @rapidsai/ci-codeowners
-/ci/                     @rapidsai/ci-codeowners
-/.shellcheckrc           @rapidsai/ci-codeowners
+/.github/                @NVIDIA/adi-ci-codeowners
+/ci/                     @NVIDIA/adi-ci-codeowners
+/.shellcheckrc           @NVIDIA/adi-ci-codeowners
+/.coderabbit.yaml        @NVIDIA/adi-ci-codeowners
 
 #packaging code owners
-/.pre-commit-config.yaml @rapidsai/packaging-codeowners
-/.devcontainer/          @rapidsai/packaging-codeowners
-/conda/                  @rapidsai/packaging-codeowners
-dependencies.yaml        @rapidsai/packaging-codeowners
-/build.sh                @rapidsai/packaging-codeowners
-pyproject.toml           @rapidsai/packaging-codeowners
+/.pre-commit-config.yaml @NVIDIA/adi-packaging-codeowners
+/.devcontainer/          @NVIDIA/adi-packaging-codeowners
+/conda/                  @NVIDIA/adi-packaging-codeowners
+dependencies.yaml        @NVIDIA/adi-packaging-codeowners
+/build.sh                @NVIDIA/adi-packaging-codeowners
+pyproject.toml           @NVIDIA/adi-packaging-codeowners
 
 # Ops code owners
-/SECURITY.md             @rapidsai/ops-codeowners
+/SECURITY.md             @NVIDIA/adi-ops-codeowners

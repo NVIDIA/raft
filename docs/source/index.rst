@@ -1,5 +1,5 @@
-RAFT: Reusable Accelerated Functions and Tools
-================================================================================
+NVIDIA RAFT Documentation
+=========================
 
 .. image:: ../../img/raft-tech-stack.svg
   :width: 800
@@ -12,14 +12,14 @@ Useful Resources
 .. _raft_reference: https://docs.rapids.ai/api/raft/stable/
 
 - `RAPIDS Community <https://rapids.ai/community.html>`_: Get help, contribute, and collaborate.
-- `GitHub repository <https://github.com/rapidsai/raft>`_: Download the RAFT source code.
-- `Issue tracker <https://github.com/rapidsai/raft/issues>`_: Report issues or request features.
+- `GitHub repository <https://github.com/NVIDIA/raft>`_: Download the RAFT source code.
+- `Issue tracker <https://github.com/NVIDIA/raft/issues>`_: Report issues or request features.
 
 
-What is RAFT?
-#############
+What is NVIDIA RAFT?
+####################
 
-RAFT contains fundamental widely-used algorithms and primitives for machine learning and information retrieval. The algorithms are CUDA-accelerated and form building blocks for more easily writing high performance applications.
+NVIDIA RAFT contains fundamental widely-used algorithms and primitives for machine learning and information retrieval. The algorithms are CUDA-accelerated and form building blocks for more easily writing high performance applications.
 
 By taking a primitives-based approach to algorithm development, RAFT
 

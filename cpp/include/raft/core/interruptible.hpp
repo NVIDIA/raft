@@ -14,6 +14,7 @@
 
 #include <rmm/cuda_stream_view.hpp>
 
+#include <atomic>
 #include <memory>
 #include <mutex>
 #include <optional>

@@ -39,6 +39,7 @@ jobs:
       branch: ${{ inputs.branch }}
       date: ${{ inputs.date }}
       sha: ${{ inputs.sha }}
+      package_name: libraft
   conda-cpp-tests:
     permissions:
       actions: read
