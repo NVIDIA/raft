@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -19,9 +19,6 @@ namespace util {
  * @brief Perform fast integer division and modulo using a known divisor
  * From Hacker's Delight, Second Edition, Chapter 10
  *
- * @note 32b signed integer is supported.
- * @note 64b signed integers is supported for an input data up to 2^31
- * because gpu-non-native int128 is avoided for performance.
  * @todo Extend support for signed divisors
  */
 template <typename IntT>
@@ -102,6 +99,7 @@ struct FastIntDiv {
 template <typename IntT>
 HDI IntT operator/(IntT n, const FastIntDiv<IntT>& divisor)
 {
+  if ((int64_t(divisor.d) >> 32) != 0 || (int64_t(n) >> 32) != 0) return n / divisor.d;
   if (divisor.d == 1) return n;
   IntT ret = (int64_t(divisor.m) * int64_t(n)) >> divisor.p;
   if (n < 0) ++ret;
@@ -118,6 +116,8 @@ HDI IntT operator/(IntT n, const FastIntDiv<IntT>& divisor)
 template <typename IntT>
 HDI IntT operator%(IntT n, const FastIntDiv<IntT>& divisor)
 {
+  // TODO (huy) measure overhead
+  if ((int64_t(divisor.d) >> 32) != 0 || (int64_t(n) >> 32) != 0) return n % divisor.d;
   IntT quotient  = n / divisor;
   IntT remainder = n - quotient * divisor.d;
   return remainder;
