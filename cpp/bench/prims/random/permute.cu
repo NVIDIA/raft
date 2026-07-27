@@ -29,6 +29,7 @@ struct permute : public fixture {
     uniform(handle, r, in.data(), p.rows, T(-1.0), T(1.0));
   }
 
+  /** @brief Benchmark keyed permutation of a matrix and its indices. */
   void run_benchmark(::benchmark::State& state) override
   {
     raft::random::RngState r(123456ULL);
@@ -73,8 +74,14 @@ RAFT_BENCH_REGISTER(permute<double>, "", permute_input_vecs);
 
 template <typename IntType>
 struct permute_perms_only : public fixture {
+  /**
+   * @brief Construct a benchmark that generates only permutation indices.
+   *
+   * @param[in] rows Number of permutation indices to generate
+   */
   permute_perms_only(int rows) : n_rows(rows), perms(rows, stream) {}
 
+  /** @brief Benchmark the permutation-indices-only kernel path. */
   void run_benchmark(::benchmark::State& state) override
   {
     size_t bytes_processed = 0;
