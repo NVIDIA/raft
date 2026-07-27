@@ -13,7 +13,6 @@
 #include <raft/core/resources.hpp>
 #include <raft/linalg/add.cuh>
 #include <raft/linalg/gemm.cuh>
-#include <raft/linalg/init.cuh>
 #include <raft/linalg/qr.cuh>
 #include <raft/linalg/transpose.cuh>
 #include <raft/matrix/diagonal.cuh>

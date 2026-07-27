@@ -7,7 +7,6 @@
 
 #include <raft/random/permute.cuh>
 #include <raft/random/rng.cuh>
-#include <raft/util/cudart_utils.hpp>
 
 #include <rmm/device_uvector.hpp>
 
