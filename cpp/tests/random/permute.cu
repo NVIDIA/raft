@@ -26,6 +26,13 @@ struct PermInputs {
   unsigned long long int seed;
 };
 
+/**
+ * @brief Print permutation test parameters for GoogleTest diagnostics.
+ *
+ * @param[in,out] os Output stream
+ * @param[in] dims Test parameters
+ * @return The output stream
+ */
 template <typename T>
 ::std::ostream& operator<<(::std::ostream& os, const PermInputs<T>& dims)
 {
@@ -38,6 +45,7 @@ class PermTest : public ::testing::TestWithParam<PermInputs<T>> {
   using test_data_type = T;
 
  protected:
+  /** @brief Construct an empty raw-pointer permutation test fixture. */
   PermTest()
     : in(0, resource::get_cuda_stream(handle)),
       out(0, resource::get_cuda_stream(handle)),
@@ -87,6 +95,7 @@ class PermMdspanTest : public ::testing::TestWithParam<PermInputs<T>> {
   using test_data_type = T;
 
  protected:
+  /** @brief Construct an empty mdspan permutation test fixture. */
   PermMdspanTest()
     : in(0, resource::get_cuda_stream(handle)),
       out(0, resource::get_cuda_stream(handle)),
@@ -167,6 +176,17 @@ class PermMdspanTest : public ::testing::TestWithParam<PermInputs<T>> {
   int* outPerms_ptr = nullptr;
 };
 
+/**
+ * @brief Compare a device array with a contiguous range.
+ *
+ * @param[in] actual Device array to compare
+ * @param[in] size Number of elements
+ * @param[in] start First expected value
+ * @param[in] eq_compare Equality comparison function
+ * @param[in] doSort Whether to sort the actual values before comparison
+ * @param[in] stream CUDA stream used for the device-to-host copy
+ * @return GoogleTest assertion result
+ */
 template <typename T, typename L>
 ::testing::AssertionResult devArrMatchRange(
   const T* actual, size_t size, T start, L eq_compare, bool doSort = true, cudaStream_t stream = 0)
@@ -186,6 +206,19 @@ template <typename T, typename L>
   return ::testing::AssertionSuccess();
 }
 
+/**
+ * @brief Verify that output rows match the input rows selected by a permutation.
+ *
+ * @param[in] perms Device permutation indices
+ * @param[in] out Device output matrix
+ * @param[in] in Device input matrix
+ * @param[in] D Number of matrix columns
+ * @param[in] N Number of matrix rows
+ * @param[in] rowMajor Whether the matrices use row-major layout
+ * @param[in] eq_compare Equality comparison function
+ * @param[in] stream CUDA stream used for device-to-host copies
+ * @return GoogleTest assertion result
+ */
 template <typename T, typename L>
 ::testing::AssertionResult devArrMatchShuffle(const int* perms,
                                               const T* out,
@@ -289,6 +322,7 @@ const std::vector<PermInputs<float>> inputsf = {
   } while (false)
 
 using PermTestF = PermTest<float>;
+/** @brief Validate raw-pointer permutation output for single-precision inputs. */
 TEST_P(PermTestF, Result)
 {
   using test_data_type = PermTestF::test_data_type;
@@ -297,6 +331,7 @@ TEST_P(PermTestF, Result)
 INSTANTIATE_TEST_CASE_P(PermTests, PermTestF, ::testing::ValuesIn(inputsf));
 
 using PermMdspanTestF = PermMdspanTest<float>;
+/** @brief Validate mdspan permutation output for single-precision inputs. */
 TEST_P(PermMdspanTestF, Result)
 {
   using test_data_type = PermTestF::test_data_type;
@@ -358,6 +393,7 @@ const std::vector<PermInputs<double>> inputsd = {
   {100001, 33, true, true, false, 1234567890ULL}};
 
 using PermTestD = PermTest<double>;
+/** @brief Validate raw-pointer permutation output for double-precision inputs. */
 TEST_P(PermTestD, Result)
 {
   using test_data_type = PermTestF::test_data_type;
@@ -366,6 +402,7 @@ TEST_P(PermTestD, Result)
 INSTANTIATE_TEST_CASE_P(PermTests, PermTestD, ::testing::ValuesIn(inputsd));
 
 using PermMdspanTestD = PermMdspanTest<double>;
+/** @brief Validate mdspan permutation output for double-precision inputs. */
 TEST_P(PermMdspanTestD, Result)
 {
   using test_data_type = PermTestF::test_data_type;

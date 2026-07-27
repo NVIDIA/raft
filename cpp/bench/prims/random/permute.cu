@@ -19,6 +19,11 @@ struct permute_inputs {
 
 template <typename T>
 struct permute : public fixture {
+  /**
+   * @brief Construct a matrix permutation benchmark.
+   *
+   * @param[in] p Matrix dimensions, output selection, and layout
+   */
   permute(const permute_inputs& p)
     : params(p),
       perms(p.needPerms ? p.rows : 0, stream),
