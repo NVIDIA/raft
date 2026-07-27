@@ -15,6 +15,9 @@
 namespace raft {
 namespace util {
 
+constexpr auto kInt32Min = std::numeric_limits<int32_t>::min();
+constexpr auto kInt32Max = std::numeric_limits<int32_t>::max();
+
 /**
  * @brief Perform fast integer division and modulo using a known divisor
  * From Hacker's Delight, Second Edition, Chapter 10
@@ -48,12 +51,16 @@ struct FastIntDiv {
    * @brief host and device ctor's
    * @param other source object to be copied from
    */
-  HDI FastIntDiv(const FastIntDiv& other) : d(other.d), m(other.m), p(other.p) {}
+  HDI FastIntDiv(const FastIntDiv& other)
+    : d(other.d), m(other.m), p(other.p), fallback(other.fallback)
+  {
+  }
   HDI FastIntDiv& operator=(const FastIntDiv& other)
   {
-    d = other.d;
-    m = other.m;
-    p = other.p;
+    d        = other.d;
+    m        = other.m;
+    p        = other.p;
+    fallback = other.fallback;
     return *this;
   }
   /** @} */
@@ -64,6 +71,8 @@ struct FastIntDiv {
   UIntT m;
   /** the term 'p' as found in the reference chapter */
   int p;
+  /** Flag for falling back to canonical division on unsupported divisor's ranges */
+  bool fallback = false;
 
  private:
   void computeScalars()
@@ -76,6 +85,9 @@ struct FastIntDiv {
       ASSERT(false, "FastIntDiv: division by negative numbers not supported!");
     } else if (d == 0) {
       ASSERT(false, "FastIntDiv: got division by zero!");
+    } else if (int64_t(d) > kInt32Max) {
+      fallback = true;
+      return;
     }
     int64_t nc = ((1LL << 31) / d) * d - 1;
     p          = 31;
@@ -96,12 +108,15 @@ struct FastIntDiv {
  * @param divisor the denominator
  * @return the quotient
  */
-template <typename IntT>
-HDI IntT operator/(IntT n, const FastIntDiv<IntT>& divisor)
+template <typename NumIntT, typename DivIntT>
+HDI std::common_type_t<NumIntT, DivIntT> operator/(NumIntT n, const FastIntDiv<DivIntT>& divisor)
 {
-  if ((int64_t(divisor.d) >> 32) != 0 || (int64_t(n) >> 32) != 0) return n / divisor.d;
-  if (divisor.d == 1) return n;
-  IntT ret = (int64_t(divisor.m) * int64_t(n)) >> divisor.p;
+  using CommonIntT = std::common_type_t<NumIntT, DivIntT>;
+  if (divisor.d == 1) return CommonIntT(n);
+  if (divisor.fallback || n < kInt32Min || n > kInt32Max) {
+    return CommonIntT(n) / CommonIntT(divisor.d);
+  }
+  CommonIntT ret = (int64_t(divisor.m) * int64_t(n)) >> divisor.p;
   if (n < 0) ++ret;
   return ret;
 }
@@ -113,13 +128,12 @@ HDI IntT operator/(IntT n, const FastIntDiv<IntT>& divisor)
  * @param divisor the denominator
  * @return the remainder
  */
-template <typename IntT>
-HDI IntT operator%(IntT n, const FastIntDiv<IntT>& divisor)
+template <typename NumIntT, typename DivIntT>
+HDI std::common_type_t<NumIntT, DivIntT> operator%(NumIntT n, const FastIntDiv<DivIntT>& divisor)
 {
-  // TODO (huy) measure overhead
-  if ((int64_t(divisor.d) >> 32) != 0 || (int64_t(n) >> 32) != 0) return n % divisor.d;
-  IntT quotient  = n / divisor;
-  IntT remainder = n - quotient * divisor.d;
+  using CommonIntT     = std::common_type_t<NumIntT, DivIntT>;
+  CommonIntT quotient  = n / divisor;
+  CommonIntT remainder = CommonIntT(n) - quotient * CommonIntT(divisor.d);
   return remainder;
 }
 
