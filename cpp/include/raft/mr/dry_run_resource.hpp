@@ -91,6 +91,13 @@ class probe_container {
   {
     if (ptr_ == nullptr) return;
     if constexpr (cuda::mr::resource<MR>) {
+      // Deliberately deallocate on cudaStreamPerThread rather than the stream the
+      // probe was allocated on. The probe is a single 256-byte buffer that is
+      // never read or written (see kDryRunProbeSize / dry_run_resource), and it
+      // may be held (via shared_ptr in an escaped dry-run mdarray) beyond the
+      // lifetime of the original allocation stream. Storing and reusing that
+      // stream_ref would risk dangling-stream UB; the per-thread default stream
+      // is always valid and safe for a buffer whose contents are irrelevant.
       mr_.deallocate(cuda::stream_ref{cudaStreamPerThread}, ptr_, size_, alignment_);
     } else {
       mr_.deallocate_sync(ptr_, size_, alignment_);

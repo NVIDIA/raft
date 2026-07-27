@@ -159,10 +159,9 @@ void regression_metrics(bool dry_run,
                         double& mean_squared_error,
                         double& median_abs_error)
 {
-  int array_size = n * sizeof(double);
-  rmm::device_uvector<double> abs_diffs_array(array_size, stream);
-  rmm::device_uvector<double> sorted_abs_diffs(array_size, stream);
-  rmm::device_uvector<double> tmp_sums(2 * sizeof(double), stream);
+  rmm::device_uvector<double> abs_diffs_array(n, stream);
+  rmm::device_uvector<double> sorted_abs_diffs(n, stream);
+  rmm::device_uvector<double> tmp_sums(2, stream);
 
   // CUB workspace size query (safe even in dry-run — no kernel launch)
   size_t temp_storage_bytes = 0;

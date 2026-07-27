@@ -48,6 +48,13 @@ namespace raft {
  *
  * On destruction the handle resets the flag and restores global resources.
  * Composable with memory_tracking_resources in either order.
+ *
+ * @warning This class swaps *process-global* memory resources (the default host
+ * resource and the current device resource). Only **one dry-run region may be
+ * active per process at a time**. A process-global swap cannot be made fully
+ * thread-safe: two overlapping dry-run regions on different threads could corrupt
+ * each other's global state. Nested dry-run on the same handle chain is safe
+ * (it becomes a no-op because the dry-run flag is already set).
  */
 class dry_run_resources : public resources {
  public:

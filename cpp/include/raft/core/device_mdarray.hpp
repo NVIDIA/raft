@@ -165,6 +165,8 @@ auto make_device_scalar(raft::resources const& handle, ElementType const& v)
   using policy_t = typename device_scalar<ElementType, IndexType>::container_policy_type;
   policy_t policy{};
   auto scalar = device_scalar<ElementType, IndexType>{handle, extents, policy};
+  // No real storage in dry-run mode (as with every make_*_mdarray factory), so skip the
+  // async copy: the backing buffer aliases the shared probe and must not be written.
   if (!resource::get_dry_run_flag(handle)) { scalar(0) = v; }
   return scalar;
 }

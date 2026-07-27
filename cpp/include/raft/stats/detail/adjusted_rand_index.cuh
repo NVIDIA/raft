@@ -144,13 +144,19 @@ double compute_adjusted_rand_index(bool dry_run,
     }
     nUniqClasses = MathT(nClasses);
   }
-  rmm::device_uvector<MathT> dContingencyMatrix(nUniqClasses * nUniqClasses, stream);
+  // Compute the contingency-matrix element count in size_t to avoid int overflow:
+  // in dry-run the upper-bound path sets nUniqClasses = size, and size*size easily
+  // exceeds INT_MAX. Only the allocation-size computation is widened; nUniqClasses
+  // itself stays MathT where it is used as a matrix/kernel dimension.
+  const size_t contingencyMatrixSize =
+    static_cast<size_t>(nUniqClasses) * static_cast<size_t>(nUniqClasses);
+  rmm::device_uvector<MathT> dContingencyMatrix(contingencyMatrixSize, stream);
   auto workspaceSz = getContingencyMatrixWorkspaceSize<T, MathT>(
     dry_run, size, firstClusterArray, stream, lowerLabelRange, upperLabelRange);
   rmm::device_uvector<char> workspaceBuff(workspaceSz, stream);
   if (!dry_run) {
-    RAFT_CUDA_TRY(cudaMemsetAsync(
-      dContingencyMatrix.data(), 0, nUniqClasses * nUniqClasses * sizeof(MathT), stream));
+    RAFT_CUDA_TRY(
+      cudaMemsetAsync(dContingencyMatrix.data(), 0, contingencyMatrixSize * sizeof(MathT), stream));
     contingencyMatrix<T, MathT>(firstClusterArray,
                                 secondClusterArray,
                                 size,

@@ -90,12 +90,10 @@ class CSRTransposeTest : public ::testing::TestWithParam<CSRTransposeInputs<valu
 
   void SetUp() override
   {
-    raft::resources handle;
-
     make_data();
 
     raft::execute_with_dry_run_check(
-      handle,
+      raft_handle,
       [&](raft::resources const& h) {
         raft::sparse::linalg::csr_transpose(h,
                                             indptr.data(),
@@ -112,7 +110,7 @@ class CSRTransposeTest : public ::testing::TestWithParam<CSRTransposeInputs<valu
       raft::alloc_behavior::ARGUMENT_DRIVEN,
       1);
 
-    resource::sync_stream(handle, stream);
+    resource::sync_stream(raft_handle, stream);
   }
 
   void compare()
@@ -132,8 +130,6 @@ class CSRTransposeTest : public ::testing::TestWithParam<CSRTransposeInputs<valu
  protected:
   raft::resources raft_handle;
   cudaStream_t stream;
-
-  cusparseHandle_t handle;
 
   // input data
   rmm::device_uvector<value_idx> indptr, indices;

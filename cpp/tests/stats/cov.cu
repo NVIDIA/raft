@@ -103,7 +103,22 @@ class CovTest : public ::testing::TestWithParam<CovInputs<T>> {
     raft::update_device(cov_cm_ref.data(), cov_cm_ref_h, 4, stream);
 
     raft::stats::mean<false>(mean_cm.data(), data_cm.data(), 2, 3, stream);
-    cov<false>(handle, cov_cm.data(), data_cm.data(), mean_cm.data(), 2, 3, true, true, stream);
+    // Also exercise the legacy raw-pointer cov<false> overload under the dry-run
+    // checker so its dry-run compliance is verified
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        cov<false>(h,
+                   cov_cm.data(),
+                   data_cm.data(),
+                   mean_cm.data(),
+                   2,
+                   3,
+                   true,
+                   true,
+                   resource::get_cuda_stream(h));
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
   }
 
  protected:

@@ -60,12 +60,17 @@ TEST(TemporaryDeviceBuffer, HostPointerWithWriteBack)
         auto d_buf  = raft::make_writeback_temporary_device_buffer(h, array.data_handle(), exts);
         auto d_view = d_buf.view();
 
-        thrust::fill(rmm::exec_policy(resource::get_cuda_stream(h)),
-                     d_view.data_handle(),
-                     d_view.data_handle() + d_view.extent(0),
-                     10);
-        raft::copy(
-          result.data(), d_view.data_handle(), d_view.extent(0), resource::get_cuda_stream(h));
+        // The buffer allocation above is what dry-run must account for. The raw
+        // thrust::fill / raft::copy are CUDA work on the (probe-aliased) buffer and
+        // must be skipped in dry-run; they only run in the real pass.
+        if (!resource::get_dry_run_flag(h)) {
+          thrust::fill(rmm::exec_policy(resource::get_cuda_stream(h)),
+                       d_view.data_handle(),
+                       d_view.data_handle() + d_view.extent(0),
+                       10);
+          raft::copy(
+            result.data(), d_view.data_handle(), d_view.extent(0), resource::get_cuda_stream(h));
+        }
       },
       alloc_behavior::ARGUMENT_DRIVEN,
       5 * sizeof(int));

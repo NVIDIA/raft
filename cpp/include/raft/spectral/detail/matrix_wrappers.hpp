@@ -105,6 +105,13 @@ class vector_t {
 
   value_type nrm1() const
   {
+    // Dry-run: thrust::reduce here operates on `buffer_` (which in dry-run aliases
+    // the shared probe buffer) and internally requests backend-managed temporary
+    // storage that has no size-query API. Running it would read probe memory and
+    // is unsafe, so we skip it and return a placeholder. The consequence is a
+    // small, inevitable under-count of that transient thrust scratch;
+    // the returned value is a non-authoritative
+    // placeholder and must not be used for control flow in dry-run.
     if (resource::get_dry_run_flag(handle_)) { return value_type{0}; }
     return thrust::reduce(
       thrust_policy,

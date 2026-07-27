@@ -268,10 +268,11 @@ inline vertex_t zeroCoverIteration(raft::resources const& handle,
   vertex_t M      = 0;
   rmm::device_uvector<vertex_t> csr_neighbors_v(0, resource::get_cuda_stream(handle));
 
-  // Allocate all buffers before dry-run check to track allocations
   rmm::device_uvector<vertex_t> csr_ptrs_v(SP + 1, resource::get_cuda_stream(handle));
+  // Allocate all buffers before dry-run check to track allocations
   if (is_dry_run) {
-    // Upper bound for csr_neighbors_v: at most SP * N elements (one per matrix element)
+    rmm::device_uvector<bool> predicates_v(SP * N, resource::get_cuda_stream(handle));
+    rmm::device_uvector<vertex_t> addresses_v(SP * N, resource::get_cuda_stream(handle));
     csr_neighbors_v = rmm::device_uvector<vertex_t>(SP * N, resource::get_cuda_stream(handle));
     return vertex_t{0};
   }
@@ -350,7 +351,6 @@ inline void executeZeroCover(raft::resources const& handle,
                              vertex_t N,
                              weight_t epsilon)
 {
-  if (resource::get_dry_run_flag(handle)) { return; }
   vertex_t M = 1;
   while (M > 0) {
     M = zeroCoverIteration(

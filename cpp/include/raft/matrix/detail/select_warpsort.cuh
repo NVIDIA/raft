@@ -1190,7 +1190,6 @@ void select_k(raft::resources const& res,
               bool select_min,
               const IdxT* in_indptr = nullptr)
 {
-  if (resource::get_dry_run_flag(res)) { return; }
   ASSERT(k <= kMaxCapacity, "Current max k is %d (requested %d)", kMaxCapacity, k);
   ASSERT(len <= size_t(std::numeric_limits<IdxT>::max()),
          "The `len` (%zu) does not fit the indexing type",

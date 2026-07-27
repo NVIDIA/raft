@@ -64,7 +64,7 @@ void colNormCaller(bool dry_run,
       dry_run, dots, data, D, N, (OutType)0, stream, false, raft::sq_op(), raft::add_op(), fin_op);
   } else if constexpr (norm_type == LinfNorm) {
     reduce<rowMajor, false, Type, OutType, IdxType>(
-      false, dots, data, D, N, (OutType)0, stream, false, raft::abs_op(), raft::max_op(), fin_op);
+      dry_run, dots, data, D, N, (OutType)0, stream, false, raft::abs_op(), raft::max_op(), fin_op);
   } else {
     THROW("Unsupported norm type: %d", norm_type);
   }

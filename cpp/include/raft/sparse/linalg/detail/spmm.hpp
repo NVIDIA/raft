@@ -89,7 +89,8 @@ void spmm(raft::resources const& handle,
 
   resource::sync_stream(handle);
 
-  rmm::device_uvector<ValueType> tmp(bufferSize, resource::get_cuda_stream(handle));
+  // cusparsespmm_bufferSize returns a size in BYTES. Mimic that, then cast the buffer below.
+  rmm::device_uvector<uint8_t> tmp(bufferSize, resource::get_cuda_stream(handle));
 
   if (resource::get_dry_run_flag(handle)) { return; }
 
@@ -102,7 +103,7 @@ void spmm(raft::resources const& handle,
                                                        beta,
                                                        descr_z,
                                                        alg,
-                                                       tmp.data(),
+                                                       reinterpret_cast<ValueType*>(tmp.data()),
                                                        resource::get_cuda_stream(handle)));
 }
 

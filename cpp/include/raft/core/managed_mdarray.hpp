@@ -119,6 +119,8 @@ auto make_managed_scalar(raft::resources const& handle, ElementType const& v)
   using policy_t = typename managed_scalar<ElementType>::container_policy_type;
   policy_t policy{};
   auto scalar = managed_scalar<ElementType>{handle, extents, policy};
+  // No real storage in dry-run mode (as with every make_*_mdarray factory), so skip
+  // initialization: the backing buffer aliases the shared probe and must not be written.
   if (!resource::get_dry_run_flag(handle)) { scalar(0) = v; }
   return scalar;
 }

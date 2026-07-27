@@ -225,6 +225,8 @@ auto make_host_scalar(raft::resources const& res, ElementType const& v)
   using policy_t = typename host_scalar<ElementType, IndexType>::container_policy_type;
   policy_t policy;
   auto scalar = host_scalar<ElementType, IndexType>{res, extents, policy};
+  // No real storage in dry-run mode (as with every make_*_mdarray factory), so skip
+  // initialization: the backing buffer aliases the shared probe and must not be written.
   if (!resource::get_dry_run_flag(res)) { scalar(0) = v; }
   return scalar;
 }

@@ -148,6 +148,8 @@ class multi_variable_gaussian_impl {
   {
     auto cusolverHandle = resource::get_cusolver_dn_handle(handle);
 
+    // Generator setup runs in both modes: it allocates no tracked memory and launches no kernels.
+    // The actual RNG work is in give_gaussian(), which is dry-run guarded.
     CURAND_CHECK(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT));
     CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, 28));  // SEED
     if (method == chol_decomp) {

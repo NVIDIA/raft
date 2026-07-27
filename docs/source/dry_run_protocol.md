@@ -40,9 +40,15 @@ You can also construct `raft::dry_run_resources` directly for finer control (e.g
 
 ### Basic: allocate, then guard
 
+Derive the stream (and every other resource) from the `raft::resources` handle
+rather than accepting a raw `cudaStream_t`. In dry-run mode the handle owns the
+stream that is consistent with the swapped-in tracking resources; passing an
+unrelated raw stream breaks that ownership model.
+
 ```cpp
-void algo(raft::resources const& handle, int n, cudaStream_t stream)
+void algo(raft::resources const& handle, int n)
 {
+  auto stream = resource::get_cuda_stream(handle);     // stream owned by handle
   rmm::device_uvector<float> buf(n, stream);           // tracked
   if (resource::get_dry_run_flag(handle)) { return; }
   kernel<<<grid, block, 0, stream>>>(buf.data(), n);   // skipped in dry-run
@@ -90,3 +96,35 @@ void foo(raft::resources const& handle, ...) {
   detail::foo(handle, ...);
 }
 ```
+
+## Advanced topic: Probe Memory Semantics
+
+In dry-run mode each memory category (host, device, pinned, managed, workspace,
+large-workspace) is backed by a single shared **probe buffer** of only 256 bytes
+(`raft::mr::kDryRunProbeSize`). Every logical allocation in that category returns
+the *same* probe pointer, and the requested size is merely recorded by the
+tracker — it is not physically backed. Consequences:
+
+- **Never dereference dry-run-allocated memory.** Do not read, write, `memcpy`,
+  `memset`, or run kernels/Thrust/library compute against a buffer allocated in
+  dry-run mode: all such pointers alias the shared probe and are far smaller than
+  the requested size (out-of-bounds / data races otherwise).
+- **Never use allocated contents for control flow.** Sizes computed from probe
+  contents are meaningless.
+- **Device-metadata queries are allowed.** Occupancy queries
+  (`cudaOccupancyMaxActiveBlocksPerMultiprocessor`, …) and
+  `resource::get_device_properties()` do not touch probe memory, so they may run
+  in dry-run mode when needed to size a tracked scratch buffer accurately.
+
+## Dry-run Outputs and Data-dependent Sizes
+
+- `make_(host|pinned|managed|device)_scalar(handle, value)` still allocates and
+  tracks the scalar in dry-run mode, but **does not write `value`** — the scalar
+  is uninitialized and must not be read.
+- Scalar-returning metrics/helpers (statistics scores, norms, boolean reductions,
+  cardinality outputs, `matrix_wrappers::nrm1`, …) return **non-authoritative
+  placeholder values** in dry-run mode. Do not present them as computed results.
+- When a real allocation size depends on data that is only produced by skipped
+  compute (e.g. a device-side count read back to host, or a min/max label range),
+  substitute a **conservative upper bound** in dry-run mode instead of reading the
+  uninitialized value.

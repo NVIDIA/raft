@@ -11,6 +11,7 @@
 #include <raft/core/host_mdarray.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/linalg/init.cuh>
+#include <raft/linalg/map.cuh>
 #include <raft/random/rng.cuh>
 
 #include <gtest/gtest.h>
@@ -328,8 +329,12 @@ class BitsetTest : public testing::TestWithParam<test_spec_bitset> {
 
           ASSERT_EQ(bitset_repeat_ref.size(), eval_n_elements);
 
-          RAFT_CUDA_TRY(cudaMemsetAsync(
-            repeat_device.data_handle(), 0, eval_n_elements * sizeof(bitset_t), stream));
+          // Raw CUDA memset on a real (non-probe) buffer; skip it in the dry-run
+          // pass so the checker does not launch CUDA work while measuring.
+          if (!resource::get_dry_run_flag(h)) {
+            RAFT_CUDA_TRY(cudaMemsetAsync(
+              repeat_device.data_handle(), 0, eval_n_elements * sizeof(bitset_t), stream));
+          }
           repeat_cpu_bitset(
             bitset_ref, size_t(spec.bitset_len), size_t(spec.repeat_times), bitset_repeat_ref);
 
@@ -384,7 +389,7 @@ class BitsetTest : public testing::TestWithParam<test_spec_bitset> {
         my_bitset.reset(h, false);
         ASSERT_EQ(my_bitset.any(h), false);
         ASSERT_EQ(my_bitset.none(h), true);
-        raft::linalg::range(query_device.data_handle(), query_device.size(), stream);
+        raft::linalg::map_offset(h, query_device.view(), raft::cast_op<index_t>{});
         my_bitset.set(h, raft::make_const_mdspan(query_device.view()), true);
         bitset_count = my_bitset.count(h);
         if (!resource::get_dry_run_flag(h)) {
