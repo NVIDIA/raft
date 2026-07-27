@@ -133,6 +133,12 @@ RAFT_KERNEL _gather2d_kernel(
   }
 }
 
+/**
+ * @brief Generate a regression data set and optionally shuffle its rows and features.
+ *
+ * When shuffling is enabled, the input seed deterministically selects distinct
+ * permutations for samples and features.
+ */
 template <typename DataT, typename IdxT>
 void make_regression_caller(raft::resources const& handle,
                             DataT* out,

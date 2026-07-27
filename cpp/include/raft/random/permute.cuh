@@ -137,6 +137,18 @@ void permute(raft::resources const& handle,
 /**
  * @brief Overload of `permute` that compiles if users pass in `std::nullopt`
  *   for either or both of `permsOut` and `out`.
+ *
+ * @tparam InputOutputValueType Input and output matrix element type
+ * @tparam IdxType Matrix index and extent type
+ * @tparam Layout Matrix layout type
+ * @tparam PermsOutType Optional permutation view type or `std::nullopt_t`
+ * @tparam OutType Optional output matrix view type or `std::nullopt_t`
+ *
+ * @param[in] handle RAFT handle containing the CUDA stream
+ * @param[in] in Input matrix
+ * @param[out] permsOut Optional generated permutation indices
+ * @param[out] out Optional permuted output matrix
+ * @param[in] key Key that selects the permutation
  */
 template <typename InputOutputValueType,
           typename IdxType,
