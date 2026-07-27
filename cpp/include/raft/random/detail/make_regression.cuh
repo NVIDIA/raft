@@ -30,7 +30,14 @@ namespace raft {
 namespace random {
 namespace detail {
 
-/* Internal auxiliary function to help build the singular profile */
+/**
+ * @brief Build the singular-value profile for a low-rank regression matrix.
+ *
+ * @param[out] out Generated singular values
+ * @param[in] n Number of singular values
+ * @param[in] tail_strength Relative strength of the low-rank tail
+ * @param[in] rank Effective matrix rank
+ */
 template <typename DataT, typename IdxT>
 RAFT_KERNEL _singular_profile_kernel(DataT* out, IdxT n, DataT tail_strength, IdxT rank)
 {
@@ -43,7 +50,18 @@ RAFT_KERNEL _singular_profile_kernel(DataT* out, IdxT n, DataT tail_strength, Id
   }
 }
 
-/* Internal auxiliary function to generate a low-rank matrix */
+/**
+ * @brief Generate a low-rank matrix with a decaying singular-value profile.
+ *
+ * @param[in] handle RAFT handle containing execution resources
+ * @param[out] out Generated row-major matrix
+ * @param[in] n_rows Number of matrix rows
+ * @param[in] n_cols Number of matrix columns
+ * @param[in] effective_rank Approximate rank of the generated matrix
+ * @param[in] tail_strength Relative strength of the low-rank tail
+ * @param[in,out] r Random number generator state
+ * @param[in] stream CUDA stream on which to execute
+ */
 template <typename DataT, typename IdxT>
 static void _make_low_rank_matrix(raft::resources const& handle,
                                   DataT* out,
@@ -129,8 +147,15 @@ static void _make_low_rank_matrix(raft::resources const& handle,
   raft::linalg::transpose(handle, temp_out.data(), out, n_rows, n_cols, stream);
 }
 
-/* Internal auxiliary function to permute rows in the given matrix according
- * to a given permutation vector */
+/**
+ * @brief Gather matrix rows according to a permutation vector.
+ *
+ * @param[out] out Permuted output matrix
+ * @param[in] in Input matrix
+ * @param[in] perms Input row index for each output row
+ * @param[in] n_rows Number of matrix rows
+ * @param[in] n_cols Number of matrix columns
+ */
 template <typename DataT, typename IdxT>
 RAFT_KERNEL _gather2d_kernel(
   DataT* out, const DataT* in, const IdxT* perms, IdxT n_rows, IdxT n_cols)
