@@ -15,8 +15,6 @@
 #include <cuda/iterator>
 #include <cuda/std/random>
 
-#include <cstdint>
-
 namespace raft {
 namespace random {
 namespace detail {
