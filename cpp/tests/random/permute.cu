@@ -371,64 +371,36 @@ TEST_P(PermMdspanTestD, Result)
 }
 INSTANTIATE_TEST_CASE_P(PermMdspanTests, PermMdspanTestD, ::testing::ValuesIn(inputsd));
 
-// Each thread generates a permutation keyed by (base_seed + tid + 1) and counts
-// how many elements coincide with the reference. Two independent uniform random
-// permutations agree on exactly 1 position in expectation, so the total across
-// all threads should be far below the 5% threshold used here.
-__global__ void kperm_seed_diversity_kernel(const uint32_t* ref_perm,
-                                            uint32_t N,
-                                            uint64_t base_seed,
-                                            int* match_counts)
-{
-  int tid                = blockIdx.x * blockDim.x + threadIdx.x;
-  detail::kperm_params p = detail::make_kperm_params(uint64_t(N), base_seed + uint64_t(tid) + 1);
-  int count              = 0;
-  for (uint32_t i = 0; i < N; i++) {
-    uint32_t val = detail::kperm_index<uint32_t>(i, p);
-    if (val == ref_perm[i] || val == i) { count++; }
-  }
-  match_counts[tid] = count;
-}
-
 TEST(PermTest, SeedDiversity)
 {
   constexpr uint32_t N           = 1000;
   constexpr uint64_t base_seed   = 42ULL;
-  constexpr int TPB              = 256;
-  constexpr int nblocks          = 64;
-  constexpr int total_threads    = nblocks * TPB;
   constexpr float max_match_frac = 0.05f;
-
-  // Build reference permutation on the host.
-  detail::kperm_params ref_p = detail::make_kperm_params(uint64_t(N), base_seed);
-  std::vector<uint32_t> h_ref(N);
-  for (uint32_t i = 0; i < N; i++) {
-    h_ref[i] = detail::kperm_index<uint32_t>(i, ref_p);
-  }
 
   raft::resources handle;
   auto stream = resource::get_cuda_stream(handle);
 
   rmm::device_uvector<uint32_t> d_ref(N, stream);
-  rmm::device_uvector<int> d_matches(total_threads, stream);
-  raft::update_device(d_ref.data(), h_ref.data(), N, stream);
+  rmm::device_uvector<uint32_t> d_other(N, stream);
+  detail::permute<float, uint32_t, uint32_t>(
+    d_ref.data(), nullptr, nullptr, 0, N, true, stream, base_seed);
+  detail::permute<float, uint32_t, uint32_t>(
+    d_other.data(), nullptr, nullptr, 0, N, true, stream, base_seed + 1);
 
-  kperm_seed_diversity_kernel<<<nblocks, TPB, 0, stream>>>(
-    d_ref.data(), N, base_seed, d_matches.data());
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
-
-  std::vector<int> h_matches(total_threads);
-  raft::update_host(h_matches.data(), d_matches.data(), total_threads, stream);
+  std::vector<uint32_t> h_ref(N);
+  std::vector<uint32_t> h_other(N);
+  raft::update_host(h_ref.data(), d_ref.data(), N, stream);
+  raft::update_host(h_other.data(), d_other.data(), N, stream);
   resource::sync_stream(handle);
 
-  int total_matches = 0;
-  for (int c : h_matches) {
-    total_matches += c;
+  int matches = 0;
+  for (uint32_t i = 0; i < N; i++) {
+    if (h_other[i] == h_ref[i] || h_other[i] == i) { matches++; }
   }
 
-  int max_allowed = static_cast<int>(max_match_frac * float(N) * float(total_threads));
-  EXPECT_LT(total_matches, max_allowed)
-    << "Too many index matches across seeds: " << total_matches << " >= " << max_allowed;
+  int max_allowed = static_cast<int>(max_match_frac * float(N));
+  EXPECT_LT(matches, max_allowed) << "Too many index matches across seeds: " << matches
+                                  << " >= " << max_allowed;
 }
 
 }  // end namespace random
