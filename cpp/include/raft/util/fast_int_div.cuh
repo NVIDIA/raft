@@ -10,6 +10,7 @@
 
 #include <stdint.h>
 
+#include <limits>
 #include <type_traits>
 
 namespace raft {
@@ -117,8 +118,7 @@ HDI std::common_type_t<NumIntT, DivIntT> operator/(NumIntT n, const FastIntDiv<D
     return CommonIntT(n) / CommonIntT(divisor.d);
   }
   CommonIntT ret = (int64_t(divisor.m) * int64_t(n)) >> divisor.p;
-  if (n < 0) ++ret;
-  return ret;
+  return ret + CommonIntT(n < 0);
 }
 
 /**
