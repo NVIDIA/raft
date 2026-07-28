@@ -135,6 +135,7 @@ HDI std::common_type_t<NumIntT, DivIntT> operator%(NumIntT n, const FastIntDiv<D
   CommonIntT quotient  = n / divisor;
   CommonIntT remainder = CommonIntT(n) - quotient * CommonIntT(divisor.d);
   return remainder;
+  // return n % divisor.d;
 }
 
 };  // namespace util

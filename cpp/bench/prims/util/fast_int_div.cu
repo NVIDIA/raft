@@ -34,11 +34,12 @@ RAFT_KERNEL divmod_kernel(const IntT* numerators,
   int64_t tid    = int64_t(blockIdx.x) * int64_t(blockDim.x) + int64_t(threadIdx.x);
   int64_t stride = int64_t(gridDim.x) * int64_t(blockDim.x);
   IntT acc       = 0;  // to prevent compiler from optimizing away the division ops
-  for (int64_t i = tid; i < n_numerators; i += stride) {
-    IntT n = numerators[i];
-    for (int64_t j = 0; j < n_divisors; ++j) {
-      acc ^= n / divisors[j];
-      acc ^= n % divisors[j];
+  for (int64_t j = 0; j < n_divisors; ++j) {
+    DivisorT divisor = divisors[j];
+    for (int64_t i = tid; i < n_numerators; i += stride) {
+      IntT n = numerators[i];
+      acc ^= n / divisor;
+      acc ^= n % divisor;
     }
   }
   out[tid] = acc;
@@ -54,20 +55,20 @@ struct fast_int_div_bench : public fixture {
       out_d(size_t(kBlocks) * size_t(kThreads), stream)
   {
     std::mt19937_64 rng(42);
-    std::uniform_int_distribution<int64_t> numerator_dist(raft::util::kInt32Min,
-                                                          raft::util::kInt32Max);
+    std::uniform_int_distribution<IntT> numerator_dist(std::numeric_limits<IntT>::min(),
+                                                       std::numeric_limits<IntT>::max());
     // non-zero, non-neg divisors
-    std::uniform_int_distribution<int64_t> divisor_dist(1, raft::util::kInt32Max);
+    std::uniform_int_distribution<IntT> divisor_dist(1, std::numeric_limits<IntT>::max());
 
     std::vector<IntT> h_numerators(kNumNumerators);
     for (auto& n : h_numerators) {
-      n = IntT(numerator_dist(rng));
+      n = numerator_dist(rng);
     }
 
     std::vector<divisor_t> h_divisors;
     h_divisors.reserve(kNumDivisors);
     for (size_t i = 0; i < kNumDivisors; ++i) {
-      h_divisors.push_back(divisor_t(IntT(divisor_dist(rng))));
+      h_divisors.push_back(divisor_t(divisor_dist(rng)));
     }
 
     RAFT_CUDA_TRY(cudaMemcpyAsync(d_numerators.data(),

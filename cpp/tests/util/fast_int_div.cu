@@ -63,7 +63,9 @@ TEST(FastIntDivTest, Int64Divisors)
                                   0,
                                   1013,
                                   10007,
-                                  int64_t(kInt32Max) + 3,
+                                  int64_t(kInt32Max) + 1,
+                                  int64_t(kInt32Max) + 2,
+                                  (int64_t(1) << 32),
                                   (int64_t(1) << 33),
                                   (int64_t(3) << 40),
                                   kInt64Max};
