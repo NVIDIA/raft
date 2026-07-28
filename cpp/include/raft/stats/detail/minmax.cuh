@@ -11,6 +11,7 @@
 
 #include <cuda/std/bit>
 
+#include <cstdint>
 #include <limits>
 
 namespace raft {
