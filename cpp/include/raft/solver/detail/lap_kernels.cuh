@@ -1,6 +1,6 @@
 /*
  * SPDX-FileCopyrightText: Copyright 2020 KETAN DATE & RAKESH NAGI
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 /*
@@ -34,6 +34,7 @@
 #include <raft/core/resources.hpp>
 #include <raft/util/cudart_utils.hpp>
 
+#include <cuda/std/limits>
 #include <thrust/execution_policy.h>
 #include <thrust/for_each.h>
 
@@ -162,15 +163,12 @@ __device__ void __augment(vertex_t* d_row_assignments,
 }
 
 // Kernel for reducing the rows by subtracting row minimum from each row element.
-//  FIXME:  Once cuda 10.2 is the standard should replace passing infinity
-//          here with using cuda::std::numeric_limits<weight_t>::max()
 template <typename vertex_t, typename weight_t>
-RAFT_KERNEL kernel_rowReduction(
-  weight_t const* d_costs, weight_t* d_row_duals, int SP, vertex_t N, weight_t infinity)
+RAFT_KERNEL kernel_rowReduction(weight_t const* d_costs, weight_t* d_row_duals, int SP, vertex_t N)
 {
   int spid     = blockIdx.y * blockDim.y + threadIdx.y;
   int rowid    = blockIdx.x * blockDim.x + threadIdx.x;
-  weight_t min = infinity;
+  weight_t min = cuda::std::numeric_limits<weight_t>::max();
 
   if (spid < SP && rowid < N) {
     for (int colid = 0; colid < N; colid++) {
@@ -184,20 +182,14 @@ RAFT_KERNEL kernel_rowReduction(
 }
 
 // Kernel for reducing the column by subtracting column minimum from each column element.
-//  FIXME:  Once cuda 10.2 is the standard should replace passing infinity
-//          here with using cuda::std::numeric_limits<weight_t>::max()
 template <typename vertex_t, typename weight_t>
-RAFT_KERNEL kernel_columnReduction(weight_t const* d_costs,
-                                   weight_t const* d_row_duals,
-                                   weight_t* d_col_duals,
-                                   int SP,
-                                   vertex_t N,
-                                   weight_t infinity)
+RAFT_KERNEL kernel_columnReduction(
+  weight_t const* d_costs, weight_t const* d_row_duals, weight_t* d_col_duals, int SP, vertex_t N)
 {
   int spid  = blockIdx.y * blockDim.y + threadIdx.y;
   int colid = blockIdx.x * blockDim.x + threadIdx.x;
 
-  weight_t min = infinity;
+  weight_t min = cuda::std::numeric_limits<weight_t>::max();
 
   if (spid < SP && colid < N) {
     for (int rowid = 0; rowid < N; rowid++) {
@@ -443,20 +435,14 @@ RAFT_KERNEL kernel_augmentation(vertex_t* d_row_assignments,
 }
 
 // Kernel for updating the dual values in Step 5.
-//  FIXME:  Once cuda 10.2 is the standard should replace passing infinity
-//          here with using cuda::std::numeric_limits<weight_t>::max()
 template <typename vertex_t, typename weight_t>
-RAFT_KERNEL kernel_dualUpdate_1(weight_t* d_sp_min,
-                                weight_t const* d_col_slacks,
-                                int const* d_col_covers,
-                                int SP,
-                                vertex_t N,
-                                weight_t infinity)
+RAFT_KERNEL kernel_dualUpdate_1(
+  weight_t* d_sp_min, weight_t const* d_col_slacks, int const* d_col_covers, int SP, vertex_t N)
 {
   int spid = blockIdx.x * blockDim.x + threadIdx.x;
 
   if (spid < SP) {
-    weight_t min = infinity;
+    weight_t min = cuda::std::numeric_limits<weight_t>::max();
     for (int colid = 0; colid < N; colid++) {
       int index      = spid * N + colid;
       weight_t slack = d_col_slacks[index];
@@ -471,8 +457,6 @@ RAFT_KERNEL kernel_dualUpdate_1(weight_t* d_sp_min,
 }
 
 // Kernel for updating the dual values in Step 5.
-//  FIXME:  Once cuda 10.2 is the standard should replace passing infinity
-//          here with using cuda::std::numeric_limits<weight_t>::max()
 template <typename vertex_t, typename weight_t>
 RAFT_KERNEL kernel_dualUpdate_2(weight_t const* d_sp_min,
                                 weight_t* d_row_duals,
@@ -484,7 +468,6 @@ RAFT_KERNEL kernel_dualUpdate_2(weight_t const* d_sp_min,
                                 vertex_t* d_col_parents,
                                 int SP,
                                 vertex_t N,
-                                weight_t infinity,
                                 weight_t epsilon)
 {
   int spid = blockIdx.y * blockDim.y + threadIdx.y;
@@ -493,7 +476,7 @@ RAFT_KERNEL kernel_dualUpdate_2(weight_t const* d_sp_min,
   if (spid < SP && id < N) {
     int index = spid * N + id;
 
-    if (d_sp_min[spid] < infinity) {
+    if (d_sp_min[spid] < cuda::std::numeric_limits<weight_t>::max()) {
       weight_t theta = d_sp_min[spid];
       int row_cover  = d_row_covers[index];
       int col_cover  = d_col_covers[index];
