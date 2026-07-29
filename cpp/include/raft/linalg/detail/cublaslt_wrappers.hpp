@@ -10,6 +10,7 @@
 #include <raft/core/resource/cublaslt_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/custom_resource.hpp>
+#include <raft/core/resource/device_properties.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cache.hpp>
 #include <raft/util/cuda_data_type.hpp>
@@ -104,12 +105,16 @@ struct matmul_key_hash {
  * cuBLASLt 13.6 may select algorithm 68 once A's physical span reaches 2^31 elements. That
  * algorithm fails during execution for FP32, so select the next ranked heuristic instead.
  */
-inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args, std::size_t version) noexcept
-  -> bool
+inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args,
+                                           std::size_t version,
+                                           int device_major,
+                                           int device_minor) noexcept -> bool
 {
   constexpr uint64_t max_safe_span = (uint64_t{1} << 31) - 1;
   const auto a_columns             = args.trans_a ? args.m : args.k;
-  return version == 130600 && args.lda != 0 && a_columns > max_safe_span / args.lda;
+  const bool is_sm120_or_sm121     = device_major == 12 && (device_minor == 0 || device_minor == 1);
+  return version == 130600 && is_sm120_or_sm121 && args.lda != 0 &&
+         a_columns > max_safe_span / args.lda;
 }
 
 inline auto get_cublaslt_algorithm_id(const cublasLtMatmulHeuristicResult_t& heuristic) -> int
@@ -212,7 +217,9 @@ struct matmul_desc {
     bool use_cublaslt_13_6_workaround = false;
     if constexpr (std::is_same_v<S, float> && std::is_same_v<A, float> &&
                   std::is_same_v<B, float> && std::is_same_v<C, float>) {
-      use_cublaslt_13_6_workaround = needs_cublaslt_13_6_workaround(args, cublasLtGetVersion());
+      const auto& device_properties = resource::get_device_properties(res);
+      use_cublaslt_13_6_workaround  = needs_cublaslt_13_6_workaround(
+        args, cublasLtGetVersion(), device_properties.major, device_properties.minor);
     }
 
     constexpr int workaround_heuristic_results = 2;
