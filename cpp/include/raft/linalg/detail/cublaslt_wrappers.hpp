@@ -101,8 +101,8 @@ struct matmul_key_hash {
 };
 
 /**
- * cuBLASLt 13.6 may select algorithm 68 once A's physical span reaches 2^31 elements, but that
- * algorithm fails during execution for FP32. Prefer the validated alternatives.
+ * cuBLASLt 13.6 may select algorithm 68 once A's physical span reaches 2^31 elements. That
+ * algorithm fails during execution for FP32, so select the next ranked heuristic instead.
  */
 inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args, std::size_t version) noexcept
   -> bool
@@ -120,8 +120,6 @@ inline auto get_cublaslt_algorithm_id(const cublasLtMatmulHeuristicResult_t& heu
     &heuristic.algo, CUBLASLT_ALGO_CONFIG_ID, &algorithm_id, sizeof(algorithm_id), &bytes_written));
   return algorithm_id;
 }
-
-inline constexpr std::array<int, 2> cublaslt_13_6_fallback_algorithms{13, 16};
 
 /** Descriptor for a column-major cublasLt matrix. */
 struct cublastlt_matrix_layout {
@@ -217,9 +215,9 @@ struct matmul_desc {
       use_cublaslt_13_6_workaround = needs_cublaslt_13_6_workaround(args, cublasLtGetVersion());
     }
 
-    constexpr int max_heuristic_results = 8;
-    std::array<cublasLtMatmulHeuristicResult_t, max_heuristic_results> heuristic_results{};
-    const int requested_results = use_cublaslt_13_6_workaround ? max_heuristic_results : 1;
+    constexpr int workaround_heuristic_results = 2;
+    std::array<cublasLtMatmulHeuristicResult_t, workaround_heuristic_results> heuristic_results{};
+    const int requested_results = use_cublaslt_13_6_workaround ? workaround_heuristic_results : 1;
     int algo_count;
     cublasLtMatmulPreference_t preference;
     RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceCreate(&preference));
@@ -241,18 +239,17 @@ struct matmul_desc {
       return r;
     }
 
-    for (const auto preferred_algorithm : cublaslt_13_6_fallback_algorithms) {
-      for (int i = 0; i < algo_count; ++i) {
-        const auto& candidate = heuristic_results[i];
-        if (candidate.state == CUBLAS_STATUS_SUCCESS && candidate.workspaceSize == 0 &&
-            get_cublaslt_algorithm_id(candidate) == preferred_algorithm) {
-          r.heuristics = candidate;
-          return r;
-        }
+    constexpr int faulty_algorithm = 68;
+    for (int i = 0; i < algo_count; ++i) {
+      const auto& candidate = heuristic_results[i];
+      if (candidate.state == CUBLAS_STATUS_SUCCESS && candidate.workspaceSize == 0 &&
+          get_cublaslt_algorithm_id(candidate) != faulty_algorithm) {
+        r.heuristics = candidate;
+        return r;
       }
     }
 
-    RAFT_FAIL("cuBLASLt 13.6 did not return algorithm 13 or 16 for the affected large FP32 GEMM");
+    RAFT_FAIL("cuBLASLt 13.6 did not return a safe algorithm for the affected large FP32 GEMM");
     return r;
   }
 };
