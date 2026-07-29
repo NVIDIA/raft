@@ -102,8 +102,8 @@ struct matmul_key_hash {
 };
 
 /**
- * cuBLASLt 13.6 may select algorithm 68 once A's physical span reaches 2^31 elements. That
- * algorithm fails during execution for FP32, so select the next ranked heuristic instead.
+ * cuBLASLt 13.6 and later may select algorithm 68 once A's physical span reaches 2^31 elements.
+ * That algorithm fails during execution for FP32, so select the next ranked heuristic instead.
  */
 inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args,
                                            std::size_t version,
@@ -115,7 +115,7 @@ inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args,
   const bool is_affected_architecture =
     (device_major == 10 && device_minor == 0) ||
     (device_major == 12 && (device_minor == 0 || device_minor == 1));
-  return version == 130600 && is_affected_architecture && args.lda != 0 &&
+  return version >= 130600 && is_affected_architecture && args.lda != 0 &&
          a_columns > max_safe_span / args.lda;
 }
 

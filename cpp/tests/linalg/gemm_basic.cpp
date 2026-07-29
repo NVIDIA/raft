@@ -182,8 +182,10 @@ TEST(Raft, GemmCublasLt136WorkaroundPredicate)
   EXPECT_TRUE(needs_workaround(above_boundary));
   EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(
     at_boundary, 130599, affected_device_major, affected_device_minor));
-  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(
+  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(
     at_boundary, 130601, affected_device_major, affected_device_minor));
+  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(
+    at_boundary, 130700, affected_device_major, affected_device_minor));
 
   auto different_output    = at_boundary;
   different_output.trans_b = false;
