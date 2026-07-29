@@ -28,20 +28,9 @@ TEST(Raft, GemmCublasLt136LargeSpan)
   constexpr std::array<std::int64_t, 3> sample_counts{134217727, 134217728, 134217729};
   constexpr auto max_samples = sample_counts.back();
   constexpr auto a_elements  = static_cast<std::size_t>(max_samples) * lda;
-  constexpr auto required_bytes =
-    (a_elements + informative + static_cast<std::size_t>(max_samples)) * sizeof(float);
-  constexpr std::size_t allocation_headroom = std::size_t{1} << 30;
 
   raft::resources resources;
   const auto stream = raft::resource::get_cuda_stream(resources);
-
-  std::size_t free_bytes{};
-  std::size_t total_bytes{};
-  RAFT_CUDA_TRY(cudaMemGetInfo(&free_bytes, &total_bytes));
-  if (free_bytes < required_bytes + allocation_headroom) {
-    GTEST_SKIP() << "This regression test needs " << required_bytes + allocation_headroom
-                 << " free device bytes, but only " << free_bytes << " are available";
-  }
 
   rmm::device_uvector<float> a(a_elements, stream);
   rmm::device_uvector<float> b(informative, stream);
