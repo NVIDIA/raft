@@ -176,12 +176,21 @@ TEST(Raft, GemmCublasLt136WorkaroundPredicate)
   EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130599));
   EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130601));
 
-  auto different_shape    = at_boundary;
-  different_shape.trans_b = false;
-  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(different_shape, affected_version));
-  different_shape   = at_boundary;
-  different_shape.n = 2;
-  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(different_shape, affected_version));
+  auto different_output    = at_boundary;
+  different_output.trans_b = false;
+  different_output.n       = 2;
+  different_output.ldb     = 7;
+  different_output.ldc     = 11;
+  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(different_output, affected_version));
+
+  const detail::matmul_key_t non_transposed_below{2, 1, 134217727, 16, 134217727, 2, false, false};
+  const detail::matmul_key_t non_transposed_at{2, 1, 134217728, 16, 134217728, 2, false, false};
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(non_transposed_below, affected_version));
+  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(non_transposed_at, affected_version));
+
+  auto invalid_lda = at_boundary;
+  invalid_lda.lda  = 0;
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(invalid_lda, affected_version));
 }
 
 }  // namespace raft::linalg

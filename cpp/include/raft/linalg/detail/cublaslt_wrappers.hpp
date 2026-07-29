@@ -101,15 +101,15 @@ struct matmul_key_hash {
 };
 
 /**
- * cuBLASLt 13.6 selects algorithm 68 for this FP32 layout once A's physical span reaches
- * 2^31 elements, but that algorithm fails during execution. Prefer the validated alternatives.
+ * cuBLASLt 13.6 may select algorithm 68 once A's physical span reaches 2^31 elements, but that
+ * algorithm fails during execution for FP32. Prefer the validated alternatives.
  */
 inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args, std::size_t version) noexcept
   -> bool
 {
   constexpr uint64_t max_safe_span = (uint64_t{1} << 31) - 1;
-  return version == 130600 && args.trans_a && args.trans_b && args.n == 1 && args.k == 2 &&
-         args.lda == 16 && args.ldb == 1 && args.ldc == args.m && args.m > max_safe_span / args.lda;
+  const auto a_columns             = args.trans_a ? args.m : args.k;
+  return version == 130600 && args.lda != 0 && a_columns > max_safe_span / args.lda;
 }
 
 inline auto get_cublaslt_algorithm_id(const cublasLtMatmulHeuristicResult_t& heuristic) -> int
