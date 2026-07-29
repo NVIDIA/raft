@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 # raft build scripts
@@ -83,6 +83,7 @@ EXT_HEADERS_TEST_COMPILED_IMPLICIT;\
 EXT_HEADERS_TEST_IMPLICIT;\
 LABEL_TEST;\
 LINALG_TEST;\
+GEMM_LARGE_TEST;\
 MATRIX_SELECT_LARGE_TEST;\
 MATRIX_SELECT_TEST;\
 MATRIX_TEST;\

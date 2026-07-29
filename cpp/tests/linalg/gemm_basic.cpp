@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -162,5 +162,26 @@ TEST(Raft, GemmPointerModeDevice) { test_gemm_pointer_mode_device(true, true); }
 TEST(Raft, GemmPointerModeDeviceAlpha) { test_gemm_pointer_mode_device(true, false); }
 TEST(Raft, GemmPointerModeDeviceBeta) { test_gemm_pointer_mode_device(false, true); }
 TEST(Raft, GemmPointerModeDeviceDefaults) { test_gemm_pointer_mode_device(false, false); }
+
+TEST(Raft, GemmCublasLt136WorkaroundPredicate)
+{
+  constexpr std::size_t affected_version = 130600;
+  const detail::matmul_key_t below_boundary{134217727, 1, 2, 16, 1, 134217727, true, true};
+  const detail::matmul_key_t at_boundary{134217728, 1, 2, 16, 1, 134217728, true, true};
+  const detail::matmul_key_t above_boundary{134217729, 1, 2, 16, 1, 134217729, true, true};
+
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(below_boundary, affected_version));
+  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version));
+  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(above_boundary, affected_version));
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130599));
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130601));
+
+  auto different_shape    = at_boundary;
+  different_shape.trans_b = false;
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(different_shape, affected_version));
+  different_shape   = at_boundary;
+  different_shape.n = 2;
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(different_shape, affected_version));
+}
 
 }  // namespace raft::linalg

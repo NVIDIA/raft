@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -18,6 +18,7 @@
 
 #include <cublasLt.h>
 
+#include <array>
 #include <type_traits>
 
 namespace raft {
@@ -98,6 +99,29 @@ struct matmul_key_hash {
     return x.m * x.n * x.k + x.lda * x.ldb * x.ldc + size_t{x.trans_a} + size_t{x.trans_b} * 2;
   }
 };
+
+/**
+ * cuBLASLt 13.6 selects algorithm 68 for this FP32 layout once A's physical span reaches
+ * 2^31 elements, but that algorithm fails during execution. Prefer the validated alternatives.
+ */
+inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args, std::size_t version) noexcept
+  -> bool
+{
+  constexpr uint64_t max_safe_span = (uint64_t{1} << 31) - 1;
+  return version == 130600 && args.trans_a && args.trans_b && args.n == 1 && args.k == 2 &&
+         args.lda == 16 && args.ldb == 1 && args.ldc == args.m && args.m > max_safe_span / args.lda;
+}
+
+inline auto get_cublaslt_algorithm_id(const cublasLtMatmulHeuristicResult_t& heuristic) -> int
+{
+  int algorithm_id{};
+  std::size_t bytes_written{};
+  RAFT_CUBLAS_TRY(cublasLtMatmulAlgoConfigGetAttribute(
+    &heuristic.algo, CUBLASLT_ALGO_CONFIG_ID, &algorithm_id, sizeof(algorithm_id), &bytes_written));
+  return algorithm_id;
+}
+
+inline constexpr std::array<int, 2> cublaslt_13_6_fallback_algorithms{13, 16};
 
 /** Descriptor for a column-major cublasLt matrix. */
 struct cublastlt_matrix_layout {
@@ -186,6 +210,16 @@ struct matmul_desc {
       cublastlt_matrix_layout::for_matmul<A>(!(args.trans_a), args.m, args.k, args.lda),
       cublastlt_matrix_layout::for_matmul<B>(!(args.trans_b), args.k, args.n, args.ldb),
       cublastlt_matrix_layout::for_matmul<C>(true, args.m, args.n, args.ldc)};
+
+    bool use_cublaslt_13_6_workaround = false;
+    if constexpr (std::is_same_v<S, float> && std::is_same_v<A, float> &&
+                  std::is_same_v<B, float> && std::is_same_v<C, float>) {
+      use_cublaslt_13_6_workaround = needs_cublaslt_13_6_workaround(args, cublasLtGetVersion());
+    }
+
+    constexpr int max_heuristic_results = 8;
+    std::array<cublasLtMatmulHeuristicResult_t, max_heuristic_results> heuristic_results{};
+    const int requested_results = use_cublaslt_13_6_workaround ? max_heuristic_results : 1;
     int algo_count;
     cublasLtMatmulPreference_t preference;
     RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceCreate(&preference));
@@ -196,10 +230,29 @@ struct matmul_desc {
                                                    r.c,
                                                    r.c,
                                                    preference,
-                                                   1,
-                                                   &r.heuristics,
+                                                   requested_results,
+                                                   heuristic_results.data(),
                                                    &algo_count));
     RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceDestroy(preference));
+
+    RAFT_EXPECTS(algo_count > 0, "cuBLASLt did not return a matmul algorithm");
+    if (!use_cublaslt_13_6_workaround) {
+      r.heuristics = heuristic_results.front();
+      return r;
+    }
+
+    for (const auto preferred_algorithm : cublaslt_13_6_fallback_algorithms) {
+      for (int i = 0; i < algo_count; ++i) {
+        const auto& candidate = heuristic_results[i];
+        if (candidate.state == CUBLAS_STATUS_SUCCESS && candidate.workspaceSize == 0 &&
+            get_cublaslt_algorithm_id(candidate) == preferred_algorithm) {
+          r.heuristics = candidate;
+          return r;
+        }
+      }
+    }
+
+    RAFT_FAIL("cuBLASLt 13.6 did not return algorithm 13 or 16 for the affected large FP32 GEMM");
     return r;
   }
 };
