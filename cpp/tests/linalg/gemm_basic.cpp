@@ -207,6 +207,7 @@ TEST(Raft, GemmCublasLt136WorkaroundArchitectures)
   constexpr std::size_t affected_version = 130600;
   const detail::matmul_key_t at_boundary{134217728, 1, 2, 16, 1, 134217728, true, true};
 
+  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 10, 0));
   EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 12, 0));
   EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 12, 1));
   EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 7, 5));

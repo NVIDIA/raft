@@ -112,8 +112,10 @@ inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args,
 {
   constexpr uint64_t max_safe_span = (uint64_t{1} << 31) - 1;
   const auto a_columns             = args.trans_a ? args.m : args.k;
-  const bool is_sm120_or_sm121     = device_major == 12 && (device_minor == 0 || device_minor == 1);
-  return version == 130600 && is_sm120_or_sm121 && args.lda != 0 &&
+  const bool is_affected_architecture =
+    (device_major == 10 && device_minor == 0) ||
+    (device_major == 12 && (device_minor == 0 || device_minor == 1));
+  return version == 130600 && is_affected_architecture && args.lda != 0 &&
          a_columns > max_safe_span / args.lda;
 }
 
