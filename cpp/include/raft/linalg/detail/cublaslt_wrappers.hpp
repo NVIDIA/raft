@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -10,6 +10,7 @@
 #include <raft/core/resource/cublaslt_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/custom_resource.hpp>
+#include <raft/core/resource/device_properties.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cache.hpp>
 #include <raft/util/cuda_data_type.hpp>
@@ -18,7 +19,9 @@
 
 #include <cublasLt.h>
 
+#include <array>
 #include <type_traits>
+#include <utility>
 
 namespace raft {
 namespace linalg::detail {
@@ -99,6 +102,33 @@ struct matmul_key_hash {
   }
 };
 
+/**
+ * cuBLASLt 13.6 and later may select algorithm 68 once A's physical span reaches 2^31 elements.
+ * That algorithm fails during execution for FP32, so select the next ranked heuristic instead.
+ */
+inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args,
+                                           std::size_t version,
+                                           int device_major,
+                                           int device_minor) noexcept -> bool
+{
+  constexpr uint64_t max_safe_span = (uint64_t{1} << 31) - 1;
+  const auto a_columns             = args.trans_a ? args.m : args.k;
+  const bool is_affected_architecture =
+    (device_major == 10 && device_minor == 0) ||
+    (device_major == 12 && (device_minor == 0 || device_minor == 1));
+  return version >= 130600 && is_affected_architecture && args.lda != 0 &&
+         a_columns > max_safe_span / args.lda;
+}
+
+inline auto get_cublaslt_algorithm_id(const cublasLtMatmulHeuristicResult_t& heuristic) -> int
+{
+  int algorithm_id{};
+  std::size_t bytes_written{};
+  RAFT_CUBLAS_TRY(cublasLtMatmulAlgoConfigGetAttribute(
+    &heuristic.algo, CUBLASLT_ALGO_CONFIG_ID, &algorithm_id, sizeof(algorithm_id), &bytes_written));
+  return algorithm_id;
+}
+
 /** Descriptor for a column-major cublasLt matrix. */
 struct cublastlt_matrix_layout {
   cublasLtMatrixLayout_t res{nullptr};
@@ -108,12 +138,19 @@ struct cublastlt_matrix_layout {
   }
   inline cublastlt_matrix_layout(const cublastlt_matrix_layout&)                    = delete;
   inline auto operator=(const cublastlt_matrix_layout&) -> cublastlt_matrix_layout& = delete;
-  inline cublastlt_matrix_layout(cublastlt_matrix_layout&&)                         = default;
-  inline auto operator=(cublastlt_matrix_layout&&) -> cublastlt_matrix_layout&      = default;
+  inline cublastlt_matrix_layout(cublastlt_matrix_layout&& other) noexcept
+    : res(std::exchange(other.res, nullptr))
+  {
+  }
+  inline auto operator=(cublastlt_matrix_layout&& other) noexcept -> cublastlt_matrix_layout&
+  {
+    std::swap(res, other.res);
+    return *this;
+  }
 
   inline ~cublastlt_matrix_layout() noexcept
   {
-    RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatrixLayoutDestroy(res));
+    if (res != nullptr) { RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatrixLayoutDestroy(res)); }
   }
 
   // NOLINTNEXTLINE
@@ -137,12 +174,19 @@ struct cublastlt_matmul_desc {
   }
   inline cublastlt_matmul_desc(const cublastlt_matmul_desc&)                    = delete;
   inline auto operator=(const cublastlt_matmul_desc&) -> cublastlt_matmul_desc& = delete;
-  inline cublastlt_matmul_desc(cublastlt_matmul_desc&&)                         = default;
-  inline auto operator=(cublastlt_matmul_desc&&) -> cublastlt_matmul_desc&      = default;
+  inline cublastlt_matmul_desc(cublastlt_matmul_desc&& other) noexcept
+    : res(std::exchange(other.res, nullptr))
+  {
+  }
+  inline auto operator=(cublastlt_matmul_desc&& other) noexcept -> cublastlt_matmul_desc&
+  {
+    std::swap(res, other.res);
+    return *this;
+  }
 
   inline ~cublastlt_matmul_desc() noexcept
   {
-    RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatmulDescDestroy(res));
+    if (res != nullptr) { RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatmulDescDestroy(res)); }
   }
 
   // NOLINTNEXTLINE
@@ -186,6 +230,18 @@ struct matmul_desc {
       cublastlt_matrix_layout::for_matmul<A>(!(args.trans_a), args.m, args.k, args.lda),
       cublastlt_matrix_layout::for_matmul<B>(!(args.trans_b), args.k, args.n, args.ldb),
       cublastlt_matrix_layout::for_matmul<C>(true, args.m, args.n, args.ldc)};
+
+    bool use_cublaslt_13_6_workaround = false;
+    if constexpr (std::is_same_v<S, float> && std::is_same_v<A, float> &&
+                  std::is_same_v<B, float> && std::is_same_v<C, float>) {
+      const auto& device_properties = resource::get_device_properties(res);
+      use_cublaslt_13_6_workaround  = needs_cublaslt_13_6_workaround(
+        args, cublasLtGetVersion(), device_properties.major, device_properties.minor);
+    }
+
+    constexpr int workaround_heuristic_results = 2;
+    std::array<cublasLtMatmulHeuristicResult_t, workaround_heuristic_results> heuristic_results{};
+    const int requested_results = use_cublaslt_13_6_workaround ? workaround_heuristic_results : 1;
     int algo_count;
     cublasLtMatmulPreference_t preference;
     RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceCreate(&preference));
@@ -196,10 +252,28 @@ struct matmul_desc {
                                                    r.c,
                                                    r.c,
                                                    preference,
-                                                   1,
-                                                   &r.heuristics,
+                                                   requested_results,
+                                                   heuristic_results.data(),
                                                    &algo_count));
     RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceDestroy(preference));
+
+    RAFT_EXPECTS(algo_count > 0, "cuBLASLt did not return a matmul algorithm");
+    if (!use_cublaslt_13_6_workaround) {
+      r.heuristics = heuristic_results.front();
+      return r;
+    }
+
+    constexpr int faulty_algorithm = 68;
+    for (int i = 0; i < algo_count; ++i) {
+      const auto& candidate = heuristic_results[i];
+      if (candidate.state == CUBLAS_STATUS_SUCCESS && candidate.workspaceSize == 0 &&
+          get_cublaslt_algorithm_id(candidate) != faulty_algorithm) {
+        r.heuristics = candidate;
+        return r;
+      }
+    }
+
+    RAFT_FAIL("cuBLASLt 13.6 did not return a safe algorithm for the affected large FP32 GEMM");
     return r;
   }
 };
