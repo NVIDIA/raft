@@ -112,14 +112,14 @@ inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args, std::size_t
 }
 
 /**
- * Querying with a physical A leading dimension that is one element larger suppresses algorithm 68
- * by removing its required 16-byte alignment. The returned algorithm is then used with the real
- * descriptors.
+ * Querying with a physical A leading dimension that is not 16-byte aligned suppresses algorithm 68.
+ * The returned algorithm is then used with the real descriptors.
  */
 inline auto get_cublaslt_13_6_heuristic_args(const matmul_key_t& args) noexcept -> matmul_key_t
 {
-  auto heuristic_args = args;
-  ++heuristic_args.lda;
+  constexpr uint64_t fp32_elements_per_16_bytes = 4;
+  auto heuristic_args                           = args;
+  if (heuristic_args.lda % fp32_elements_per_16_bytes == 0) { ++heuristic_args.lda; }
   return heuristic_args;
 }
 

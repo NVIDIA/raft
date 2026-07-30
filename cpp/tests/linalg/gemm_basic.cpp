@@ -200,17 +200,24 @@ TEST(Raft, GemmCublasLt136WorkaroundPredicate)
 
 TEST(Raft, GemmCublasLt136WorkaroundHeuristicArgs)
 {
-  const detail::matmul_key_t transposed{134217728, 1, 2, 16, 1, 134217728, true, true};
-  const auto transposed_query = detail::get_cublaslt_13_6_heuristic_args(transposed);
-  EXPECT_EQ(transposed_query.m, transposed.m);
-  EXPECT_EQ(transposed_query.lda, transposed.lda + 1);
-  EXPECT_EQ(transposed_query.ldc, transposed.ldc);
+  const auto query_lda = [](uint64_t lda) {
+    const detail::matmul_key_t args{134217728, 1, 2, lda, 1, 134217728, true, true};
+    return detail::get_cublaslt_13_6_heuristic_args(args).lda;
+  };
 
-  const detail::matmul_key_t non_transposed{2, 1, 134217728, 2, 134217728, 2, false, false};
-  const auto non_transposed_query = detail::get_cublaslt_13_6_heuristic_args(non_transposed);
-  EXPECT_EQ(non_transposed_query.m, non_transposed.m);
-  EXPECT_EQ(non_transposed_query.lda, non_transposed.lda + 1);
-  EXPECT_EQ(non_transposed_query.ldc, non_transposed.ldc);
+  EXPECT_EQ(query_lda(12), 13);
+  EXPECT_EQ(query_lda(15), 15);
+  EXPECT_EQ(query_lda(16), 17);
+
+  const detail::matmul_key_t args{134217728, 1, 2, 16, 1, 134217728, true, true};
+  const auto heuristic_args = detail::get_cublaslt_13_6_heuristic_args(args);
+  EXPECT_EQ(heuristic_args.m, args.m);
+  EXPECT_EQ(heuristic_args.n, args.n);
+  EXPECT_EQ(heuristic_args.k, args.k);
+  EXPECT_EQ(heuristic_args.ldb, args.ldb);
+  EXPECT_EQ(heuristic_args.ldc, args.ldc);
+  EXPECT_EQ(heuristic_args.trans_a, args.trans_a);
+  EXPECT_EQ(heuristic_args.trans_b, args.trans_b);
 }
 
 }  // namespace raft::linalg
