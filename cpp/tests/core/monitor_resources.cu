@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "test_memory_resource.hpp"
+
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_setter.hpp>
 #include <raft/core/memory_tracking_resources.hpp>
@@ -24,28 +26,6 @@
 #include <thread>
 
 namespace {
-
-struct device_resource_restore_guard {
-  int device_id;
-  raft::mr::device_resource resource;
-
-  ~device_resource_restore_guard()
-  {
-    rmm::mr::set_per_device_resource(rmm::cuda_device_id{device_id}, std::move(resource));
-  }
-};
-
-auto current_device_uses_pool_resource() -> bool
-{
-  auto current_mr = rmm::mr::get_current_device_resource_ref();
-  return cuda::mr::resource_cast<rmm::mr::pool_memory_resource>(&current_mr) != nullptr;
-}
-
-auto current_device_uses_default_cuda_resource() -> bool
-{
-  auto current_mr = rmm::mr::get_current_device_resource_ref();
-  return cuda::mr::resource_cast<rmm::mr::cuda_memory_resource>(&current_mr) != nullptr;
-}
 
 TEST(MemoryTrackingResources, TracksDeviceAllocations)
 {
@@ -88,19 +68,8 @@ TEST(MemoryTrackingResources, RestoresDeviceResourceOnConstructionDevice)
   auto device0 = 0;
   auto device1 = 1;
 
-  auto device0_guard = [&]() {
-    auto scoped_device = raft::device_setter{device0};
-    auto upstream      = rmm::mr::get_current_device_resource_ref();
-    return device_resource_restore_guard{
-      device0,
-      rmm::mr::set_current_device_resource(
-        raft::mr::device_resource{rmm::mr::pool_memory_resource(upstream, 1 << 20, 2 << 20)})};
-  }();
-
-  auto device1_guard = [&]() {
-    auto scoped_device = raft::device_setter{device1};
-    return device_resource_restore_guard{device1, rmm::mr::reset_current_device_resource()};
-  }();
+  auto device0_guard = raft::test::install_pool_device_resource(device0);
+  auto device1_guard = raft::test::install_default_device_resource(device1);
 
   {
     auto scoped_device = raft::device_setter{device0};
@@ -133,19 +102,8 @@ TEST(MemoryTrackingResources, InstallsTrackedResourceOnHandleDevice)
   auto device0 = 0;
   auto device1 = 1;
 
-  auto device0_guard = [&]() {
-    auto scoped_device = raft::device_setter{device0};
-    auto upstream      = rmm::mr::get_current_device_resource_ref();
-    return device_resource_restore_guard{
-      device0,
-      rmm::mr::set_current_device_resource(
-        raft::mr::device_resource{rmm::mr::pool_memory_resource(upstream, 1 << 20, 2 << 20)})};
-  }();
-
-  auto device1_guard = [&]() {
-    auto scoped_device = raft::device_setter{device1};
-    return device_resource_restore_guard{device1, rmm::mr::reset_current_device_resource()};
-  }();
+  auto device0_guard = raft::test::install_pool_device_resource(device0);
+  auto device1_guard = raft::test::install_default_device_resource(device1);
 
   {
     auto scoped_device = raft::device_setter{device0};
@@ -159,12 +117,12 @@ TEST(MemoryTrackingResources, InstallsTrackedResourceOnHandleDevice)
 
     {
       auto verify_device0 = raft::device_setter{device0};
-      EXPECT_FALSE(current_device_uses_pool_resource());
+      EXPECT_FALSE(raft::test::current_device_uses_pool_resource());
     }
 
     {
       auto verify_device1 = raft::device_setter{device1};
-      EXPECT_TRUE(current_device_uses_default_cuda_resource());
+      EXPECT_TRUE(raft::test::current_device_uses_default_cuda_resource());
     }
 
     tracked.reset();
@@ -172,12 +130,12 @@ TEST(MemoryTrackingResources, InstallsTrackedResourceOnHandleDevice)
 
   {
     auto scoped_device = raft::device_setter{device0};
-    EXPECT_TRUE(current_device_uses_pool_resource());
+    EXPECT_TRUE(raft::test::current_device_uses_pool_resource());
   }
 
   {
     auto scoped_device = raft::device_setter{device1};
-    EXPECT_TRUE(current_device_uses_default_cuda_resource());
+    EXPECT_TRUE(raft::test::current_device_uses_default_cuda_resource());
   }
 }
 

@@ -4,6 +4,7 @@
  */
 #pragma once
 
+#include <raft/core/logger.hpp>
 #include <raft/core/resource/device_id.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/managed_memory_resource.hpp>
@@ -21,6 +22,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -87,8 +89,17 @@ class memory_stats_resources : public resources {
   ~memory_stats_resources() override
   {
     mr::set_default_host_resource(old_host_);
-    rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
-                                     std::move(old_device_));
+    try {
+      rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                       std::move(old_device_));
+    } catch (const std::exception& e) {
+      RAFT_LOG_ERROR("memory_stats_resources failed to restore the per-device memory resource: %s",
+                     e.what());
+    } catch (...) {
+      RAFT_LOG_ERROR(
+        "memory_stats_resources failed to restore the per-device memory resource: unknown "
+        "exception");
+    }
   }
 
   memory_stats_resources(memory_stats_resources const&)            = delete;

@@ -5,6 +5,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/logger.hpp>
 #include <raft/core/resource/device_id.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/managed_memory_resource.hpp>
@@ -23,6 +24,7 @@
 #include <cuda/stream_ref>
 
 #include <chrono>
+#include <exception>
 #include <fstream>
 #include <memory>
 #include <ostream>
@@ -109,8 +111,17 @@ class memory_tracking_resources : public resources {
   {
     report_.stop();
     raft::mr::set_default_host_resource(old_host_);
-    rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
-                                     std::move(old_device_));
+    try {
+      rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                       std::move(old_device_));
+    } catch (const std::exception& e) {
+      RAFT_LOG_ERROR(
+        "memory_tracking_resources failed to restore the per-device memory resource: %s", e.what());
+    } catch (...) {
+      RAFT_LOG_ERROR(
+        "memory_tracking_resources failed to restore the per-device memory resource: unknown "
+        "exception");
+    }
   }
 
   memory_tracking_resources(memory_tracking_resources const&)            = delete;
