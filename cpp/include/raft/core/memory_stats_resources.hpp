@@ -78,8 +78,8 @@ class memory_stats_resources : public resources {
   explicit memory_stats_resources(const resources& existing)
     : resources(existing),
       old_host_(mr::get_default_host_resource()),
-      old_device_(rmm::mr::get_per_device_resource_ref(
-        rmm::cuda_device_id{resource::get_device_id(*this)}))
+      old_device_(
+        rmm::mr::get_per_device_resource_ref(rmm::cuda_device_id{resource::get_device_id(*this)}))
   {
     init();
   }

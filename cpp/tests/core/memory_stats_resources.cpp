@@ -1,10 +1,10 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
-#include <raft/core/memory_stats_resources.hpp>
 #include <raft/core/device_setter.hpp>
+#include <raft/core/memory_stats_resources.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resources.hpp>
 
@@ -125,9 +125,7 @@ TEST(MemoryStatsResources, IndependentCounting_PoolWorkspace)
 
 TEST(MemoryStatsResources, RestoresDeviceResourceOnConstructionDevice)
 {
-  if (device_setter::get_device_count() < 2) {
-    GTEST_SKIP() << "Requires at least 2 CUDA devices";
-  }
+  if (device_setter::get_device_count() < 2) { GTEST_SKIP() << "Requires at least 2 CUDA devices"; }
 
   auto device0 = 0;
   auto device1 = 1;
@@ -149,7 +147,7 @@ TEST(MemoryStatsResources, RestoresDeviceResourceOnConstructionDevice)
   {
     auto scoped_device = device_setter{device0};
     raft::resources res;
-    auto tracked = std::make_unique<memory_stats_resources>(res);
+    auto tracked      = std::make_unique<memory_stats_resources>(res);
     auto wrong_device = device_setter{device1};
     static_cast<void>(wrong_device);
     tracked.reset();
@@ -170,9 +168,7 @@ TEST(MemoryStatsResources, RestoresDeviceResourceOnConstructionDevice)
 
 TEST(MemoryStatsResources, InstallsTrackedResourceOnHandleDevice)
 {
-  if (device_setter::get_device_count() < 2) {
-    GTEST_SKIP() << "Requires at least 2 CUDA devices";
-  }
+  if (device_setter::get_device_count() < 2) { GTEST_SKIP() << "Requires at least 2 CUDA devices"; }
 
   auto device0 = 0;
   auto device1 = 1;

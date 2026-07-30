@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,6 +13,7 @@
 #include <rmm/mr/pool_memory_resource.hpp>
 
 #include <cuda/memory_resource>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -104,7 +105,7 @@ TEST(MemoryTrackingResources, RestoresDeviceResourceOnConstructionDevice)
   {
     auto scoped_device = raft::device_setter{device0};
     std::ostringstream oss;
-    auto tracked = std::make_unique<raft::memory_tracking_resources>(oss);
+    auto tracked      = std::make_unique<raft::memory_tracking_resources>(oss);
     auto wrong_device = raft::device_setter{device1};
     static_cast<void>(wrong_device);
     tracked.reset();

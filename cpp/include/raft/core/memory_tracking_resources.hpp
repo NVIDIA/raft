@@ -130,8 +130,8 @@ class memory_tracking_resources : public resources {
       owned_stream_(std::move(owned_stream)),
       report_(out_override ? *out_override : *owned_stream_, sample_interval),
       old_host_(raft::mr::get_default_host_resource()),
-      old_device_(rmm::mr::get_per_device_resource_ref(
-        rmm::cuda_device_id{resource::get_device_id(*this)}))
+      old_device_(
+        rmm::mr::get_per_device_resource_ref(rmm::cuda_device_id{resource::get_device_id(*this)}))
   {
     init();
   }
