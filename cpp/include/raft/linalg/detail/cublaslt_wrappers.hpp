@@ -203,6 +203,24 @@ struct cublastlt_matmul_desc {
   }
 };
 
+/** Preference descriptor for a cublasLt matmul heuristic query. */
+struct cublastlt_matmul_preference {
+  cublasLtMatmulPreference_t res{nullptr};
+
+  inline cublastlt_matmul_preference() { RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceCreate(&res)); }
+  inline cublastlt_matmul_preference(const cublastlt_matmul_preference&) = delete;
+  inline auto operator=(const cublastlt_matmul_preference&)
+    -> cublastlt_matmul_preference& = delete;
+
+  inline ~cublastlt_matmul_preference() noexcept
+  {
+    RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatmulPreferenceDestroy(res));
+  }
+
+  // NOLINTNEXTLINE
+  inline operator cublasLtMatmulPreference_t() const noexcept { return res; }
+};
+
 /** Full description of matmul. */
 struct matmul_desc {
   cublastlt_matmul_desc desc;
@@ -227,8 +245,7 @@ struct matmul_desc {
     }
 
     int algo_count;
-    cublasLtMatmulPreference_t preference;
-    RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceCreate(&preference));
+    cublastlt_matmul_preference preference;
     const auto query_heuristic = [&](cublasLtMatrixLayout_t a_layout,
                                      cublasLtMatrixLayout_t c_layout) {
       RAFT_CUBLAS_TRY(cublasLtMatmulAlgoGetHeuristic(resource::get_cublaslt_handle(res),
@@ -251,7 +268,6 @@ struct matmul_desc {
     } else {
       query_heuristic(r.a, r.c);
     }
-    RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceDestroy(preference));
 
     RAFT_EXPECTS(algo_count > 0, "cuBLASLt did not return a matmul algorithm");
     constexpr int faulty_algorithm = 68;
