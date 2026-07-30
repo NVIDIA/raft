@@ -166,26 +166,20 @@ TEST(Raft, GemmPointerModeDeviceDefaults) { test_gemm_pointer_mode_device(false,
 TEST(Raft, GemmCublasLt136WorkaroundPredicate)
 {
   constexpr std::size_t affected_version = 130600;
-  constexpr int affected_device_major    = 12;
-  constexpr int affected_device_minor    = 1;
   const detail::matmul_key_t below_boundary{134217727, 1, 2, 16, 1, 134217727, true, true};
   const detail::matmul_key_t at_boundary{134217728, 1, 2, 16, 1, 134217728, true, true};
   const detail::matmul_key_t above_boundary{134217729, 1, 2, 16, 1, 134217729, true, true};
 
   const auto needs_workaround = [&](const auto& args) {
-    return detail::needs_cublaslt_13_6_workaround(
-      args, affected_version, affected_device_major, affected_device_minor);
+    return detail::needs_cublaslt_13_6_workaround(args, affected_version);
   };
 
   EXPECT_FALSE(needs_workaround(below_boundary));
   EXPECT_TRUE(needs_workaround(at_boundary));
   EXPECT_TRUE(needs_workaround(above_boundary));
-  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(
-    at_boundary, 130599, affected_device_major, affected_device_minor));
-  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(
-    at_boundary, 130601, affected_device_major, affected_device_minor));
-  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(
-    at_boundary, 130700, affected_device_major, affected_device_minor));
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130599));
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130601));
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130700));
 
   auto different_output    = at_boundary;
   different_output.trans_b = false;
@@ -204,18 +198,19 @@ TEST(Raft, GemmCublasLt136WorkaroundPredicate)
   EXPECT_FALSE(needs_workaround(invalid_lda));
 }
 
-TEST(Raft, GemmCublasLt136WorkaroundArchitectures)
+TEST(Raft, GemmCublasLt136WorkaroundHeuristicArgs)
 {
-  constexpr std::size_t affected_version = 130600;
-  const detail::matmul_key_t at_boundary{134217728, 1, 2, 16, 1, 134217728, true, true};
+  const detail::matmul_key_t transposed{134217728, 1, 2, 16, 1, 134217728, true, true};
+  const auto transposed_query = detail::get_cublaslt_13_6_heuristic_args(transposed);
+  EXPECT_EQ(transposed_query.m, transposed.m);
+  EXPECT_EQ(transposed_query.lda, transposed.lda + 1);
+  EXPECT_EQ(transposed_query.ldc, transposed.ldc);
 
-  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 10, 0));
-  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 12, 0));
-  EXPECT_TRUE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 12, 1));
-  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 7, 5));
-  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 8, 0));
-  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 8, 9));
-  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, affected_version, 9, 0));
+  const detail::matmul_key_t non_transposed{2, 1, 134217728, 2, 134217728, 2, false, false};
+  const auto non_transposed_query = detail::get_cublaslt_13_6_heuristic_args(non_transposed);
+  EXPECT_EQ(non_transposed_query.m, non_transposed.m);
+  EXPECT_EQ(non_transposed_query.lda, non_transposed.lda + 1);
+  EXPECT_EQ(non_transposed_query.ldc, non_transposed.ldc);
 }
 
 }  // namespace raft::linalg
