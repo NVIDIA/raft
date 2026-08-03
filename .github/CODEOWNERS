@@ -13,10 +13,11 @@ build.sh           @NVIDIA/raft-cmake-codeowners
 **/build.sh        @NVIDIA/raft-cmake-codeowners
 
 #CI code owners
-/.github/                @NVIDIA/adi-ci-codeowners
 /ci/                     @NVIDIA/adi-ci-codeowners
-/.shellcheckrc           @NVIDIA/adi-ci-codeowners
 /.coderabbit.yaml        @NVIDIA/adi-ci-codeowners
+/.github/                @NVIDIA/adi-ci-codeowners
+/.shellcheckrc           @NVIDIA/adi-ci-codeowners
+/.yamllint.yaml          @NVIDIA/adi-ci-codeowners
 
 #packaging code owners
 /.pre-commit-config.yaml @NVIDIA/adi-packaging-codeowners

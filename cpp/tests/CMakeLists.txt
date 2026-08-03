@@ -186,6 +186,8 @@ if(BUILD_TESTS)
     100
   )
 
+  ConfigureTest(NAME GEMM_LARGE_TEST PATH linalg/gemm_large.cpp GPUS 1 PERCENT 100)
+
   ConfigureTest(
     NAME
     MATRIX_TEST

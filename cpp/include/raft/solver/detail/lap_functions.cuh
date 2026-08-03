@@ -120,19 +120,14 @@ inline void initialReduction(raft::resources const& handle,
   detail::calculateRectangularDims(blocks_per_grid, threads_per_block, total_blocks, N, SP);
 
   kernel_rowReduction<<<blocks_per_grid, threads_per_block, 0, resource::get_cuda_stream(handle)>>>(
-    d_costs, d_vertices_dev.row_duals, SP, N, std::numeric_limits<weight_t>::max());
+    d_costs, d_vertices_dev.row_duals, SP, N);
 
   RAFT_CHECK_CUDA(resource::get_cuda_stream(handle));
   kernel_columnReduction<<<blocks_per_grid,
                            threads_per_block,
                            0,
                            resource::get_cuda_stream(handle)>>>(
-    d_costs,
-    d_vertices_dev.row_duals,
-    d_vertices_dev.col_duals,
-    SP,
-    N,
-    std::numeric_limits<weight_t>::max());
+    d_costs, d_vertices_dev.row_duals, d_vertices_dev.col_duals, SP, N);
   RAFT_CHECK_CUDA(resource::get_cuda_stream(handle));
 }
 
@@ -518,12 +513,7 @@ inline void dualUpdate(raft::resources const& handle,
 
   detail::calculateLinearDims(blocks_per_grid, threads_per_block, total_blocks, SP);
   kernel_dualUpdate_1<<<blocks_per_grid, threads_per_block, 0, resource::get_cuda_stream(handle)>>>(
-    sp_min_v.data(),
-    d_vertices_dev.col_slacks,
-    d_vertices_dev.col_covers,
-    SP,
-    N,
-    std::numeric_limits<weight_t>::max());
+    sp_min_v.data(), d_vertices_dev.col_slacks, d_vertices_dev.col_covers, SP, N);
 
   RAFT_CHECK_CUDA(resource::get_cuda_stream(handle));
 
@@ -539,7 +529,6 @@ inline void dualUpdate(raft::resources const& handle,
     d_col_data_dev.parents,
     SP,
     N,
-    std::numeric_limits<weight_t>::max(),
     epsilon);
 
   RAFT_CHECK_CUDA(resource::get_cuda_stream(handle));
