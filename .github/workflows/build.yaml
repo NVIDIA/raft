@@ -38,6 +38,7 @@ jobs:
   build-details:
     uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
   cpp-build:
+    needs: [build-details]
     permissions:
       actions: read
       contents: read
@@ -48,13 +49,14 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@main
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       branch: ${{ inputs.branch }}
       date: ${{ inputs.date }}
       node_type: cpu16
       script: ci/build_cpp.sh
       sha: ${{ inputs.sha }}
   python-build:
-    needs: [cpp-build]
+    needs: [build-details, cpp-build]
     permissions:
       actions: read
       contents: read
@@ -65,6 +67,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@main
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       branch: ${{ inputs.branch }}
       date: ${{ inputs.date }}
       script: ci/build_python.sh
@@ -107,6 +110,7 @@ jobs:
       script: "ci/build_docs.sh"
       sha: ${{ inputs.sha }}
   wheel-build-libraft:
+    needs: [build-details]
     permissions:
       actions: read
       contents: read
@@ -117,6 +121,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       branch: ${{ inputs.branch }}
       sha: ${{ inputs.sha }}
       node_type: cpu16
@@ -145,7 +150,7 @@ jobs:
       package-type: cpp
       publish-wheel-search-key: raft_wheel_cpp_libraft
   wheel-build-pylibraft:
-    needs: wheel-build-libraft
+    needs: [build-details, wheel-build-libraft]
     permissions:
       actions: read
       contents: read
@@ -156,6 +161,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       branch: ${{ inputs.branch }}
       sha: ${{ inputs.sha }}
       node_type: cpu8
@@ -184,7 +190,7 @@ jobs:
       package-type: python
       publish-wheel-search-key: raft_wheel_python_pylibraft
   wheel-build-raft-dask:
-    needs: wheel-build-libraft
+    needs: [build-details, wheel-build-libraft]
     permissions:
       actions: read
       contents: read
@@ -195,6 +201,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
     with:
       build_type: ${{ inputs.build_type || 'branch' }}
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       branch: ${{ inputs.branch }}
       sha: ${{ inputs.sha }}
       node_type: cpu8
