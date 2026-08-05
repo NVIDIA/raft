@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/core/host_container_policy.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/mdarray.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <cstdint>
@@ -224,7 +225,9 @@ auto make_host_scalar(raft::resources const& res, ElementType const& v)
   using policy_t = typename host_scalar<ElementType, IndexType>::container_policy_type;
   policy_t policy;
   auto scalar = host_scalar<ElementType, IndexType>{res, extents, policy};
-  scalar(0)   = v;
+  // No real storage in dry-run mode (as with every make_*_mdarray factory), so skip
+  // initialization: the backing buffer aliases the shared probe and must not be written.
+  if (!resource::get_dry_run_flag(res)) { scalar(0) = v; }
   return scalar;
 }
 
