@@ -10,6 +10,7 @@ permissions: {}
 jobs:
   pr-builder:
     needs:
+      - build-details
       - check-nightly-ci
       - changed-files
       - checks
