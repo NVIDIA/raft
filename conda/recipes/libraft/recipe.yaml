@@ -192,17 +192,15 @@ outputs:
         - cmake ${{ cmake_version }}
         - ${{ compiler("c") }}
       host:
-        - ${{ pin_subpackage("libraft-headers", exact=True) }}
+        - ${{ pin_subpackage("libraft-headers-only", exact=True) }}
         - cuda-version =${{ cuda_version }}
-        - cuda-profiler-api
         - libcublas-dev
         - libcurand-dev
         - libcusolver-dev
         - libcusparse-dev
       run:
-        - ${{ pin_subpackage("libraft-headers", exact=True) }}
+        - ${{ pin_subpackage("libraft-headers-only", exact=True) }}
         - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
-        - cuda-profiler-api
         - libcublas
         - libcurand
         - libcusolver
@@ -242,17 +240,15 @@ outputs:
         - cmake ${{ cmake_version }}
         - ${{ compiler("c") }}
       host:
-        - ${{ pin_subpackage("libraft-headers", exact=True) }}
+        - ${{ pin_subpackage("libraft-headers-only", exact=True) }}
         - cuda-version =${{ cuda_version }}
-        - cuda-profiler-api
         - libcublas-dev
         - libcurand-dev
         - libcusolver-dev
         - libcusparse-dev
       run:
-        - ${{ pin_subpackage("libraft-headers", exact=True) }}
+        - ${{ pin_subpackage("libraft-headers-only", exact=True) }}
         - ${{ pin_compatible("cuda-version", upper_bound="x", lower_bound="x") }}
-        - cuda-profiler-api
         - libcublas
         - libcurand
         - libcusolver
