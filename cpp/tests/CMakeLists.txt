@@ -101,6 +101,7 @@ if(BUILD_TESTS)
     core/operators_host.cpp
     core/handle.cpp
     core/interruptible.cu
+    core/logger.cu
     core/nvtx.cpp
     core/mdarray.cu
     core/mdbuffer.cu
