@@ -14,6 +14,7 @@
 #include <cooperative_groups.h>
 #include <cuda/iterator>
 #include <cuda/std/random>
+#include <thrust/random.h>
 
 namespace raft {
 namespace random {
@@ -226,8 +227,11 @@ void permute(IntType* perms,
              uint64_t key)
 {
   if (N <= 0 || (perms == nullptr && out == nullptr)) { return; }
-
-  cuda::shuffle_iterator shuffled_indices{cuda::random_bijection{N, cuda::std::minstd_rand{key}}};
+  thrust::random::ranlux48 rng(key);
+  cuda::shuffle_iterator shuffled_indices
+  {
+    cuda::random_bijection { N, rng }
+  }
 
   if (out == nullptr) {
     constexpr int ITEMS_PER_THREAD = 8;
