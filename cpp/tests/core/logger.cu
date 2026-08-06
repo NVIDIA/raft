@@ -14,9 +14,11 @@
 #define RAFT_LOG_ACTIVE_LEVEL RAPIDS_LOGGER_LOG_LEVEL_TRACE
 
 #include <raft/core/logger.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resources.hpp>
 #include <raft/util/cudart_utils.hpp>
 
-#include <cuda_runtime_api.h>
+#include <rmm/device_uvector.hpp>
 
 #include <gtest/gtest.h>
 
@@ -38,15 +40,15 @@ TEST(Logger, TraceVecDevicePointer)
 {
   // print_vector inspects the pointer with cudaPointerGetAttributes and copies
   // device memory back to the host, so cover that branch as well.
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+
   const std::vector<int> host_data{5, 6, 7, 8};
-  int* device_data = nullptr;
-  RAFT_CUDA_TRY(cudaMalloc(&device_data, host_data.size() * sizeof(int)));
-  RAFT_CUDA_TRY(cudaMemcpy(
-    device_data, host_data.data(), host_data.size() * sizeof(int), cudaMemcpyHostToDevice));
+  rmm::device_uvector<int> device_data(host_data.size(), stream);
+  raft::update_device(device_data.data(), host_data.data(), host_data.size(), stream);
+  resource::sync_stream(handle, stream);
 
-  ASSERT_NO_THROW(RAFT_LOG_TRACE_VEC(device_data, host_data.size()));
-
-  RAFT_CUDA_TRY(cudaFree(device_data));
+  ASSERT_NO_THROW(RAFT_LOG_TRACE_VEC(device_data.data(), device_data.size()));
 }
 
 }  // namespace raft
