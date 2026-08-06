@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -62,7 +62,9 @@ struct sparse_lanczos_svd_config {
    * convergence margin and orthogonality for clustered spectra, but increase sparse
    * matrix-vector work and memory use.
    *
-   * @note When nonzero, the value is clamped to [n_components, min(m, n) - 1].
+   * @note The value is clamped to [n_components + 10, min(m, n) - 1]. The extra
+   *       subspace slack beyond n_components is required for reliable convergence,
+   *       in particular to resolve repeated or tightly clustered singular values.
    */
   int ncv = 0;
 

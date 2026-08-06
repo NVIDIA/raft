@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # cython: profile=False
@@ -152,7 +152,10 @@ def svds(A, k=6, n_oversamples=10, n_power_iters=2,
         ncv (int or None): Number of Lanczos vectors. Used only when
             ``solver="lanczos"``. If ``None``, a default is selected. Larger
             values can improve convergence margin and orthogonality for
-            difficult spectra, but increase sparse matrix-vector work.
+            difficult spectra, but increase sparse matrix-vector work. The
+            value is clamped to ``[k + 10, min(A.shape) - 1]``; the extra
+            subspace slack is required for reliable convergence, in
+            particular with repeated or tightly clustered singular values.
         tol (float): Lanczos residual tolerance. Used only when
             ``solver="lanczos"``.
         maxiter (int or None): Maximum Lanczos restart iterations. Used only

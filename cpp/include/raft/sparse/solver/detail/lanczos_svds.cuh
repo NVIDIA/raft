@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,11 +9,15 @@
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/nvtx.hpp>
-#include <raft/core/resource/cublas_handle.hpp>
+#include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
-#include <raft/linalg/detail/cublas_wrappers.hpp>
+#include <raft/linalg/axpy.cuh>
+#include <raft/linalg/dot.cuh>
 #include <raft/linalg/gemm.cuh>
+#include <raft/linalg/gemv.cuh>
+#include <raft/linalg/multiply.cuh>
+#include <raft/linalg/norm.cuh>
 #include <raft/linalg/svd.cuh>
 #include <raft/linalg/transpose.cuh>
 #include <raft/random/rng.cuh>
@@ -22,8 +26,11 @@
 #include <raft/sparse/solver/solver_types.hpp>
 #include <raft/util/cudart_utils.hpp>
 
+#include <cublas_v2.h>
+
 #include <algorithm>
 #include <cmath>
+#include <limits>
 #include <numeric>
 #include <optional>
 #include <random>
@@ -41,10 +48,16 @@ template <typename ValueTypeT>
 ValueTypeT vector_norm(raft::resources const& handle, ValueTypeT const* x, int n)
 {
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::vector_norm");
-  auto cublas_handle = resource::get_cublas_handle(handle);
-  auto stream        = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle);
+  auto d_norm = raft::make_device_vector<ValueTypeT, uint32_t>(handle, 1);
+  raft::linalg::norm<raft::linalg::L2Norm, raft::Apply::ALONG_COLUMNS>(
+    handle,
+    raft::make_device_matrix_view<const ValueTypeT, uint32_t, raft::col_major>(
+      x, static_cast<uint32_t>(n), 1),
+    d_norm.view(),
+    raft::sqrt_op{});
   ValueTypeT result{};
-  RAFT_CUBLAS_TRY(raft::linalg::detail::cublasnrm2(cublas_handle, n, x, 1, &result, stream));
+  raft::update_host(&result, d_norm.data_handle(), 1, stream);
   resource::sync_stream(handle, stream);
   return result;
 }
@@ -53,9 +66,11 @@ template <typename ValueTypeT>
 void scale_vector(raft::resources const& handle, ValueTypeT* x, int n, ValueTypeT alpha)
 {
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::scale_vector");
-  auto cublas_handle = resource::get_cublas_handle(handle);
-  auto stream        = resource::get_cuda_stream(handle);
-  RAFT_CUBLAS_TRY(raft::linalg::detail::cublasscal(cublas_handle, n, &alpha, x, 1, stream));
+  raft::linalg::multiply_scalar(
+    handle,
+    raft::make_device_vector_view<const ValueTypeT, uint32_t>(x, static_cast<uint32_t>(n)),
+    raft::make_device_vector_view<ValueTypeT, uint32_t>(x, static_cast<uint32_t>(n)),
+    raft::make_host_scalar_view<const ValueTypeT>(&alpha));
 }
 
 template <typename ValueTypeT>
@@ -63,9 +78,11 @@ void axpy(
   raft::resources const& handle, int n, ValueTypeT alpha, ValueTypeT const* x, ValueTypeT* y)
 {
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::axpy");
-  auto cublas_handle = resource::get_cublas_handle(handle);
-  auto stream        = resource::get_cuda_stream(handle);
-  RAFT_CUBLAS_TRY(raft::linalg::detail::cublasaxpy(cublas_handle, n, &alpha, x, 1, y, 1, stream));
+  raft::linalg::axpy(
+    handle,
+    raft::make_host_scalar_view<const ValueTypeT>(&alpha),
+    raft::make_device_vector_view<const ValueTypeT, uint32_t>(x, static_cast<uint32_t>(n)),
+    raft::make_device_vector_view<ValueTypeT, uint32_t>(y, static_cast<uint32_t>(n)));
 }
 
 template <typename ValueTypeT>
@@ -79,8 +96,7 @@ void cgs2_orthogonalize(raft::resources const& handle,
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::cgs2_orthogonalize");
   if (n_valid <= 0) { return; }
 
-  auto cublas_handle = resource::get_cublas_handle(handle);
-  auto stream        = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle);
 
   ValueTypeT one     = ValueTypeT(1);
   ValueTypeT zero    = ValueTypeT(0);
@@ -88,35 +104,12 @@ void cgs2_orthogonalize(raft::resources const& handle,
   for (int pass = 0; pass < 2; ++pass) {
     {
       common::nvtx::range<common::nvtx::domain::raft> project_scope("lanczos_svds::cgs2_project");
-      RAFT_CUBLAS_TRY(raft::linalg::detail::cublasgemv(cublas_handle,
-                                                       CUBLAS_OP_T,
-                                                       n_rows,
-                                                       n_valid,
-                                                       &one,
-                                                       basis,
-                                                       n_rows,
-                                                       target,
-                                                       1,
-                                                       &zero,
-                                                       coeffs,
-                                                       1,
-                                                       stream));
+      raft::linalg::gemv(handle, basis, n_rows, n_valid, target, coeffs, true, one, zero, stream);
     }
     {
       common::nvtx::range<common::nvtx::domain::raft> subtract_scope("lanczos_svds::cgs2_subtract");
-      RAFT_CUBLAS_TRY(raft::linalg::detail::cublasgemv(cublas_handle,
-                                                       CUBLAS_OP_N,
-                                                       n_rows,
-                                                       n_valid,
-                                                       &neg_one,
-                                                       basis,
-                                                       n_rows,
-                                                       coeffs,
-                                                       1,
-                                                       &one,
-                                                       target,
-                                                       1,
-                                                       stream));
+      raft::linalg::gemv(
+        handle, basis, n_rows, n_valid, coeffs, target, false, neg_one, one, stream);
     }
   }
 }
@@ -132,18 +125,21 @@ void mgs2_orthogonalize(raft::resources const& handle,
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::mgs2_orthogonalize");
   if (n_valid <= 0) { return; }
 
-  auto cublas_handle = resource::get_cublas_handle(handle);
-  auto stream        = resource::get_cuda_stream(handle);
-
-  raft::linalg::detail::cublas_device_pointer_mode<true> pointer_mode_guard(cublas_handle);
+  auto stream    = resource::get_cuda_stream(handle);
+  auto target_in = raft::make_device_vector_view<const ValueTypeT, uint32_t>(
+    target, static_cast<uint32_t>(n_rows));
+  auto target_out =
+    raft::make_device_vector_view<ValueTypeT, uint32_t>(target, static_cast<uint32_t>(n_rows));
   for (int pass = 0; pass < 2; ++pass) {
     for (int j = 0; j < n_valid; ++j) {
       auto const* q_j = basis + static_cast<std::size_t>(j) * n_rows;
       auto* coeff     = coeffs + j;
+      auto q_j_view   = raft::make_device_vector_view<const ValueTypeT, uint32_t>(
+        q_j, static_cast<uint32_t>(n_rows));
       {
         common::nvtx::range<common::nvtx::domain::raft> dot_scope("lanczos_svds::mgs2_dot");
-        RAFT_CUBLAS_TRY(
-          raft::linalg::detail::cublasdot(cublas_handle, n_rows, q_j, 1, target, 1, coeff, stream));
+        raft::linalg::dot(
+          handle, q_j_view, target_in, raft::make_device_scalar_view<ValueTypeT>(coeff));
       }
       {
         common::nvtx::range<common::nvtx::domain::raft> negate_scope("lanczos_svds::mgs2_negate");
@@ -153,8 +149,8 @@ void mgs2_orthogonalize(raft::resources const& handle,
       {
         common::nvtx::range<common::nvtx::domain::raft> subtract_scope(
           "lanczos_svds::mgs2_subtract");
-        RAFT_CUBLAS_TRY(raft::linalg::detail::cublasaxpy(
-          cublas_handle, n_rows, coeff, q_j, 1, target, 1, stream));
+        raft::linalg::axpy(
+          handle, raft::make_device_scalar_view<const ValueTypeT>(coeff), q_j_view, target_out);
       }
     }
   }
@@ -232,6 +228,18 @@ void build_bidiagonal_matrix(raft::resources const& handle,
   raft::update_device(B.data_handle(), h_B.data(), static_cast<std::size_t>(ncv) * ncv, stream);
 }
 
+template <typename ValueTypeT>
+ValueTypeT breakdown_threshold(ValueTypeT scale)
+{
+  // Scale- and precision-aware breakdown criterion: a candidate Lanczos vector counts as
+  // numerically zero when its norm is negligible relative to `scale`, the largest
+  // bidiagonal entry produced so far (a running lower bound on ||A||_2). Until scale
+  // information exists, only norms below the smallest normal number are treated as zero,
+  // so the solver behaves identically for A and c * A for any c > 0.
+  return std::max(std::numeric_limits<ValueTypeT>::epsilon() * scale,
+                  std::numeric_limits<ValueTypeT>::min());
+}
+
 template <typename ValueTypeT, typename OperatorT>
 void lanczos_bidiagonalize(raft::resources const& handle,
                            OperatorT const& op,
@@ -247,10 +255,11 @@ void lanczos_bidiagonalize(raft::resources const& handle,
                            std::vector<ValueTypeT>& betas)
 {
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::bidiagonalize");
-  int m          = op.rows();
-  int n          = op.cols();
-  ValueTypeT eps = ValueTypeT(1e-9);
-  auto stream    = resource::get_cuda_stream(handle);
+  int m       = op.rows();
+  int n       = op.cols();
+  auto stream = resource::get_cuda_stream(handle);
+  // Running estimate of ||A||_2 used to scale the breakdown checks below.
+  ValueTypeT scale = ValueTypeT(0);
 
   alphas.assign(ncv, ValueTypeT(0));
   betas.assign(ncv + 1, ValueTypeT(0));
@@ -260,6 +269,8 @@ void lanczos_bidiagonalize(raft::resources const& handle,
   orthogonalize(handle, v0, V_full.data_handle(), n, n_locked, ortho_coeffs, use_mgs2);
 
   bool used_random = false;
+  // v0 is unit-scale by construction (a normalized restart vector or a standard normal
+  // vector), so its breakdown check is relative to unit scale.
   normalize_or_randomize(handle,
                          rng_state,
                          v0,
@@ -267,7 +278,7 @@ void lanczos_bidiagonalize(raft::resources const& handle,
                          V_full.data_handle(),
                          n_locked,
                          ortho_coeffs,
-                         eps,
+                         breakdown_threshold(ValueTypeT(1)),
                          use_mgs2,
                          &used_random);
 
@@ -299,10 +310,11 @@ void lanczos_bidiagonalize(raft::resources const& handle,
                                              U_full.data_handle(),
                                              idx_u,
                                              ortho_coeffs,
-                                             eps,
+                                             breakdown_threshold(scale),
                                              use_mgs2,
                                              &used_random);
     alphas[i]       = used_random ? ValueTypeT(0) : alpha_norm;
+    scale           = std::max(scale, alphas[i]);
 
     auto* v_next = V_full.data_handle() + static_cast<std::size_t>(idx_v + 1) * n;
     {
@@ -324,10 +336,11 @@ void lanczos_bidiagonalize(raft::resources const& handle,
                                            V_full.data_handle(),
                                            idx_v + 1,
                                            ortho_coeffs,
-                                           eps,
+                                           breakdown_threshold(scale),
                                            use_mgs2,
                                            &used_random);
     betas[i + 1]  = used_random ? ValueTypeT(0) : beta_nrm;
+    scale         = std::max(scale, betas[i + 1]);
   }
 }
 
@@ -448,23 +461,17 @@ void compute_restart_vector(raft::resources const& handle,
     raft::make_device_vector<ValueTypeT, uint32_t>(handle, static_cast<uint32_t>(ncv));
   raft::update_device(d_coeffs.data_handle(), coeffs.data(), ncv, stream);
 
-  auto cublas_handle   = resource::get_cublas_handle(handle);
-  ValueTypeT const one = ValueTypeT(1);
-  ValueTypeT zero      = ValueTypeT(0);
-  auto* V_segment      = V_full.data_handle() + static_cast<std::size_t>(n_locked) * n;
-  RAFT_CUBLAS_TRY(raft::linalg::detail::cublasgemv(cublas_handle,
-                                                   CUBLAS_OP_N,
-                                                   n,
-                                                   ncv,
-                                                   &one,
-                                                   V_segment,
-                                                   n,
-                                                   d_coeffs.data_handle(),
-                                                   1,
-                                                   &zero,
-                                                   v_start,
-                                                   1,
-                                                   stream));
+  auto const* V_segment = V_full.data_handle() + static_cast<std::size_t>(n_locked) * n;
+  raft::linalg::gemv(handle,
+                     V_segment,
+                     n,
+                     ncv,
+                     d_coeffs.data_handle(),
+                     v_start,
+                     false,
+                     ValueTypeT(1),
+                     ValueTypeT(0),
+                     stream);
 
   auto nrm = vector_norm(handle, v_start, n);
   if (nrm > ValueTypeT(0)) { scale_vector(handle, v_start, n, ValueTypeT(1) / nrm); }
@@ -558,12 +565,18 @@ void sparse_lanczos_svd(
   int ncv = config.ncv;
   if (ncv <= 0) {
     if (m > 100000) {
-      ncv = (k < 75) ? (22 * k + 9) / 10 : static_cast<int>(3.9 * k);
+      ncv = (k < 75) ? static_cast<int>(2.5 * k) : static_cast<int>(3.9 * k);
     } else {
       ncv = std::max(3 * k, 50);
     }
   }
-  ncv = std::max(ncv, k);
+  // Subspace slack beyond n_components is required for reliable convergence: without it
+  // the single-vector restart loses Krylov diversity and a smaller singular value can be
+  // locked in place of a larger not-yet-converged one (silently wrong results), and
+  // repeated singular values need breakdown + random-restart room within one
+  // factorization to recover their multiplicity. Matches the rapids-singlecell
+  // reference implementation.
+  ncv = std::max(ncv, k + 10);
   ncv = std::min(ncv, min_dim - 1);
   RAFT_EXPECTS(ncv >= k, "ncv must be at least n_components after clamping");
 
@@ -579,6 +592,22 @@ void sparse_lanczos_svd(
   auto ortho_coeffs =
     raft::make_device_vector<ValueTypeT, uint32_t>(handle, static_cast<uint32_t>(total_capacity));
   auto v_start = raft::make_device_vector<ValueTypeT, uint32_t>(handle, static_cast<uint32_t>(n));
+
+  // Zero the basis buffers. When more than one Ritz pair is locked in a single restart,
+  // the restart window V_full[:, n_locked : n_locked + ncv] extends (num_found - 1)
+  // columns past anything the bidiagonalization wrote, so those columns are read before
+  // ever being written. The reference implementation allocates with cp.zeros and is
+  // therefore deterministic; without this memset the restart vector would depend on
+  // whatever the allocator handed back, which is non-reproducible under a pooled memory
+  // resource and can be Inf/NaN if the recycled bytes happen to form one.
+  RAFT_CUDA_TRY(cudaMemsetAsync(U_full.data_handle(),
+                                0,
+                                sizeof(ValueTypeT) * static_cast<std::size_t>(m) * total_capacity,
+                                resource::get_cuda_stream(handle)));
+  RAFT_CUDA_TRY(cudaMemsetAsync(V_full.data_handle(),
+                                0,
+                                sizeof(ValueTypeT) * static_cast<std::size_t>(n) * total_capacity,
+                                resource::get_cuda_stream(handle)));
 
   {
     common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::initial_random_vector");
@@ -662,7 +691,7 @@ void sparse_lanczos_svd(
       for (int i = 0; i < check_components; ++i) {
         auto residual = betas[active_ncv] *
                         std::abs(h_P[static_cast<std::size_t>(i) * active_ncv + active_ncv - 1]);
-        if (residual < config.tolerance * max_s) { selected.push_back(i); }
+        if (residual <= config.tolerance * max_s) { selected.push_back(i); }
       }
     }
     if (static_cast<int>(selected.size()) > remaining) { selected.resize(remaining); }

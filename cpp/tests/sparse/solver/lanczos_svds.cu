@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/core/error.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/linalg/gemm.cuh>
 #include <raft/sparse/solver/lanczos_svds.cuh>
 
 #include <gtest/gtest.h>
@@ -390,9 +391,16 @@ TEST(LanczosHardeningD, RankDeficientTall)
 
 TEST(LanczosHardeningF, ReportsNonConvergence)
 {
-  EXPECT_THROW(run_diagonal_hardening_case<float>(
-                 64, 40, {10.0, 9.0, 8.0, 7.0, 6.0, 5.0}, 4, 6, 1, 0.0f, 2e-3, 2e-3, 2e-2),
-               raft::logic_error);
+  // Full spectrum of distinct values: the Krylov factorization cannot break down and
+  // decouple within one restart, so with tol = 0 a single iteration must report
+  // non-convergence.
+  std::vector<double> diagonal(40);
+  for (int i = 0; i < 40; ++i) {
+    diagonal[i] = 40.0 - i;
+  }
+  EXPECT_THROW(
+    run_diagonal_hardening_case<float>(64, 40, diagonal, 4, 6, 1, 0.0f, 2e-3, 2e-3, 2e-2),
+    raft::logic_error);
 }
 
 template <typename ValueType>
@@ -540,5 +548,124 @@ TEST(LanczosHardeningF, RotatedClusteredSpectrumMgs2)
 }
 
 TEST(LanczosHardeningD, RotatedClusteredSpectrum) { run_rotated_block_hardening_case<double>(); }
+
+/**
+ * @brief Minimal non-CSR operator exercising the generic `OperatorT` overload: a dense
+ * col-major matrix applied via raft::linalg::gemm.
+ */
+template <typename ValueType>
+struct dense_linear_operator {
+  raft::device_matrix_view<const ValueType, uint32_t, raft::col_major> A;
+
+  int rows() const { return static_cast<int>(A.extent(0)); }
+  int cols() const { return static_cast<int>(A.extent(1)); }
+
+  void apply(raft::resources const& handle,
+             raft::device_matrix_view<const ValueType, uint32_t, raft::col_major> X,
+             raft::device_matrix_view<ValueType, uint32_t, raft::col_major> Y) const
+  {
+    raft::linalg::gemm(handle,
+                       A.data_handle(),
+                       rows(),
+                       cols(),
+                       X.data_handle(),
+                       Y.data_handle(),
+                       rows(),
+                       static_cast<int>(X.extent(1)),
+                       CUBLAS_OP_N,
+                       CUBLAS_OP_N,
+                       ValueType(1),
+                       ValueType(0),
+                       resource::get_cuda_stream(handle));
+  }
+
+  void apply_transpose(raft::resources const& handle,
+                       raft::device_matrix_view<const ValueType, uint32_t, raft::col_major> X,
+                       raft::device_matrix_view<ValueType, uint32_t, raft::col_major> Z) const
+  {
+    raft::linalg::gemm(handle,
+                       A.data_handle(),
+                       rows(),
+                       cols(),
+                       X.data_handle(),
+                       Z.data_handle(),
+                       cols(),
+                       static_cast<int>(X.extent(1)),
+                       CUBLAS_OP_T,
+                       CUBLAS_OP_N,
+                       ValueType(1),
+                       ValueType(0),
+                       resource::get_cuda_stream(handle));
+  }
+};
+
+template <typename ValueType>
+void run_generic_operator_case()
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+
+  constexpr int m = 16;
+  constexpr int n = 10;
+  constexpr int k = 3;
+
+  std::vector<double> diagonal = {10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 4.0, 3.0, 2.0, 1.0};
+  std::vector<ValueType> h_A(static_cast<std::size_t>(m) * n, ValueType(0));
+  for (int i = 0; i < n; ++i) {
+    h_A[static_cast<std::size_t>(i) * m + i] = static_cast<ValueType>(diagonal[i]);
+  }
+
+  auto d_A = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, n);
+  raft::update_device(d_A.data_handle(), h_A.data(), h_A.size(), stream);
+
+  dense_linear_operator<ValueType> op{
+    raft::make_device_matrix_view<const ValueType, uint32_t, raft::col_major>(
+      d_A.data_handle(), m, n)};
+
+  sparse_lanczos_svd_config<ValueType> config;
+  config.n_components   = k;
+  config.ncv            = 8;
+  config.tolerance      = std::is_same_v<ValueType, float> ? ValueType(1e-6) : ValueType(1e-12);
+  config.max_iterations = 40;
+  config.seed           = 42;
+
+  auto S  = raft::make_device_vector<ValueType, uint32_t>(handle, k);
+  auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
+  auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
+
+  sparse_lanczos_svd(handle, config, op, S.view(), U.view(), Vt.view());
+
+  std::vector<ValueType> h_S(k);
+  std::vector<ValueType> h_U(static_cast<std::size_t>(m) * k);
+  std::vector<ValueType> h_Vt(static_cast<std::size_t>(k) * n);
+  raft::update_host(h_S.data(), S.data_handle(), k, stream);
+  raft::update_host(h_U.data(), U.data_handle(), h_U.size(), stream);
+  raft::update_host(h_Vt.data(), Vt.data_handle(), h_Vt.size(), stream);
+  resource::sync_stream(handle, stream);
+
+  double sv_tol     = std::is_same_v<ValueType, float> ? 2e-3 : 1e-8;
+  double orthog_tol = std::is_same_v<ValueType, float> ? 2e-4 : 1e-10;
+  for (int i = 0; i < k; ++i) {
+    ASSERT_NEAR(static_cast<double>(h_S[i]), diagonal[i], sv_tol);
+  }
+  check_orthonormal_columns(h_U, m, k, orthog_tol);
+  check_orthonormal_vt_rows(h_Vt, k, n, orthog_tol);
+
+  // The generic overload also supports skipping U/Vt via std::nullopt; the singular
+  // values must match the full computation.
+  auto S_only = raft::make_device_vector<ValueType, uint32_t>(handle, k);
+  sparse_lanczos_svd(handle, config, op, S_only.view(), std::nullopt, std::nullopt);
+
+  std::vector<ValueType> h_S_only(k);
+  raft::update_host(h_S_only.data(), S_only.data_handle(), k, stream);
+  resource::sync_stream(handle, stream);
+  for (int i = 0; i < k; ++i) {
+    ASSERT_NEAR(static_cast<double>(h_S_only[i]), static_cast<double>(h_S[i]), sv_tol);
+  }
+}
+
+TEST(LanczosGenericOperatorF, DenseOperator) { run_generic_operator_case<float>(); }
+
+TEST(LanczosGenericOperatorD, DenseOperator) { run_generic_operator_case<double>(); }
 
 }  // namespace raft::sparse::solver

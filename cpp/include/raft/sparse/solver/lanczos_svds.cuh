@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -41,6 +41,12 @@ namespace raft::sparse::solver {
  *   - `void apply(handle, X, Y) const` computes `Y = A @ X`
  *   - `void apply_transpose(handle, X, Z) const` computes `Z = A^T @ X`
  *
+ * where `X`, `Y`, `Z` are `raft::device_matrix_view<..., uint32_t, raft::col_major>`.
+ *
+ * @note This solver intentionally uses 32-bit indexing, matching sparse_randomized_svd:
+ *       the operator reports its shape as `int` and all device views use `uint32_t`
+ *       extents, so matrix dimensions must fit in a signed 32-bit integer (m, n < 2^31).
+ *
  * @tparam ValueTypeT Data type (float or double)
  * @tparam OperatorT Linear operator type satisfying the interface above
  *
@@ -71,6 +77,10 @@ void sparse_lanczos_svd(
  * @brief Compute truncated SVD of a sparse CSR matrix using Lanczos bidiagonalization.
  *
  * Convenience overload that accepts a CSR matrix view directly.
+ *
+ * @note Like the generic overload, this API uses 32-bit indexing: the CSR matrix must use
+ *       `int` indptr/indices (a cuSPARSE SpMM requirement) and matrix dimensions must fit
+ *       in a signed 32-bit integer (m, n < 2^31).
  *
  * @tparam ValueTypeT Data type (float or double)
  * @tparam NNZTypeT Type for number of non-zeros

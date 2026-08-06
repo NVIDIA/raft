@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -380,8 +380,9 @@ class TestSvds:
 
     def test_lanczos_non_convergence_raises(self):
         """Lanczos reports non-convergence instead of returning forced Ritz vectors."""
-        diag = cupy.zeros(40, dtype=numpy.float32)
-        diag[:6] = cupy.asarray([10, 9, 8, 7, 6, 5], dtype=diag.dtype)
+        # Full spectrum of distinct values: the factorization cannot break down and
+        # decouple within one restart, so tol=0 cannot be reached in one iteration.
+        diag = cupy.arange(40, 0, -1).astype(numpy.float32)
         A = sparse.diags(diag, offsets=0, shape=(64, 40), format="csr")
 
         with pytest.raises(RuntimeError, match="failed to converge"):
