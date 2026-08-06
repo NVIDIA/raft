@@ -14,11 +14,35 @@
 #include <cooperative_groups.h>
 #include <cuda/iterator>
 #include <cuda/std/random>
-#include <thrust/random.h>
 
 namespace raft {
 namespace random {
 namespace detail {
+
+// SplitMix64 reference: https://prng.di.unimi.it/splitmix64.c
+struct splitmix64 {
+  using result_type = uint64_t;
+
+  RAFT_INLINE_FUNCTION explicit splitmix64(result_type seed) : state_{seed} {}
+
+  [[nodiscard]] RAFT_INLINE_FUNCTION static constexpr result_type min() noexcept { return 0; }
+
+  [[nodiscard]] RAFT_INLINE_FUNCTION static constexpr result_type max() noexcept
+  {
+    return ~result_type{0};
+  }
+
+  RAFT_INLINE_FUNCTION result_type operator()() noexcept
+  {
+    auto z = (state_ += 0x9e3779b97f4a7c15ULL);
+    z      = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    z      = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+    return z ^ (z >> 31);
+  }
+
+ private:
+  result_type state_;
+};
 
 /**
  * @brief Generate permutation indices without copying input data.
@@ -227,11 +251,8 @@ void permute(IntType* perms,
              uint64_t key)
 {
   if (N <= 0 || (perms == nullptr && out == nullptr)) { return; }
-  thrust::random::ranlux48 rng(key);
-  cuda::shuffle_iterator shuffled_indices
-  {
-    cuda::random_bijection { N, rng }
-  }
+  splitmix64 rng(key);
+  cuda::shuffle_iterator shuffled_indices{cuda::random_bijection{N, rng}};
 
   if (out == nullptr) {
     constexpr int ITEMS_PER_THREAD = 8;
