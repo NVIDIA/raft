@@ -225,7 +225,7 @@ void permute(IntType* perms,
              cudaStream_t stream,
              uint64_t key)
 {
-  if (N <= 0) { return; }
+  if (N <= 0 || (perms == nullptr && out == nullptr)) { return; }
 
   cuda::shuffle_iterator shuffled_indices{cuda::random_bijection{N, cuda::std::minstd_rand{key}}};
 
