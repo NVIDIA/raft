@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,7 +13,6 @@
 #include <raft/core/resources.hpp>
 #include <raft/linalg/add.cuh>
 #include <raft/linalg/gemm.cuh>
-#include <raft/linalg/init.cuh>
 #include <raft/linalg/qr.cuh>
 #include <raft/linalg/transpose.cuh>
 #include <raft/matrix/diagonal.cuh>
@@ -29,7 +28,14 @@ namespace raft {
 namespace random {
 namespace detail {
 
-/* Internal auxiliary function to help build the singular profile */
+/**
+ * @brief Build the singular-value profile for a low-rank regression matrix.
+ *
+ * @param[out] out Generated singular values
+ * @param[in] n Number of singular values
+ * @param[in] tail_strength Relative strength of the low-rank tail
+ * @param[in] rank Effective matrix rank
+ */
 template <typename DataT, typename IdxT>
 RAFT_KERNEL _singular_profile_kernel(DataT* out, IdxT n, DataT tail_strength, IdxT rank)
 {
@@ -42,7 +48,18 @@ RAFT_KERNEL _singular_profile_kernel(DataT* out, IdxT n, DataT tail_strength, Id
   }
 }
 
-/* Internal auxiliary function to generate a low-rank matrix */
+/**
+ * @brief Generate a low-rank matrix with a decaying singular-value profile.
+ *
+ * @param[in] handle RAFT handle containing execution resources
+ * @param[out] out Generated row-major matrix
+ * @param[in] n_rows Number of matrix rows
+ * @param[in] n_cols Number of matrix columns
+ * @param[in] effective_rank Approximate rank of the generated matrix
+ * @param[in] tail_strength Relative strength of the low-rank tail
+ * @param[in,out] r Random number generator state
+ * @param[in] stream CUDA stream on which to execute
+ */
 template <typename DataT, typename IdxT>
 static void _make_low_rank_matrix(raft::resources const& handle,
                                   DataT* out,
@@ -116,8 +133,15 @@ static void _make_low_rank_matrix(raft::resources const& handle,
   raft::linalg::transpose(handle, temp_out.data(), out, n_rows, n_cols, stream);
 }
 
-/* Internal auxiliary function to permute rows in the given matrix according
- * to a given permutation vector */
+/**
+ * @brief Gather matrix rows according to a permutation vector.
+ *
+ * @param[out] out Permuted output matrix
+ * @param[in] in Input matrix
+ * @param[in] perms Input row index for each output row
+ * @param[in] n_rows Number of matrix rows
+ * @param[in] n_cols Number of matrix columns
+ */
 template <typename DataT, typename IdxT>
 RAFT_KERNEL _gather2d_kernel(
   DataT* out, const DataT* in, const IdxT* perms, IdxT n_rows, IdxT n_cols)
@@ -134,6 +158,12 @@ RAFT_KERNEL _gather2d_kernel(
   }
 }
 
+/**
+ * @brief Generate a regression data set and optionally shuffle its rows and features.
+ *
+ * When shuffling is enabled, the input seed deterministically selects distinct
+ * permutations for samples and features.
+ */
 template <typename DataT, typename IdxT>
 void make_regression_caller(raft::resources const& handle,
                             DataT* out,
@@ -246,9 +276,15 @@ void make_regression_caller(raft::resources const& handle,
 
     constexpr IdxT Nthreads = 256;
 
+    // Derive two distinct permutation keys from the seed so the shuffle stays
+    // reproducible for a given seed while the samples and features get
+    // independent permutations.
+    const uint64_t samples_key  = seed;
+    const uint64_t features_key = seed ^ 0x9e3779b97f4a7c15ULL;
+
     // Shuffle the samples from out to tmp_out
     raft::random::permute<DataT, IdxT, IdxT>(
-      perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream);
+      perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream, samples_key);
     IdxT nblks_rows = raft::ceildiv<IdxT>(n_rows, Nthreads);
     _gather2d_kernel<<<nblks_rows, Nthreads, 0, stream>>>(
       values, _values, perms_samples.data(), n_rows, n_targets);
@@ -256,7 +292,7 @@ void make_regression_caller(raft::resources const& handle,
 
     // Shuffle the features from tmp_out to out
     raft::random::permute<DataT, IdxT, IdxT>(
-      perms_features.data(), out, tmp_out.data(), n_rows, n_cols, false, stream);
+      perms_features.data(), out, tmp_out.data(), n_rows, n_cols, false, stream, features_key);
 
     // Shuffle the coefficients accordingly
     if (coef != nullptr) {

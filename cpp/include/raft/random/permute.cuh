@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -74,6 +74,8 @@ using perms_out_view_t = typename perms_out_view<T, InputOutputValueType, IdxTyp
  * @param[out] out If provided, the output matrix, containing the
  *   permuted rows of the input matrix `in`.  (Not providing this
  *   is only useful if you provide `permsOut`.)
+ * @param[in] key 64-bit key that selects the permutation. The same key
+ *   (with the same `in.extent(0)`) always produces the same permutation.
  *
  * @pre If `permsOut.has_value()` is `true`,
  *   then `(*permsOut).extent(0) == in.extent(0)` is `true`.
@@ -90,7 +92,8 @@ template <typename InputOutputValueType, typename IntType, typename IdxType, typ
 void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              std::optional<raft::device_vector_view<IntType, IdxType>> permsOut,
-             std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out)
+             std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out,
+             uint64_t key)
 {
   static_assert(std::is_integral_v<IntType>,
                 "permute: The type of each element "
@@ -126,13 +129,26 @@ void permute(raft::resources const& handle,
                                                             D,
                                                             N,
                                                             is_row_major,
-                                                            resource::get_cuda_stream(handle));
+                                                            resource::get_cuda_stream(handle),
+                                                            key);
   }
 }
 
 /**
  * @brief Overload of `permute` that compiles if users pass in `std::nullopt`
  *   for either or both of `permsOut` and `out`.
+ *
+ * @tparam InputOutputValueType Input and output matrix element type
+ * @tparam IdxType Matrix index and extent type
+ * @tparam Layout Matrix layout type
+ * @tparam PermsOutType Optional permutation view type or `std::nullopt_t`
+ * @tparam OutType Optional output matrix view type or `std::nullopt_t`
+ *
+ * @param[in] handle RAFT handle containing the CUDA stream
+ * @param[in] in Input matrix
+ * @param[out] permsOut Optional generated permutation indices
+ * @param[out] out Optional permuted output matrix
+ * @param[in] key Key that selects the permutation
  */
 template <typename InputOutputValueType,
           typename IdxType,
@@ -142,7 +158,8 @@ template <typename InputOutputValueType,
 void permute(raft::resources const& handle,
              raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
              PermsOutType&& permsOut,
-             OutType&& out)
+             OutType&& out,
+             uint64_t key)
 {
   // If PermsOutType is std::optional<device_vector_view<T, IdxType>>
   // for some T, then that type T need not be related to any of the
@@ -159,7 +176,7 @@ void permute(raft::resources const& handle,
 
   std::optional<perms_out_view_type> permsOut_arg = std::forward<PermsOutType>(permsOut);
   std::optional<out_view_type> out_arg            = std::forward<OutType>(out);
-  permute(handle, in, permsOut_arg, out_arg);
+  permute(handle, in, permsOut_arg, out_arg, key);
 }
 
 /** @} */
@@ -182,6 +199,8 @@ void permute(raft::resources const& handle,
  * @param[in] rowMajor true if the matrices are row major,
  *   false if they are column major
  * @param[in] stream CUDA stream on which to run
+ * @param[in] key 64-bit key that selects the permutation. The same key
+ *   (with the same @c N) always produces the same permutation.
  */
 template <typename Type, typename IntType = int, typename IdxType = int, int TPB = 256>
 void permute(IntType* perms,
@@ -190,9 +209,82 @@ void permute(IntType* perms,
              IntType D,
              IntType N,
              bool rowMajor,
+             cudaStream_t stream,
+             uint64_t key)
+{
+  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream, key);
+}
+
+#define KEYLESS_PERMUTE_DEPRECATED_WARNING                            \
+  "permute() now requires an explicit key (uint64_t). "               \
+  "This deprecated shim uses rand() to preserve per-call variation. " \
+  "Pass an explicit key to make the permutation reproducible. "       \
+  "This overload will be removed in a future release."
+
+/**
+ * @brief Deprecated keyless mdspan overload that preserves per-call variation.
+ *
+ * This overload draws a key from `rand()`. Use the keyed overload when
+ * reproducibility or explicit control of the permutation is required.
+ *
+ * @deprecated Use the overload that takes an explicit @c uint64_t key.
+ */
+template <typename InputOutputValueType, typename IntType, typename IdxType, typename Layout>
+[[deprecated(KEYLESS_PERMUTE_DEPRECATED_WARNING)]]
+void permute(raft::resources const& handle,
+             raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
+             std::optional<raft::device_vector_view<IntType, IdxType>> permsOut,
+             std::optional<raft::device_matrix_view<InputOutputValueType, IdxType, Layout>> out)
+{
+  permute(handle, in, permsOut, out, static_cast<uint64_t>(rand()));
+}
+
+/**
+ * @brief Deprecated keyless `std::nullopt` overload that preserves per-call variation.
+ *
+ * This overload draws a key from `rand()`. Use the keyed overload when
+ * reproducibility or explicit control of the permutation is required.
+ *
+ * @deprecated Use the overload that takes an explicit @c uint64_t key.
+ */
+template <typename InputOutputValueType,
+          typename IdxType,
+          typename Layout,
+          typename PermsOutType,
+          typename OutType>
+[[deprecated(KEYLESS_PERMUTE_DEPRECATED_WARNING)]]
+void permute(raft::resources const& handle,
+             raft::device_matrix_view<const InputOutputValueType, IdxType, Layout> in,
+             PermsOutType&& permsOut,
+             OutType&& out)
+{
+  permute(handle,
+          in,
+          std::forward<PermsOutType>(permsOut),
+          std::forward<OutType>(out),
+          static_cast<uint64_t>(rand()));
+}
+
+/**
+ * @brief Deprecated keyless raw-pointer overload that preserves per-call variation.
+ *
+ * This overload draws a key from `rand()`. Use the keyed overload when
+ * reproducibility or explicit control of the permutation is required.
+ *
+ * @deprecated Use the overload that takes an explicit @c uint64_t key.
+ */
+template <typename Type, typename IntType = int, typename IdxType = int, int TPB = 256>
+[[deprecated(KEYLESS_PERMUTE_DEPRECATED_WARNING)]]
+void permute(IntType* perms,
+             Type* out,
+             const Type* in,
+             IntType D,
+             IntType N,
+             bool rowMajor,
              cudaStream_t stream)
 {
-  detail::permute<Type, IntType, IdxType, TPB>(perms, out, in, D, N, rowMajor, stream);
+  detail::permute<Type, IntType, IdxType, TPB>(
+    perms, out, in, D, N, rowMajor, stream, static_cast<uint64_t>(rand()));
 }
 
 };  // namespace random
