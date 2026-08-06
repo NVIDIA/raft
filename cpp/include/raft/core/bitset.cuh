@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -15,6 +15,7 @@
 #include <raft/linalg/reduce.cuh>
 #include <raft/sparse/convert/csr.cuh>
 #include <raft/util/device_atomics.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/popc.cuh>
 
 #include <rmm/device_scalar.hpp>
@@ -155,8 +156,8 @@ void bitset_repeat(raft::resources const& handle,
 
   int threadsPerBlock = 128;
   int blocksPerGrid   = (output_size + threadsPerBlock - 1) / threadsPerBlock;
-  bitset_repeat_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
-    d_src, d_output, src_bit_len, repeat_times);
+  raft::launch_kernel(stream, blocksPerGrid, threadsPerBlock)(
+    bitset_repeat_kernel, d_src, d_output, src_bit_len, repeat_times);
 
   return;
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -148,8 +149,8 @@ void svd_sign_correction(
   ValueTypeT* U_ptr  = U ? U->data_handle() : nullptr;
   ValueTypeT* Vt_ptr = Vt ? Vt->data_handle() : nullptr;
 
-  svd_sign_correction_kernel<<<k, threads_per_block, smem_size, stream>>>(U_ptr, Vt_ptr, m, n, k);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, k, threads_per_block, smem_size)(
+    svd_sign_correction_kernel, U_ptr, Vt_ptr, m, n, k);
 }
 
 }  // namespace raft::sparse::solver::detail

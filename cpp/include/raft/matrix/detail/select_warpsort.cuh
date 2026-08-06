@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -15,6 +15,7 @@
 #include <raft/util/cache.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/integer_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/pow2_utils.cuh>
 
 #include <rmm/cuda_stream_view.hpp>
@@ -893,13 +894,27 @@ struct launch_setup {
       size_t batch_chunk = std::min<size_t>(kMaxGridDimY, batch_size - offset);
       dim3 gs(num_blocks, batch_chunk, 1);
       if (select_min) {
-        block_kernel<WarpSortClass, Capacity, true, T, IdxT, RowLayout>
-          <<<gs, block_dim, smem_size, stream>>>(
-            in_key, in_idx, in_indptr, g_offset, IdxT(len), k, out_key, out_idx);
+        raft::launch_kernel(stream, gs, block_dim, smem_size)(
+          block_kernel<WarpSortClass, Capacity, true, T, IdxT, RowLayout>,
+          in_key,
+          in_idx,
+          in_indptr,
+          g_offset,
+          IdxT(len),
+          k,
+          out_key,
+          out_idx);
       } else {
-        block_kernel<WarpSortClass, Capacity, false, T, IdxT, RowLayout>
-          <<<gs, block_dim, smem_size, stream>>>(
-            in_key, in_idx, in_indptr, g_offset, IdxT(len), k, out_key, out_idx);
+        raft::launch_kernel(stream, gs, block_dim, smem_size)(
+          block_kernel<WarpSortClass, Capacity, false, T, IdxT, RowLayout>,
+          in_key,
+          in_idx,
+          in_indptr,
+          g_offset,
+          IdxT(len),
+          k,
+          out_key,
+          out_idx);
       }
       RAFT_CUDA_TRY(cudaPeekAtLastError());
       out_key += batch_chunk * num_blocks * k;

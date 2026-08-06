@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/exec_policy.hpp>
 
@@ -117,11 +118,23 @@ void transpose_half(raft::resources const& handle,
   dim3 grids(adjusted_grid_x, adjusted_grid_y);
 
   if (stride_in > 1 || stride_out > 1) {
-    transpose_half_kernel<IndexType, block_dim_x, block_dim_y>
-      <<<grids, blocks, 0, stream>>>(n_rows, n_cols, in, out, stride_in, stride_out);
+    raft::launch_kernel(stream, grids, blocks)(
+      transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
+      n_rows,
+      n_cols,
+      in,
+      out,
+      stride_in,
+      stride_out);
   } else {
-    transpose_half_kernel<IndexType, block_dim_x, block_dim_y>
-      <<<grids, blocks, 0, stream>>>(n_rows, n_cols, in, out, n_cols, n_rows);
+    raft::launch_kernel(stream, grids, blocks)(
+      transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
+      n_rows,
+      n_cols,
+      in,
+      out,
+      n_cols,
+      n_rows);
   }
 
   RAFT_CUDA_TRY(cudaPeekAtLastError());
