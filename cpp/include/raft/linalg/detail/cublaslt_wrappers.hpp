@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -19,6 +19,7 @@
 #include <cublasLt.h>
 
 #include <type_traits>
+#include <utility>
 
 namespace raft {
 namespace linalg::detail {
@@ -99,6 +100,39 @@ struct matmul_key_hash {
   }
 };
 
+/**
+ * cuBLASLt 13.6.0, shipped with CUDA 13.3, may select algorithm 68 once A's physical span reaches
+ * 2^31 elements. That algorithm fails during execution for FP32.
+ */
+inline auto needs_cublaslt_13_6_workaround(const matmul_key_t& args, std::size_t version) noexcept
+  -> bool
+{
+  constexpr uint64_t max_safe_span = (uint64_t{1} << 31) - 1;
+  const auto a_columns             = args.trans_a ? args.m : args.k;
+  return version == 130600 && args.lda != 0 && a_columns > max_safe_span / args.lda;
+}
+
+/**
+ * Querying with a physical A leading dimension that is not 16-byte aligned suppresses algorithm 68.
+ * The returned algorithm is then used with the real descriptors.
+ */
+inline auto get_cublaslt_13_6_heuristic_args(const matmul_key_t& args) noexcept -> matmul_key_t
+{
+  constexpr uint64_t fp32_elements_per_16_bytes = 4;
+  auto heuristic_args                           = args;
+  if (heuristic_args.lda % fp32_elements_per_16_bytes == 0) { ++heuristic_args.lda; }
+  return heuristic_args;
+}
+
+inline auto get_cublaslt_algorithm_id(const cublasLtMatmulHeuristicResult_t& heuristic) -> int
+{
+  int algorithm_id{};
+  std::size_t bytes_written{};
+  RAFT_CUBLAS_TRY(cublasLtMatmulAlgoConfigGetAttribute(
+    &heuristic.algo, CUBLASLT_ALGO_CONFIG_ID, &algorithm_id, sizeof(algorithm_id), &bytes_written));
+  return algorithm_id;
+}
+
 /** Descriptor for a column-major cublasLt matrix. */
 struct cublastlt_matrix_layout {
   cublasLtMatrixLayout_t res{nullptr};
@@ -108,12 +142,19 @@ struct cublastlt_matrix_layout {
   }
   inline cublastlt_matrix_layout(const cublastlt_matrix_layout&)                    = delete;
   inline auto operator=(const cublastlt_matrix_layout&) -> cublastlt_matrix_layout& = delete;
-  inline cublastlt_matrix_layout(cublastlt_matrix_layout&&)                         = default;
-  inline auto operator=(cublastlt_matrix_layout&&) -> cublastlt_matrix_layout&      = default;
+  inline cublastlt_matrix_layout(cublastlt_matrix_layout&& other) noexcept
+    : res(std::exchange(other.res, nullptr))
+  {
+  }
+  inline auto operator=(cublastlt_matrix_layout&& other) noexcept -> cublastlt_matrix_layout&
+  {
+    std::swap(res, other.res);
+    return *this;
+  }
 
   inline ~cublastlt_matrix_layout() noexcept
   {
-    RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatrixLayoutDestroy(res));
+    if (res != nullptr) { RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatrixLayoutDestroy(res)); }
   }
 
   // NOLINTNEXTLINE
@@ -137,12 +178,19 @@ struct cublastlt_matmul_desc {
   }
   inline cublastlt_matmul_desc(const cublastlt_matmul_desc&)                    = delete;
   inline auto operator=(const cublastlt_matmul_desc&) -> cublastlt_matmul_desc& = delete;
-  inline cublastlt_matmul_desc(cublastlt_matmul_desc&&)                         = default;
-  inline auto operator=(cublastlt_matmul_desc&&) -> cublastlt_matmul_desc&      = default;
+  inline cublastlt_matmul_desc(cublastlt_matmul_desc&& other) noexcept
+    : res(std::exchange(other.res, nullptr))
+  {
+  }
+  inline auto operator=(cublastlt_matmul_desc&& other) noexcept -> cublastlt_matmul_desc&
+  {
+    std::swap(res, other.res);
+    return *this;
+  }
 
   inline ~cublastlt_matmul_desc() noexcept
   {
-    RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatmulDescDestroy(res));
+    if (res != nullptr) { RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatmulDescDestroy(res)); }
   }
 
   // NOLINTNEXTLINE
@@ -170,6 +218,24 @@ struct cublastlt_matmul_desc {
   }
 };
 
+/** Preference descriptor for a cublasLt matmul heuristic query. */
+struct cublastlt_matmul_preference {
+  cublasLtMatmulPreference_t res{nullptr};
+
+  inline cublastlt_matmul_preference() { RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceCreate(&res)); }
+  inline cublastlt_matmul_preference(const cublastlt_matmul_preference&) = delete;
+  inline auto operator=(const cublastlt_matmul_preference&)
+    -> cublastlt_matmul_preference& = delete;
+
+  inline ~cublastlt_matmul_preference() noexcept
+  {
+    RAFT_CUBLAS_TRY_NO_THROW(cublasLtMatmulPreferenceDestroy(res));
+  }
+
+  // NOLINTNEXTLINE
+  inline operator cublasLtMatmulPreference_t() const noexcept { return res; }
+};
+
 /** Full description of matmul. */
 struct matmul_desc {
   cublastlt_matmul_desc desc;
@@ -186,20 +252,44 @@ struct matmul_desc {
       cublastlt_matrix_layout::for_matmul<A>(!(args.trans_a), args.m, args.k, args.lda),
       cublastlt_matrix_layout::for_matmul<B>(!(args.trans_b), args.k, args.n, args.ldb),
       cublastlt_matrix_layout::for_matmul<C>(true, args.m, args.n, args.ldc)};
+
+    bool use_cublaslt_13_6_workaround = false;
+    if constexpr (std::is_same_v<S, float> && std::is_same_v<A, float> &&
+                  std::is_same_v<B, float> && std::is_same_v<C, float>) {
+      use_cublaslt_13_6_workaround = needs_cublaslt_13_6_workaround(args, cublasLtGetVersion());
+    }
+
     int algo_count;
-    cublasLtMatmulPreference_t preference;
-    RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceCreate(&preference));
-    RAFT_CUBLAS_TRY(cublasLtMatmulAlgoGetHeuristic(resource::get_cublaslt_handle(res),
-                                                   r.desc,
-                                                   r.a,
-                                                   r.b,
-                                                   r.c,
-                                                   r.c,
-                                                   preference,
-                                                   1,
-                                                   &r.heuristics,
-                                                   &algo_count));
-    RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceDestroy(preference));
+    cublastlt_matmul_preference preference;
+    const auto query_heuristic = [&](cublasLtMatrixLayout_t a_layout,
+                                     cublasLtMatrixLayout_t c_layout) {
+      RAFT_CUBLAS_TRY(cublasLtMatmulAlgoGetHeuristic(resource::get_cublaslt_handle(res),
+                                                     r.desc,
+                                                     a_layout,
+                                                     r.b,
+                                                     c_layout,
+                                                     c_layout,
+                                                     preference,
+                                                     1,
+                                                     &r.heuristics,
+                                                     &algo_count));
+    };
+
+    if (use_cublaslt_13_6_workaround) {
+      const auto heuristic_args = get_cublaslt_13_6_heuristic_args(args);
+      const auto heuristic_a    = cublastlt_matrix_layout::for_matmul<A>(
+        !(heuristic_args.trans_a), heuristic_args.m, heuristic_args.k, heuristic_args.lda);
+      query_heuristic(heuristic_a, r.c);
+    } else {
+      query_heuristic(r.a, r.c);
+    }
+
+    RAFT_EXPECTS(algo_count > 0, "cuBLASLt did not return a matmul algorithm");
+    constexpr int faulty_algorithm = 68;
+    if (use_cublaslt_13_6_workaround) {
+      RAFT_EXPECTS(get_cublaslt_algorithm_id(r.heuristics) != faulty_algorithm,
+                   "cuBLASLt 13.6.0 returned faulty algorithm 68 for the workaround query");
+    }
     return r;
   }
 };

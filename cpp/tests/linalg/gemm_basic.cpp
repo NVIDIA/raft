@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -162,5 +162,62 @@ TEST(Raft, GemmPointerModeDevice) { test_gemm_pointer_mode_device(true, true); }
 TEST(Raft, GemmPointerModeDeviceAlpha) { test_gemm_pointer_mode_device(true, false); }
 TEST(Raft, GemmPointerModeDeviceBeta) { test_gemm_pointer_mode_device(false, true); }
 TEST(Raft, GemmPointerModeDeviceDefaults) { test_gemm_pointer_mode_device(false, false); }
+
+TEST(Raft, GemmCublasLt136WorkaroundPredicate)
+{
+  constexpr std::size_t affected_version = 130600;
+  const detail::matmul_key_t below_boundary{134217727, 1, 2, 16, 1, 134217727, true, true};
+  const detail::matmul_key_t at_boundary{134217728, 1, 2, 16, 1, 134217728, true, true};
+  const detail::matmul_key_t above_boundary{134217729, 1, 2, 16, 1, 134217729, true, true};
+
+  const auto needs_workaround = [&](const auto& args) {
+    return detail::needs_cublaslt_13_6_workaround(args, affected_version);
+  };
+
+  EXPECT_FALSE(needs_workaround(below_boundary));
+  EXPECT_TRUE(needs_workaround(at_boundary));
+  EXPECT_TRUE(needs_workaround(above_boundary));
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130599));
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130601));
+  EXPECT_FALSE(detail::needs_cublaslt_13_6_workaround(at_boundary, 130700));
+
+  auto different_output    = at_boundary;
+  different_output.trans_b = false;
+  different_output.n       = 2;
+  different_output.ldb     = 7;
+  different_output.ldc     = 11;
+  EXPECT_TRUE(needs_workaround(different_output));
+
+  const detail::matmul_key_t non_transposed_below{2, 1, 134217727, 16, 134217727, 2, false, false};
+  const detail::matmul_key_t non_transposed_at{2, 1, 134217728, 16, 134217728, 2, false, false};
+  EXPECT_FALSE(needs_workaround(non_transposed_below));
+  EXPECT_TRUE(needs_workaround(non_transposed_at));
+
+  auto invalid_lda = at_boundary;
+  invalid_lda.lda  = 0;
+  EXPECT_FALSE(needs_workaround(invalid_lda));
+}
+
+TEST(Raft, GemmCublasLt136WorkaroundHeuristicArgs)
+{
+  const auto query_lda = [](uint64_t lda) {
+    const detail::matmul_key_t args{134217728, 1, 2, lda, 1, 134217728, true, true};
+    return detail::get_cublaslt_13_6_heuristic_args(args).lda;
+  };
+
+  EXPECT_EQ(query_lda(12), 13);
+  EXPECT_EQ(query_lda(15), 15);
+  EXPECT_EQ(query_lda(16), 17);
+
+  const detail::matmul_key_t args{134217728, 1, 2, 16, 1, 134217728, true, true};
+  const auto heuristic_args = detail::get_cublaslt_13_6_heuristic_args(args);
+  EXPECT_EQ(heuristic_args.m, args.m);
+  EXPECT_EQ(heuristic_args.n, args.n);
+  EXPECT_EQ(heuristic_args.k, args.k);
+  EXPECT_EQ(heuristic_args.ldb, args.ldb);
+  EXPECT_EQ(heuristic_args.ldc, args.ldc);
+  EXPECT_EQ(heuristic_args.trans_a, args.trans_a);
+  EXPECT_EQ(heuristic_args.trans_b, args.trans_b);
+}
 
 }  // namespace raft::linalg
