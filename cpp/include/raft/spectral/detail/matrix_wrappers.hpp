@@ -385,7 +385,7 @@ struct laplacian_matrix_t : sparse_matrix_t<index_type, value_type, nnz_type> {
     dim3 gridDim{std::min<unsigned int>((n + BLOCK_SIZE - 1) / BLOCK_SIZE, 65535), 1, 1};
 
     dim3 blockDim{BLOCK_SIZE, 1, 1};
-    raft::launch_kernel(stream, gridDim, blockDim)(
+    raft::launch_kernel(handle, gridDim, blockDim)(
       diagmv<index_type, value_type>, n, alpha, diagonal_.raw(), x, y);
 
     // Apply adjacency matrix

@@ -108,7 +108,7 @@ class MinMaxTest : public ::testing::TestWithParam<MinMaxInputs<T>> {
     T nan_prob = 0.01;
     bernoulli(handle, r, mask.data(), len, nan_prob);
     const int TPB = 256;
-    raft::launch_kernel(stream, raft::ceildiv(len, TPB), TPB)(
+    raft::launch_kernel(handle, raft::ceildiv(len, TPB), TPB)(
       nanKernel<T>, data.data(), mask.data(), len, std::numeric_limits<T>::quiet_NaN());
     naiveMinMax(data.data(),
                 params.rows,

@@ -214,7 +214,7 @@ value_t silhouette_score(
   dim3 block_size(std::min(n_rows, 32), std::min(n_labels, 32));
   dim3 grid_size(raft::ceildiv(n_rows, (value_idx)block_size.x),
                  raft::ceildiv(n_labels, (label_idx)block_size.y));
-  raft::launch_kernel(stream, grid_size, block_size)(
+  raft::launch_kernel(handle, grid_size, block_size)(
     detail::fill_b_kernel, b_ptr, y, n_rows, n_labels, cluster_counts.data());
 
   resource::wait_stream_pool_on_stream(handle);

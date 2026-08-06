@@ -99,7 +99,7 @@ class GemvTest : public ::testing::TestWithParam<GemvInputs<T>> {
     dim3 blocks(raft::ceildiv<int>(yElems, 256), 1, 1);
     dim3 threads(256, 1, 1);
 
-    raft::launch_kernel(stream, blocks, threads)(naiveGemv<T>,
+    raft::launch_kernel(handle, blocks, threads)(naiveGemv<T>,
                                                  refy.data(),
                                                  A.data(),
                                                  x.data(),

@@ -173,7 +173,7 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
 
     dim3 blocks(raft::ceildiv<int>(params.M, 128), raft::ceildiv<int>(params.N, 4), 1);
     dim3 threads(128, 4, 1);
-    raft::launch_kernel(stream, blocks, threads)(naiveGemm,
+    raft::launch_kernel(handle, blocks, threads)(naiveGemm,
                                                  params.trans_x,
                                                  params.trans_y,
                                                  params.M,

@@ -76,7 +76,7 @@ class MeanSquaredErrorTest : public ::testing::TestWithParam<MeanSquaredErrorInp
                                             make_device_scalar_view<T>(output.data()),
                                             params.weight);
 
-    raft::launch_kernel(stream, 256, 256)(
+    raft::launch_kernel(handle, 256, 256)(
       naiveMeanSquaredError<T>, params.len, a.data(), b.data(), params.weight, refoutput.data());
     resource::sync_stream(handle);
   }

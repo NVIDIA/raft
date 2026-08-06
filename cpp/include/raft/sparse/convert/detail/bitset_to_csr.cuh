@@ -65,11 +65,10 @@ void gpu_repeat_csr(raft::resources const& handle,
 {
   if (nnz == 0) return;
 
-  auto stream            = resource::get_cuda_stream(handle);
   index_t repeat_csr_tpb = 256;
   index_t grid           = (nnz + repeat_csr_tpb - 1) / (repeat_csr_tpb);
 
-  raft::launch_kernel(stream, grid, repeat_csr_tpb)(repeat_csr_kernel,
+  raft::launch_kernel(handle, grid, repeat_csr_tpb)(repeat_csr_kernel,
                                                     d_indptr,
                                                     d_indices,
                                                     d_repeated_indptr,

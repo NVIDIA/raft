@@ -89,7 +89,6 @@ void transpose_half(raft::resources const& handle,
                     const IndexType stride_out = 1)
 {
   if (n_cols == 0 || n_rows == 0) return;
-  auto stream = resource::get_cuda_stream(handle);
 
   int dev_id, sm_count;
 
@@ -118,7 +117,7 @@ void transpose_half(raft::resources const& handle,
   dim3 grids(adjusted_grid_x, adjusted_grid_y);
 
   if (stride_in > 1 || stride_out > 1) {
-    raft::launch_kernel(stream, grids, blocks)(
+    raft::launch_kernel(handle, grids, blocks)(
       transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
       n_rows,
       n_cols,
@@ -127,7 +126,7 @@ void transpose_half(raft::resources const& handle,
       stride_in,
       stride_out);
   } else {
-    raft::launch_kernel(stream, grids, blocks)(
+    raft::launch_kernel(handle, grids, blocks)(
       transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
       n_rows,
       n_cols,

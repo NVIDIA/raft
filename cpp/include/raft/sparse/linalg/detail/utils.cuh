@@ -97,8 +97,6 @@ void faster_dot_on_csr(raft::resources const& handle,
 {
   if (nnz == 0 || n_rows == 0) return;
 
-  auto stream = resource::get_cuda_stream(handle);
-
   constexpr value_idx MAX_ROW_PER_ITER = 500;
   int dev_id, sm_count, blocks_per_sm;
 
@@ -115,7 +113,7 @@ void faster_dot_on_csr(raft::resources const& handle,
       (std::min(value_idx(blocks_per_sm * sm_count * 16), nnz) + block_x - 1) / block_x;
     dim3 blocks(block_x, block_y, 1);
 
-    raft::launch_kernel(stream, blocks, tpb, smem_size)(
+    raft::launch_kernel(handle, blocks, tpb, smem_size)(
       faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
       dot,
       indptr,
@@ -135,7 +133,7 @@ void faster_dot_on_csr(raft::resources const& handle,
       (std::min(value_idx(blocks_per_sm * sm_count * 16), nnz) + block_x - 1) / block_x;
     dim3 blocks(block_x, block_y, 1);
 
-    raft::launch_kernel(stream, blocks, tpb, smem_size)(
+    raft::launch_kernel(handle, blocks, tpb, smem_size)(
       faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
       dot,
       indptr,
@@ -154,7 +152,7 @@ void faster_dot_on_csr(raft::resources const& handle,
       (std::min(value_idx(blocks_per_sm * sm_count * 16), nnz) + block_x - 1) / block_x;
     dim3 blocks(block_x, block_y, 1);
 
-    raft::launch_kernel(stream, blocks, tpb, smem_size)(
+    raft::launch_kernel(handle, blocks, tpb, smem_size)(
       faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
       dot,
       indptr,
@@ -173,7 +171,7 @@ void faster_dot_on_csr(raft::resources const& handle,
       (std::min(value_idx(blocks_per_sm * sm_count * 16), nnz) + block_x - 1) / block_x;
     dim3 blocks(block_x, block_y, 1);
 
-    raft::launch_kernel(stream, blocks, tpb, smem_size)(
+    raft::launch_kernel(handle, blocks, tpb, smem_size)(
       faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
       dot,
       indptr,

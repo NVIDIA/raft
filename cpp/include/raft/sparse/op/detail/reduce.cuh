@@ -144,7 +144,7 @@ void max_duplicates(raft::resources const& handle,
   out.allocate(size, m, n, true, stream);
 
   // perform reduce
-  raft::launch_kernel(stream, raft::ceildiv(nnz, (nnz_t)256), 256)(
+  raft::launch_kernel(handle, raft::ceildiv(nnz, (nnz_t)256), 256)(
     max_duplicates_kernel<value_idx, value_t>,
     rows,
     cols,

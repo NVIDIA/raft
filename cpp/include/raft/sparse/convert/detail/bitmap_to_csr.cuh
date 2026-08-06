@@ -106,7 +106,6 @@ void calc_nnz_by_rows(raft::resources const& handle,
     sub_nnz_size     = num_rows * ((num_cols + bits_per_sub_col - 1) / bits_per_sub_col);
     return;
   }
-  auto stream        = resource::get_cuda_stream(handle);
   const size_t total = num_rows * num_cols;
   const size_t bitmap_num =
     (total + index_t(sizeof(bitmap_t) * 8) - 1) / index_t(sizeof(bitmap_t) * 8);
@@ -117,7 +116,7 @@ void calc_nnz_by_rows(raft::resources const& handle,
 
   auto block = bitmap_to_csr_tpb;
 
-  raft::launch_kernel(stream, grid, block)(calc_nnz_by_rows_kernel<bitmap_t, index_t, nnz_t>,
+  raft::launch_kernel(handle, grid, block)(calc_nnz_by_rows_kernel<bitmap_t, index_t, nnz_t>,
                                            bitmap,
                                            num_rows,
                                            num_cols,
@@ -249,14 +248,13 @@ void fill_indices_by_rows(raft::resources const& handle,
                           index_t bits_per_sub_col,
                           size_t sub_nnz_size)
 {
-  auto stream  = resource::get_cuda_stream(handle);
   auto block_x = num_rows;
   auto block_y = sub_nnz_size / num_rows;
   dim3 grid(block_x, block_y, 1);
 
   auto block = bitmap_to_csr_tpb;
 
-  raft::launch_kernel(stream, grid, block)(
+  raft::launch_kernel(handle, grid, block)(
     fill_indices_by_rows_kernel<bitmap_t, index_t, nnz_t, check_nnz>,
     bitmap,
     indptr,

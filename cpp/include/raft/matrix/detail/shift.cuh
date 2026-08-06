@@ -139,12 +139,11 @@ void shift_dispatch(raft::resources const& handle,
   size_t n_rows = in_out.extent(0);
   size_t n_cols = in_out.extent(1);
   size_t TPB    = 256;
-  auto stream   = raft::resource::get_cuda_stream(handle);
 
   if (shift_type == ShiftType::COL) {
     size_t num_blocks = static_cast<size_t>((n_rows + TPB) / TPB);
     if (shift_direction == ShiftDirection::TOWARDS_BEGINNING) {
-      raft::launch_kernel(stream, num_blocks, TPB)(
+      raft::launch_kernel(handle, num_blocks, TPB)(
         col_shift_towards_beginning<ValueT, fill_value, fill_type>,
         in_out.data_handle(),
         n_rows,
@@ -152,7 +151,7 @@ void shift_dispatch(raft::resources const& handle,
         k,
         value);
     } else {  // ShiftDirection::TOWARDS_END
-      raft::launch_kernel(stream, num_blocks, TPB)(
+      raft::launch_kernel(handle, num_blocks, TPB)(
         col_shift_towards_end<ValueT, fill_value, fill_type>,
         in_out.data_handle(),
         n_rows,
@@ -163,7 +162,7 @@ void shift_dispatch(raft::resources const& handle,
   } else {  // ShiftType::ROW
     size_t num_blocks = static_cast<size_t>((n_cols + TPB) / TPB);
     if (shift_direction == ShiftDirection::TOWARDS_BEGINNING) {
-      raft::launch_kernel(stream, num_blocks, TPB)(
+      raft::launch_kernel(handle, num_blocks, TPB)(
         row_shift_towards_beginning<ValueT, fill_value, fill_type>,
         in_out.data_handle(),
         n_rows,
@@ -171,7 +170,7 @@ void shift_dispatch(raft::resources const& handle,
         k,
         value);
     } else {  // ShiftDirection::TOWARDS_END
-      raft::launch_kernel(stream, num_blocks, TPB)(
+      raft::launch_kernel(handle, num_blocks, TPB)(
         row_shift_towards_end<ValueT, fill_value, fill_type>,
         in_out.data_handle(),
         n_rows,

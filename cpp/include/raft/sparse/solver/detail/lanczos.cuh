@@ -159,7 +159,7 @@ void lanczos_solve_ritz(
 
   int blockSize = 256;
   int numBlocks = (ncv + blockSize - 1) / blockSize;
-  raft::launch_kernel(stream, blockSize, numBlocks)(kernel_triangular_populate<ValueTypeT>,
+  raft::launch_kernel(handle, blockSize, numBlocks)(kernel_triangular_populate<ValueTypeT>,
                                                     triangular_matrix.data_handle(),
                                                     beta.data_handle(),
                                                     ncv);
@@ -167,7 +167,7 @@ void lanczos_solve_ritz(
   if (beta_k) {
     int threadsPerBlock = 256;
     int blocksPerGrid   = (k + threadsPerBlock - 1) / threadsPerBlock;
-    raft::launch_kernel(stream, blocksPerGrid, threadsPerBlock)(
+    raft::launch_kernel(handle, blocksPerGrid, threadsPerBlock)(
       kernel_triangular_beta_k<ValueTypeT>,
       triangular_matrix.data_handle(),
       beta_k.value().data_handle(),
@@ -378,7 +378,7 @@ void lanczos_aux(raft::resources const& handle,
     auto uu_i = raft::make_device_scalar_view(uu.data_handle() + uu.stride(1) * i);  // uu(0, i)
     raft::linalg::add(handle, make_const_mdspan(alpha_i), make_const_mdspan(uu_i), alpha_i);
 
-    raft::launch_kernel(stream, 1, 1)(
+    raft::launch_kernel(handle, 1, 1)(
       kernel_clamp_down<ValueTypeT>, alpha_i.data_handle(), static_cast<ValueTypeT>(1e-9));
 
     auto output = raft::make_device_vector_view<ValueTypeT, uint32_t>(
@@ -390,10 +390,10 @@ void lanczos_aux(raft::resources const& handle,
     int blockSize = 256;
     int numBlocks = (n + blockSize - 1) / blockSize;
 
-    raft::launch_kernel(stream, numBlocks, blockSize)(
+    raft::launch_kernel(handle, numBlocks, blockSize)(
       kernel_clamp_down_vector<ValueTypeT>, u.data_handle(), static_cast<ValueTypeT>(1e-7), n);
 
-    raft::launch_kernel(stream, 1, 1)(kernel_clamp_down<ValueTypeT>,
+    raft::launch_kernel(handle, 1, 1)(kernel_clamp_down<ValueTypeT>,
                                       beta.data_handle() + beta.stride(1) * i,
                                       static_cast<ValueTypeT>(1e-6));
 
@@ -402,7 +402,7 @@ void lanczos_aux(raft::resources const& handle,
     int threadsPerBlock = 256;
     int blocksPerGrid   = (n + threadsPerBlock - 1) / threadsPerBlock;
 
-    raft::launch_kernel(stream, blocksPerGrid, threadsPerBlock)(kernel_normalize<ValueTypeT>,
+    raft::launch_kernel(handle, blocksPerGrid, threadsPerBlock)(kernel_normalize<ValueTypeT>,
                                                                 u.data_handle(),
                                                                 beta.data_handle(),
                                                                 i,
