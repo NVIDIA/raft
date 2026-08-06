@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,21 +9,14 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 
+#include <cuda/std/bit>
+
+#include <cstdint>
 #include <limits>
 
 namespace raft {
 namespace stats {
 namespace detail {
-
-// TODO: replace with `std::bitcast` once we adopt C++20 or libcu++ adds it
-template <class To, class From>
-constexpr To bit_cast(const From& from) noexcept
-{
-  To to{};
-  static_assert(sizeof(To) == sizeof(From));
-  memcpy(&to, &from, sizeof(To));
-  return to;
-}
 
 template <typename T>
 struct encode_traits {};
@@ -40,26 +33,26 @@ struct encode_traits<double> {
 
 HDI int encode(float val)
 {
-  int i = detail::bit_cast<int>(val);
+  int i = cuda::std::bit_cast<int>(val);
   return i >= 0 ? i : (1 << 31) | ~i;
 }
 
 HDI long long encode(double val)
 {
-  std::int64_t i = detail::bit_cast<std::int64_t>(val);
+  std::int64_t i = cuda::std::bit_cast<std::int64_t>(val);
   return i >= 0 ? i : (1ULL << 63) | ~i;
 }
 
 HDI float decode(int val)
 {
   if (val < 0) val = (1 << 31) | ~val;
-  return detail::bit_cast<float>(val);
+  return cuda::std::bit_cast<float>(val);
 }
 
 HDI double decode(long long val)
 {
   if (val < 0) val = (1ULL << 63) | ~val;
-  return detail::bit_cast<double>(val);
+  return cuda::std::bit_cast<double>(val);
 }
 
 template <typename T, typename E>

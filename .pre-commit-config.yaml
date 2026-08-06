@@ -2,195 +2,207 @@
 # SPDX-License-Identifier: Apache-2.0
 
 repos:
-      - repo: https://github.com/pre-commit/pre-commit-hooks
-        rev: v6.0.0
-        hooks:
-              - id: trailing-whitespace
-              - id: end-of-file-fixer
-              - id: check-json
-      - repo: https://github.com/astral-sh/ruff-pre-commit
-        rev: v0.14.1
-        hooks:
-              - id: ruff-check
-                args: [--fix]
-              - id: ruff-format
-      - repo: https://github.com/pre-commit/mirrors-mypy
-        rev: 'v1.3.0'
-        hooks:
-              - id: mypy
-                additional_dependencies: [types-cachetools]
-                args: ["--config-file=pyproject.toml",
-                       "python/pylibraft/pylibraft",
-                       "python/raft-dask/raft_dask"]
-                pass_filenames: false
-      - repo: https://github.com/PyCQA/pydocstyle
-        rev: 6.1.1
-        hooks:
-              - id: pydocstyle
-                # https://github.com/PyCQA/pydocstyle/issues/603
-                additional_dependencies: [toml]
-                args: ["--config=pyproject.toml"]
-      - repo: https://github.com/pre-commit/mirrors-clang-format
-        rev: v20.1.8
-        hooks:
-              - id: clang-format
-                types_or: [c, c++, cuda]
-                args: ["-fallback-style=none", "-style=file", "-i"]
-                exclude: cpp/include/raft/thirdparty/.*
-      - repo: local
-        hooks:
-              - id: no-deprecationwarning
-                name: no-deprecationwarning
-                description: 'Enforce that DeprecationWarning is not introduced (use FutureWarning instead)'
-                entry: '(category=|\s)DeprecationWarning[,)]'
-                language: pygrep
-                types_or: [python, cython]
-              - id: cmake-format
-                name: cmake-format
-                entry: ./cpp/scripts/run-cmake-format.sh cmake-format
-                language: python
-                types: [cmake]
-                exclude: .*/thirdparty/.*
-                # Note that pre-commit autoupdate does not update the versions
-                # of dependencies, so we'll have to update this manually.
-                additional_dependencies:
-                  - cmakelang==0.6.13
-                verbose: true
-                require_serial: true
-              - id: cmake-lint
-                name: cmake-lint
-                entry: ./cpp/scripts/run-cmake-format.sh cmake-lint
-                language: python
-                types: [cmake]
-                # Note that pre-commit autoupdate does not update the versions
-                # of dependencies, so we'll have to update this manually.
-                additional_dependencies:
-                  - cmakelang==0.6.13
-                verbose: true
-                require_serial: true
-                exclude: .*/thirdparty/.*
-              - id: include-check
-                name: include-check
-                entry: python ./cpp/scripts/include_checker.py cpp/bench cpp/include cpp/tests
-                pass_filenames: false
-                language: python
-                additional_dependencies: [gitpython]
-      - repo: https://github.com/codespell-project/codespell
-        rev: v2.4.1
-        hooks:
-              - id: codespell
-                additional_dependencies: [tomli]
-                args: ["--toml", "pyproject.toml"]
-                exclude: |
-                  (?x)
-                    ^CHANGELOG[.]md$|
-      - repo: https://github.com/rapidsai/pre-commit-hooks
-        rev: v1.6.1
-        hooks:
-          - id: verify-copyright
-            name: verify-copyright-raft
-            args: [--fix, --spdx]
-            files: |
-              (?x)
-                [.](cmake|cpp|cu|cuh|h|hpp|sh|pxd|py|pyx|bat)$|
-                CMakeLists[.]txt$|
-                CMakeLists_standalone[.]txt$|
-                meta[.]yaml$|
-                ^[.]pre-commit-config[.]yaml$|
-                pyproject[.]toml$|
-                recipe[.]yaml$|
-                dependencies[.]yaml$|
-                Makefile$|
-                pytest[.]ini$|
-                [.]flake8$
-            exclude: |
-              (?x)^(
-                cpp/include/raft/neighbors/detail/faiss_select/|
-                cpp/include/raft/thirdparty/|
-                docs/source/sphinxext/github_link[.]py$|
-                cpp/include/raft/core/detail/mdspan_numpy_serializer[.]hpp$|
-                cpp/include/raft/core/mdarray[.]hpp$|
-                cpp/include/raft/core/device_container_policy[.]hpp$|
-                cpp/include/raft/core/host_container_policy[.]hpp$
-              )
-          - id: verify-copyright
-            name: verify-copyright-scikit-learn
-            args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
-            files: |
-              (?x)^(
-                docs/source/sphinxext/github_link[.]py$
-              )
-          - id: verify-copyright
-            name: verify-copyright-sandia
-            args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
-            files: |
-              (?x)^(
-                cpp/include/raft/core/mdarray[.]hpp$|
-                cpp/include/raft/core/device_container_policy[.]hpp$|
-                cpp/include/raft/core/host_container_policy[.]hpp$
-              )
-          - id: verify-copyright
-            name: verify-copyright-faiss
-            args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND MIT"]
-            files: |
-              (?x)^(
-                cpp/include/raft/neighbors/detail/faiss_select/
-              )
-          - id: verify-copyright
-            name: verify-copyright-numpy
-            args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND MIT"]
-            files: |
-              (?x)^(
-                cpp/include/raft/core/detail/mdspan_numpy_serializer[.]hpp$
-              )
-          - id: verify-alpha-spec
-          - id: verify-codeowners
-            args: [--fix, --org=NVIDIA, --project-prefix=raft]
-          - id: verify-hardcoded-version
-            exclude: |
-              (?x)
-                (^|/)devcontainer[.]json$|
-                (^|/)dependencies[.]yaml$|
-                ^[.]github/(workflows|ISSUE_TEMPLATE)/|
-                (^|/)pom[.]xml$|
-                ^[.]pre-commit-config[.]yaml$|
-                ^conda/environments/|
-                (^|/)UCXX_BRANCH$|
-                (^|/)RAPIDS_BRANCH$|
-                [.](md|rst|svg)$
-          - id: verify-hardcoded-version
-            name: verify-hardcoded-version-ucxx
-            args: [--fix, --version-file=UCXX_VERSION, --version-scheme=semver]
-            exclude: |
-              (?x)
-                (^|/)devcontainer[.]json$|
-                (^|/)dependencies[.]yaml$|
-                ^[.]github/(workflows|ISSUE_TEMPLATE)/|
-                (^|/)pom[.]xml$|
-                ^[.]pre-commit-config[.]yaml$|
-                ^conda/environments/|
-                (^|/)UCXX_BRANCH$|
-                (^|/)RAPIDS_BRANCH$|
-                [.](md|rst|svg)$
-          - id: verify-pyproject-license
-            # ignore the top-level pyproject.toml, which doesn't
-            # have or need a [project] table
-            exclude: |
-              (?x)
-                ^pyproject[.]toml$
-      - repo: https://github.com/rapidsai/dependency-file-generator
-        rev: v1.20.2
-        hooks:
-            - id: rapids-dependency-file-generator
-              args: ["--clean", "--warn-all", "--strict"]
-      - repo: https://github.com/shellcheck-py/shellcheck-py
-        rev: v0.10.0.1
-        hooks:
-          - id: shellcheck
-      - repo: https://github.com/zizmorcore/zizmor-pre-commit
-        rev: v1.24.1
-        hooks:
-          - id: zizmor
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v6.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-json
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.14.1
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: 'v1.3.0'
+    hooks:
+      - id: mypy
+        additional_dependencies: [types-cachetools]
+        args: ["--config-file=pyproject.toml",
+               "python/pylibraft/pylibraft",
+               "python/raft-dask/raft_dask"]
+        pass_filenames: false
+  - repo: https://github.com/PyCQA/pydocstyle
+    rev: 6.1.1
+    hooks:
+      - id: pydocstyle
+        # https://github.com/PyCQA/pydocstyle/issues/603
+        additional_dependencies: [toml]
+        args: ["--config=pyproject.toml"]
+  - repo: https://github.com/pre-commit/mirrors-clang-format
+    rev: v20.1.8
+    hooks:
+      - id: clang-format
+        types_or: [c, c++, cuda]
+        args: ["-fallback-style=none", "-style=file", "-i"]
+        exclude: cpp/include/raft/thirdparty/.*
+  - repo: local
+    hooks:
+      - id: no-deprecationwarning
+        name: no-deprecationwarning
+        description: 'Enforce that DeprecationWarning is not introduced (use FutureWarning instead)'
+        entry: '(category=|\s)DeprecationWarning[,)]'
+        language: pygrep
+        types_or: [python, cython]
+      - id: cmake-format
+        name: cmake-format
+        entry: ./cpp/scripts/run-cmake-format.sh cmake-format
+        language: python
+        types: [cmake]
+        exclude: .*/thirdparty/.*
+        # Note that pre-commit autoupdate does not update the versions
+        # of dependencies, so we'll have to update this manually.
+        additional_dependencies:
+          - cmakelang==0.6.13
+        verbose: true
+        require_serial: true
+      - id: cmake-lint
+        name: cmake-lint
+        entry: ./cpp/scripts/run-cmake-format.sh cmake-lint
+        language: python
+        types: [cmake]
+        # Note that pre-commit autoupdate does not update the versions
+        # of dependencies, so we'll have to update this manually.
+        additional_dependencies:
+          - cmakelang==0.6.13
+        verbose: true
+        require_serial: true
+        exclude: .*/thirdparty/.*
+      - id: include-check
+        name: include-check
+        entry: python ./cpp/scripts/include_checker.py cpp/bench cpp/include cpp/tests
+        pass_filenames: false
+        language: python
+        additional_dependencies: [gitpython]
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.4.1
+    hooks:
+      - id: codespell
+        additional_dependencies: [tomli]
+        args: ["--toml", "pyproject.toml"]
+        exclude: |
+          (?x)
+            ^CHANGELOG[.]md$|
+  - repo: https://github.com/rapidsai/pre-commit-hooks
+    rev: v1.6.1
+    hooks:
+      - id: verify-copyright
+        name: verify-copyright-raft
+        args: [--fix, --spdx]
+        files: |
+          (?x)
+            [.](cmake|cpp|cu|cuh|h|hpp|sh|pxd|py|pyx|bat)$|
+            CMakeLists[.]txt$|
+            CMakeLists_standalone[.]txt$|
+            meta[.]yaml$|
+            ^[.]pre-commit-config[.]yaml$|
+            pyproject[.]toml$|
+            recipe[.]yaml$|
+            dependencies[.]yaml$|
+            Makefile$|
+            pytest[.]ini$|
+            [.]flake8$
+        exclude: |
+          (?x)^(
+            cpp/include/raft/neighbors/detail/faiss_select/|
+            cpp/include/raft/thirdparty/|
+            docs/source/sphinxext/github_link[.]py$|
+            cpp/include/raft/core/detail/mdspan_numpy_serializer[.]hpp$|
+            cpp/include/raft/core/mdarray[.]hpp$|
+            cpp/include/raft/core/device_container_policy[.]hpp$|
+            cpp/include/raft/core/host_container_policy[.]hpp$
+          )
+      - id: verify-copyright
+        name: verify-copyright-scikit-learn
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            docs/source/sphinxext/github_link[.]py$
+          )
+      - id: verify-copyright
+        name: verify-copyright-sandia
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND BSD-3-Clause"]
+        files: |
+          (?x)^(
+            cpp/include/raft/core/mdarray[.]hpp$|
+            cpp/include/raft/core/device_container_policy[.]hpp$|
+            cpp/include/raft/core/host_container_policy[.]hpp$
+          )
+      - id: verify-copyright
+        name: verify-copyright-faiss
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND MIT"]
+        files: |
+          (?x)^(
+            cpp/include/raft/neighbors/detail/faiss_select/
+          )
+      - id: verify-copyright
+        name: verify-copyright-numpy
+        args: [--fix, --spdx, "--spdx-license-identifier=Apache-2.0 AND MIT"]
+        files: |
+          (?x)^(
+            cpp/include/raft/core/detail/mdspan_numpy_serializer[.]hpp$
+          )
+      - id: verify-alpha-spec
+      - id: verify-codeowners
+        args: [--fix, --org=NVIDIA, --project-prefix=raft]
+      - id: verify-hardcoded-version
+        exclude: |
+          (?x)
+            (^|/)devcontainer[.]json$|
+            (^|/)dependencies[.]yaml$|
+            ^[.]github/(workflows|ISSUE_TEMPLATE)/|
+            (^|/)pom[.]xml$|
+            ^[.]pre-commit-config[.]yaml$|
+            ^conda/environments/|
+            (^|/)UCXX_BRANCH$|
+            (^|/)RAPIDS_BRANCH$|
+            [.](md|rst|svg)$
+      - id: verify-hardcoded-version
+        name: verify-hardcoded-version-ucxx
+        args: [--fix, --version-file=UCXX_VERSION, --version-scheme=semver]
+        exclude: |
+          (?x)
+            (^|/)devcontainer[.]json$|
+            (^|/)dependencies[.]yaml$|
+            ^[.]github/(workflows|ISSUE_TEMPLATE)/|
+            (^|/)pom[.]xml$|
+            ^[.]pre-commit-config[.]yaml$|
+            ^conda/environments/|
+            (^|/)UCXX_BRANCH$|
+            (^|/)RAPIDS_BRANCH$|
+            [.](md|rst|svg)$
+      - id: verify-pyproject-license
+        # ignore the top-level pyproject.toml, which doesn't
+        # have or need a [project] table
+        exclude: |
+          (?x)
+            ^pyproject[.]toml$
+  - repo: https://github.com/rapidsai/dependency-file-generator
+    rev: v1.20.2
+    hooks:
+      - id: rapids-dependency-file-generator
+        args: ["--clean", "--warn-all", "--strict"]
+  - repo: https://github.com/shellcheck-py/shellcheck-py
+    rev: v0.10.0.1
+    hooks:
+      - id: shellcheck
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.38.0
+    hooks:
+      - id: yamllint
+        additional_dependencies: [pyyaml]
+        exclude: |
+          (?x)^(
+            [.]github/workflows/labeler[.]yml$|
+            conda/environments/.*|
+            cpp/[.]clang-format$|
+            cpp/[.]clang-tidy$
+          )
+  - repo: https://github.com/zizmorcore/zizmor-pre-commit
+    rev: v1.24.1
+    hooks:
+      - id: zizmor
 
 default_language_version:
-      python: python3
+  python: python3
