@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/sparse/coo.hpp>
 #include <raft/sparse/linalg/symmetrize.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -100,8 +101,8 @@ class SparseSymmetrizeTest
     rmm::device_scalar<value_idx> sum(stream);
     sum.set_value_to_zero_async(stream);
 
-    assert_symmetry<<<raft::ceildiv(out.nnz, (nnz_t)256), 256, 0, stream>>>(
-      out.rows(), out.cols(), out.vals(), (nnz_t)out.nnz, sum.data());
+    raft::launch_kernel(stream, raft::ceildiv(out.nnz, (nnz_t)256), 256)(
+      assert_symmetry, out.rows(), out.cols(), out.vals(), (nnz_t)out.nnz, sum.data());
 
     sum_h = sum.value(stream);
     resource::sync_stream(handle, stream);
