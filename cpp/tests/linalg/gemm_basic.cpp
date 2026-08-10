@@ -163,6 +163,55 @@ TEST(Raft, GemmPointerModeDeviceAlpha) { test_gemm_pointer_mode_device(true, fal
 TEST(Raft, GemmPointerModeDeviceBeta) { test_gemm_pointer_mode_device(false, true); }
 TEST(Raft, GemmPointerModeDeviceDefaults) { test_gemm_pointer_mode_device(false, false); }
 
+TEST(Raft, GemmStridedBatched)
+{
+  raft::resources res;
+  auto stream = raft::resource::get_cuda_stream(res);
+
+  constexpr int64_t stride_a = 8;
+  constexpr int64_t stride_b = 8;
+  constexpr int64_t stride_c = 5;
+  constexpr int32_t batches  = 2;
+
+  // Two column-major A (2 x 3) and B (3 x 2) matrices with padding between batches.
+  std::vector<float> a_host = {1, 4, 2, 5, 3, 6, -1, -1, 2, 1, 0, 3, 1, 4, -1, -1};
+  std::vector<float> b_host = {7, 9, 11, 8, 10, 12, -1, -1, 1, 0, 2, 3, 1, 4, -1, -1};
+  std::vector<float> c_host(stride_c * batches, -1);
+
+  auto a_device = raft::make_device_vector<float>(res, a_host.size());
+  auto b_device = raft::make_device_vector<float>(res, b_host.size());
+  auto c_device = raft::make_device_vector<float>(res, c_host.size());
+  raft::copy(a_device.data_handle(), a_host.data(), a_host.size(), stream);
+  raft::copy(b_device.data_handle(), b_host.data(), b_host.size(), stream);
+  raft::copy(c_device.data_handle(), c_host.data(), c_host.size(), stream);
+
+  raft::linalg::gemm_strided_batched<float, float, float, float>(res,
+                                                                 false,
+                                                                 false,
+                                                                 M,
+                                                                 N,
+                                                                 K,
+                                                                 nullptr,
+                                                                 a_device.data_handle(),
+                                                                 M,
+                                                                 stride_a,
+                                                                 b_device.data_handle(),
+                                                                 K,
+                                                                 stride_b,
+                                                                 nullptr,
+                                                                 c_device.data_handle(),
+                                                                 M,
+                                                                 stride_c,
+                                                                 batches,
+                                                                 CUBLAS_COMPUTE_32F_FAST_TF32);
+
+  raft::copy(c_host.data(), c_device.data_handle(), c_host.size(), stream);
+  raft::resource::sync_stream(res);
+
+  const std::vector<float> expected = {58, 139, 64, 154, -1, 4, 9, 10, 22, -1};
+  EXPECT_EQ(c_host, expected);
+}
+
 TEST(Raft, GemmCublasLt136WorkaroundPredicate)
 {
   constexpr std::size_t affected_version = 130600;

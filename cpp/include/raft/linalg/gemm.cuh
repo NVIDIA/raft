@@ -283,6 +283,82 @@ void gemm(raft::resources const& res,
   }
 }
 
+
+/**
+ * @brief Strided-batched matrix multiplication using cublasLt.
+ *
+ * Computes `C_i = alpha * op(A_i) * op(B_i) + beta * C_i` for `batch_count` matrices. Matrix
+ * dimensions and leading dimensions use column-major conventions; batch strides are measured in
+ * elements. The compute type may be selected independently of the input and output storage types.
+ *
+ * @tparam A_t element type of A
+ * @tparam B_t element type of B
+ * @tparam C_t element type of C
+ * @tparam S_t element type of alpha and beta
+ * @tparam DevicePointerMode whether alpha and beta point to device memory
+ * @param[in] res RAFT resources
+ * @param[in] trans_a whether to transpose each A matrix
+ * @param[in] trans_b whether to transpose each B matrix
+ * @param[in] m number of rows of each output matrix
+ * @param[in] n number of columns of each output matrix
+ * @param[in] k shared inner dimension
+ * @param[in] alpha host or device scalar; defaults to one when null
+ * @param[in] a pointer to the first A matrix
+ * @param[in] lda leading dimension of each A matrix
+ * @param[in] stride_a offset in elements between A matrices
+ * @param[in] b pointer to the first B matrix
+ * @param[in] ldb leading dimension of each B matrix
+ * @param[in] stride_b offset in elements between B matrices
+ * @param[in] beta host or device scalar; defaults to zero when null
+ * @param[inout] c pointer to the first C matrix
+ * @param[in] ldc leading dimension of each C matrix
+ * @param[in] stride_c offset in elements between C matrices
+ * @param[in] batch_count number of matrix multiplications
+ * @param[in] compute_type cublasLt compute type
+ */
+ template <typename A_t, typename B_t, typename C_t, typename S_t, bool DevicePointerMode = false>
+ void gemm_strided_batched(
+   raft::resources const& res,
+   bool trans_a,
+   bool trans_b,
+   uint64_t m,
+   uint64_t n,
+   uint64_t k,
+   const S_t* alpha,
+   const A_t* a,
+   uint64_t lda,
+   int64_t stride_a,
+   const B_t* b,
+   uint64_t ldb,
+   int64_t stride_b,
+   const S_t* beta,
+   C_t* c,
+   uint64_t ldc,
+   int64_t stride_c,
+   int32_t batch_count,
+   cublasComputeType_t compute_type = detail::get_matmul_type<S_t, A_t, B_t, C_t>())
+ {
+   detail::matmul_strided_batched<DevicePointerMode>(res,
+                                                     trans_a,
+                                                     trans_b,
+                                                     m,
+                                                     n,
+                                                     k,
+                                                     alpha,
+                                                     a,
+                                                     lda,
+                                                     stride_a,
+                                                     b,
+                                                     ldb,
+                                                     stride_b,
+                                                     beta,
+                                                     c,
+                                                     ldc,
+                                                     stride_c,
+                                                     batch_count,
+                                                     compute_type);
+ }
+
 /** @} */  // end of gemm
 
 }  // namespace linalg
