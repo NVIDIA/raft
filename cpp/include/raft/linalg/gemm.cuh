@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __GEMM_H
@@ -283,7 +283,6 @@ void gemm(raft::resources const& res,
   }
 }
 
-
 /**
  * @brief Strided-batched matrix multiplication using cublasLt.
  *
@@ -316,48 +315,48 @@ void gemm(raft::resources const& res,
  * @param[in] batch_count number of matrix multiplications
  * @param[in] compute_type cublasLt compute type
  */
- template <typename A_t, typename B_t, typename C_t, typename S_t, bool DevicePointerMode = false>
- void gemm_strided_batched(
-   raft::resources const& res,
-   bool trans_a,
-   bool trans_b,
-   uint64_t m,
-   uint64_t n,
-   uint64_t k,
-   const S_t* alpha,
-   const A_t* a,
-   uint64_t lda,
-   int64_t stride_a,
-   const B_t* b,
-   uint64_t ldb,
-   int64_t stride_b,
-   const S_t* beta,
-   C_t* c,
-   uint64_t ldc,
-   int64_t stride_c,
-   int32_t batch_count,
-   cublasComputeType_t compute_type = detail::get_matmul_type<S_t, A_t, B_t, C_t>())
- {
-   detail::matmul_strided_batched<DevicePointerMode>(res,
-                                                     trans_a,
-                                                     trans_b,
-                                                     m,
-                                                     n,
-                                                     k,
-                                                     alpha,
-                                                     a,
-                                                     lda,
-                                                     stride_a,
-                                                     b,
-                                                     ldb,
-                                                     stride_b,
-                                                     beta,
-                                                     c,
-                                                     ldc,
-                                                     stride_c,
-                                                     batch_count,
-                                                     compute_type);
- }
+template <typename A_t, typename B_t, typename C_t, typename S_t, bool DevicePointerMode = false>
+void gemm_strided_batched(
+  raft::resources const& res,
+  bool trans_a,
+  bool trans_b,
+  uint64_t m,
+  uint64_t n,
+  uint64_t k,
+  const S_t* alpha,
+  const A_t* a,
+  uint64_t lda,
+  int64_t stride_a,
+  const B_t* b,
+  uint64_t ldb,
+  int64_t stride_b,
+  const S_t* beta,
+  C_t* c,
+  uint64_t ldc,
+  int64_t stride_c,
+  int32_t batch_count,
+  cublasComputeType_t compute_type = detail::get_matmul_type<S_t, A_t, B_t, C_t>())
+{
+  detail::matmul_strided_batched<DevicePointerMode>(res,
+                                                    trans_a,
+                                                    trans_b,
+                                                    m,
+                                                    n,
+                                                    k,
+                                                    alpha,
+                                                    a,
+                                                    lda,
+                                                    stride_a,
+                                                    b,
+                                                    ldb,
+                                                    stride_b,
+                                                    beta,
+                                                    c,
+                                                    ldc,
+                                                    stride_c,
+                                                    batch_count,
+                                                    compute_type);
+}
 
 /** @} */  // end of gemm
 
