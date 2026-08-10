@@ -76,6 +76,8 @@ inline void throw_on_cuda_launch_error(cudaError_t status, std::source_location 
 /**
  * @brief Temporary object that launches a CUDA kernel with call-site error reporting.
  *
+ * @ingroup kernel_launch
+ *
  * Capture @c std::source_location on @ref launch_kernel, then launch via rvalue @c operator().
  * Prefer the one-liner form so diagnostics point at the launch expression:
  * @code
@@ -134,7 +136,7 @@ class kernel_launcher {
     rmm::cuda_stream_view, dim3, dim3, std::size_t, std::source_location);
 
   /**
-   * @brief Copy the launch arguments into parameters and pass their addresses to @ref dispatch.
+   * @brief Copy the launch arguments into parameters and pass their addresses to dispatch().
    *
    * Taking the address of a copy rather than of the caller's object means passing a constant (e.g.
    * a
@@ -183,6 +185,29 @@ class kernel_launcher {
   std::source_location location_{};
 };
 
+/**
+ * @defgroup kernel_launch Type-checked CUDA kernel launch
+ * @{
+ */
+
+/**
+ * @brief Launch a CUDA kernel on the stream of @p res, reporting errors at the call site.
+ *
+ * The returned launcher is a temporary that must be called immediately, so that the diagnostics of
+ * a failed launch blame the launch expression rather than this header:
+ * @code
+ *   raft::launch_kernel(res, grid, block)(my_kernel, arg0, arg1);
+ * @endcode
+ * The launch arguments are checked against the kernel parameters at compile time, and a failed
+ * launch throws @c raft::cuda_error.
+ *
+ * @param[in] res raft resources providing the stream to launch on
+ * @param[in] grid grid dimensions
+ * @param[in] block block dimensions
+ * @param[in] shared_mem_bytes dynamic shared memory size in bytes
+ * @param[in] location call site to blame for launch errors; leave at its default
+ * @return a launcher to invoke with the kernel and its arguments
+ */
 inline kernel_launcher launch_kernel(
   resources const& res,
   dim3 grid,
@@ -193,6 +218,18 @@ inline kernel_launcher launch_kernel(
   return kernel_launcher{resource::get_cuda_stream(res), grid, block, shared_mem_bytes, location};
 }
 
+/**
+ * @brief Launch a CUDA kernel on @p stream, reporting errors at the call site.
+ *
+ * Same as the overload taking raft resources; prefer that one where resources are available.
+ *
+ * @param[in] stream stream to launch on
+ * @param[in] grid grid dimensions
+ * @param[in] block block dimensions
+ * @param[in] shared_mem_bytes dynamic shared memory size in bytes
+ * @param[in] location call site to blame for launch errors; leave at its default
+ * @return a launcher to invoke with the kernel and its arguments
+ */
 inline kernel_launcher launch_kernel(
   rmm::cuda_stream_view stream,
   dim3 grid,
@@ -202,5 +239,7 @@ inline kernel_launcher launch_kernel(
 {
   return kernel_launcher{stream, grid, block, shared_mem_bytes, location};
 }
+
+/** @} */  // end group kernel_launch
 
 }  // namespace raft
