@@ -10,6 +10,7 @@ permissions: {}
 jobs:
   pr-builder:
     needs:
+      - build-details
       - check-nightly-ci
       - changed-files
       - checks
@@ -50,6 +51,8 @@ jobs:
         # since other jobs depend on it.
         if: ${{ vars.TELEMETRY_ENABLED == 'true' }}
         uses: rapidsai/shared-actions/telemetry-dispatch-stash-base-env-vars@main
+  build-details:
+    uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
   check-nightly-ci:
     runs-on: ubuntu-latest
     permissions:
@@ -92,7 +95,11 @@ jobs:
           - '!.github/labeler.yml'
           - '!.github/ops-bot.yml'
           - '!.github/release.yml'
+          - '!.github/workflows/build.yaml'
+          - '!.github/workflows/labeler.yml'
+          - '!.github/workflows/test.yaml'
           - '!.github/workflows/trigger-breaking-change-alert.yaml'
+          - '!.github/zizmor.yml'
           - '!.pre-commit-config.yaml'
           - '!.shellcheckrc'
           - '!.yamllint.yaml'
@@ -115,7 +122,11 @@ jobs:
           - '!.github/labeler.yml'
           - '!.github/ops-bot.yml'
           - '!.github/release.yml'
+          - '!.github/workflows/build.yaml'
+          - '!.github/workflows/labeler.yml'
+          - '!.github/workflows/test.yaml'
           - '!.github/workflows/trigger-breaking-change-alert.yaml'
+          - '!.github/zizmor.yml'
           - '!.pre-commit-config.yaml'
           - '!.shellcheckrc'
           - '!.yamllint.yaml'
@@ -147,7 +158,11 @@ jobs:
           - '!.github/labeler.yml'
           - '!.github/ops-bot.yml'
           - '!.github/release.yml'
+          - '!.github/workflows/build.yaml'
+          - '!.github/workflows/labeler.yml'
+          - '!.github/workflows/test.yaml'
           - '!.github/workflows/trigger-breaking-change-alert.yaml'
+          - '!.github/zizmor.yml'
           - '!.pre-commit-config.yaml'
           - '!.shellcheckrc'
           - '!.yamllint.yaml'
@@ -178,7 +193,11 @@ jobs:
           - '!.github/labeler.yml'
           - '!.github/ops-bot.yml'
           - '!.github/release.yml'
+          - '!.github/workflows/build.yaml'
+          - '!.github/workflows/labeler.yml'
+          - '!.github/workflows/test.yaml'
           - '!.github/workflows/trigger-breaking-change-alert.yaml'
+          - '!.github/zizmor.yml'
           - '!.pre-commit-config.yaml'
           - '!.shellcheckrc'
           - '!.yamllint.yaml'
@@ -211,7 +230,7 @@ jobs:
       enable_check_generated_files: false
       ignored_pr_jobs: telemetry-summarize
   conda-cpp-build:
-    needs: checks
+    needs: [build-details, checks]
     permissions:
       actions: read
       contents: read
@@ -222,6 +241,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@main
     with:
       build_type: pull-request
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       script: ci/build_cpp.sh
       node_type: cpu16
   conda-cpp-tests:
@@ -252,7 +272,7 @@ jobs:
       build_type: pull-request
       package_name: libraft
   conda-python-build:
-    needs: conda-cpp-build
+    needs: [build-details, conda-cpp-build]
     permissions:
       actions: read
       contents: read
@@ -263,6 +283,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@main
     with:
       build_type: pull-request
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       script: ci/build_python.sh
       # Build a conda package for each CUDA x ARCH x minimum supported Python version
       matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
@@ -298,7 +319,7 @@ jobs:
       container_image: "rapidsai/ci-conda:26.10-latest"
       script: "ci/build_docs.sh"
   wheel-build-libraft:
-    needs: checks
+    needs: [build-details, checks]
     permissions:
       actions: read
       contents: read
@@ -309,6 +330,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
     with:
       build_type: pull-request
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       branch: ${{ inputs.branch }}
       sha: ${{ inputs.sha }}
       date: ${{ inputs.date }}
@@ -319,7 +341,7 @@ jobs:
       package-name: libraft
       package-type: cpp
   wheel-build-pylibraft:
-    needs: [checks, wheel-build-libraft]
+    needs: [build-details, checks, wheel-build-libraft]
     permissions:
       actions: read
       contents: read
@@ -330,6 +352,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
     with:
       build_type: pull-request
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       node_type: cpu8
       script: ci/build_wheel_pylibraft.sh
       package-name: pylibraft
@@ -351,7 +374,7 @@ jobs:
       build_type: pull-request
       script: ci/test_wheel_pylibraft.sh
   wheel-build-raft-dask:
-    needs: [checks, wheel-build-libraft]
+    needs: [build-details, checks, wheel-build-libraft]
     permissions:
       actions: read
       contents: read
@@ -362,6 +385,7 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
     with:
       build_type: pull-request
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       node_type: cpu8
       script: "ci/build_wheel_raft_dask.sh"
       package-name: raft_dask
