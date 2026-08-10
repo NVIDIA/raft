@@ -56,9 +56,13 @@ struct dry_run_memory_counter {
  * @brief Minimal RAII container for a single allocation from a memory resource.
  *
  * Stripped-down RAII wrapper: just allocate / deallocate / data().
- * Two constructor overloads cover sync and async resources:
- *   - Sync: (MR, size, alignment) -- calls allocate_sync, destructor calls deallocate_sync
- *   - Async: (MR, stream, size, alignment) -- calls allocate, destructor calls deallocate
+ * Two constructor overloads cover sync and async entry points:
+ *   - (MR, size, alignment) uses async allocation for async-capable resources,
+ *     otherwise sync allocation
+ *   - (MR, stream, size, alignment) uses async allocation
+ *
+ * Probe allocation and deallocation are always async for async-capable resources
+ * and always sync for sync-only resources.
  *
  * @tparam MR  Memory resource type, stored by value (use a ref type for non-owning).
  */
@@ -74,7 +78,11 @@ class probe_container {
   probe_container(MR mr, std::size_t size, std::size_t alignment = alignof(std::max_align_t))
     : mr_(std::move(mr)), ptr_(nullptr), size_(size), alignment_(alignment)
   {
-    ptr_ = mr_.allocate_sync(size_, alignment_);
+    if constexpr (cuda::mr::resource<M>) {
+      ptr_ = mr_.allocate(cuda::stream_ref{cudaStreamPerThread}, size_, alignment_);
+    } else {
+      ptr_ = mr_.allocate_sync(size_, alignment_);
+    }
   }
 
   template <typename M = MR, std::enable_if_t<cuda::mr::resource<M>, int> = 0>
