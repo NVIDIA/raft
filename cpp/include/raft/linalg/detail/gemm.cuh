@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -7,10 +7,59 @@
 #include "cublaslt_wrappers.hpp"
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdspan.hpp>
+#include <raft/core/error.hpp>
+#include <raft/core/mdspan_types.hpp>
 #include <raft/core/resources.hpp>
 
 namespace raft {
 namespace linalg::detail {
+
+/** Description of one operand of a batched gemm in cublas (column-major) terms. */
+struct batched_gemm_operand {
+  /** Whether every matrix of the batch is column-major (row-major otherwise). */
+  bool col_major;
+  /** Leading dimension of every matrix of the batch. */
+  uint64_t ld;
+  /** Offset in elements between consecutive matrices of the batch. */
+  int64_t batch_stride;
+};
+
+/**
+ * Interpret a 3D mdspan as a batch of matrices: the first (slowest-varying) dimension indexes the
+ * batch, the two remaining dimensions form a row- or column-major matrix. The batch stride is
+ * unconstrained: a stride of zero broadcasts a single matrix over the whole batch.
+ */
+template <typename ValueType, typename IndexType, typename LayoutPolicy>
+auto describe_batched_gemm_operand(
+  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicy> x, const char* name)
+  -> batched_gemm_operand
+{
+  const auto rows       = static_cast<uint64_t>(x.extent(1));
+  const auto cols       = static_cast<uint64_t>(x.extent(2));
+  const auto row_stride = static_cast<uint64_t>(x.stride(1));
+  const auto col_stride = static_cast<uint64_t>(x.stride(2));
+
+  batched_gemm_operand r{};
+  if (col_stride == 1 && row_stride >= cols) {
+    r.col_major = false;
+    r.ld        = row_stride;
+  } else if (row_stride == 1 && col_stride >= rows) {
+    r.col_major = true;
+    r.ld        = col_stride;
+  } else {
+    RAFT_FAIL(
+      "%s is not a batch of row- or column-major matrices: with extents [batch, %zu, %zu] the "
+      "matrix strides are [%zu, %zu], one of which must be 1",
+      name,
+      static_cast<size_t>(rows),
+      static_cast<size_t>(cols),
+      static_cast<size_t>(row_stride),
+      static_cast<size_t>(col_stride));
+  }
+  r.batch_stride = static_cast<int64_t>(x.stride(0));
+  return r;
+}
 
 template <typename A_T, typename B_T, typename C_T, typename S_T, bool DevicePointerMode = false>
 void legacy_gemm(raft::resources const& res,

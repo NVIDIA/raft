@@ -85,18 +85,28 @@ struct matmul_key_t {
   uint64_t ldc;
   bool trans_a;
   bool trans_b;
+  /** Number of matrices in the batch; 1 means a plain, non-batched matmul. */
+  uint64_t batch_count = 1;
+  /** Offsets in elements between consecutive matrices of the batch (ignored if batch_count == 1) */
+  int64_t stride_a = 0;
+  int64_t stride_b = 0;
+  int64_t stride_c = 0;
 };
 
 inline auto operator==(const matmul_key_t& a, const matmul_key_t& b) -> bool
 {
   return a.m == b.m && a.n == b.n && a.k == b.k && a.lda == b.lda && a.ldb == b.ldb &&
-         a.ldc == b.ldc && a.trans_a == b.trans_a && a.trans_b == b.trans_b;
+         a.ldc == b.ldc && a.trans_a == b.trans_a && a.trans_b == b.trans_b &&
+         a.batch_count == b.batch_count && a.stride_a == b.stride_a && a.stride_b == b.stride_b &&
+         a.stride_c == b.stride_c;
 }
 
 struct matmul_key_hash {
   inline auto operator()(const matmul_key_t& x) const noexcept -> std::size_t
   {
-    return x.m * x.n * x.k + x.lda * x.ldb * x.ldc + size_t{x.trans_a} + size_t{x.trans_b} * 2;
+    return x.m * x.n * x.k + x.lda * x.ldb * x.ldc + size_t{x.trans_a} + size_t{x.trans_b} * 2 +
+           x.batch_count * (static_cast<size_t>(x.stride_a) + static_cast<size_t>(x.stride_b) +
+                            static_cast<size_t>(x.stride_c));
   }
 };
 
@@ -160,12 +170,32 @@ struct cublastlt_matrix_layout {
   // NOLINTNEXTLINE
   inline operator cublasLtMatrixLayout_t() const noexcept { return res; }
 
-  template <typename T>
-  static inline auto for_matmul(bool col_major, uint64_t rows, uint64_t cols, uint64_t ld)
-    -> cublastlt_matrix_layout
+  /**
+   * Describe the matrix as a batch of `batch_count` matrices, `batch_stride` elements apart.
+   * A `batch_count` of one leaves the layout as a plain, non-batched matrix.
+   */
+  inline void set_batch(uint64_t batch_count, int64_t batch_stride)
   {
-    return cublastlt_matrix_layout{
+    if (batch_count <= 1) { return; }
+    const auto count = static_cast<int32_t>(batch_count);
+    RAFT_CUBLAS_TRY(cublasLtMatrixLayoutSetAttribute(
+      res, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &count, sizeof(count)));
+    RAFT_CUBLAS_TRY(cublasLtMatrixLayoutSetAttribute(
+      res, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &batch_stride, sizeof(batch_stride)));
+  }
+
+  template <typename T>
+  static inline auto for_matmul(bool col_major,
+                                uint64_t rows,
+                                uint64_t cols,
+                                uint64_t ld,
+                                uint64_t batch_count = 1,
+                                int64_t batch_stride = 0) -> cublastlt_matrix_layout
+  {
+    auto r = cublastlt_matrix_layout{
       get_cuda_data_type<T>(), col_major ? rows : cols, col_major ? cols : rows, ld};
+    r.set_batch(batch_count, batch_stride);
+    return r;
   }
 };
 
@@ -249,9 +279,12 @@ struct matmul_desc {
   {
     matmul_desc r{
       cublastlt_matmul_desc::for_matmul<S, A, B, C, DevicePointerMode>(args.trans_a, args.trans_b),
-      cublastlt_matrix_layout::for_matmul<A>(!(args.trans_a), args.m, args.k, args.lda),
-      cublastlt_matrix_layout::for_matmul<B>(!(args.trans_b), args.k, args.n, args.ldb),
-      cublastlt_matrix_layout::for_matmul<C>(true, args.m, args.n, args.ldc)};
+      cublastlt_matrix_layout::for_matmul<A>(
+        !(args.trans_a), args.m, args.k, args.lda, args.batch_count, args.stride_a),
+      cublastlt_matrix_layout::for_matmul<B>(
+        !(args.trans_b), args.k, args.n, args.ldb, args.batch_count, args.stride_b),
+      cublastlt_matrix_layout::for_matmul<C>(
+        true, args.m, args.n, args.ldc, args.batch_count, args.stride_c)};
 
     bool use_cublaslt_13_6_workaround = false;
     if constexpr (std::is_same_v<S, float> && std::is_same_v<A, float> &&
@@ -277,8 +310,12 @@ struct matmul_desc {
 
     if (use_cublaslt_13_6_workaround) {
       const auto heuristic_args = get_cublaslt_13_6_heuristic_args(args);
-      const auto heuristic_a    = cublastlt_matrix_layout::for_matmul<A>(
-        !(heuristic_args.trans_a), heuristic_args.m, heuristic_args.k, heuristic_args.lda);
+      const auto heuristic_a    = cublastlt_matrix_layout::for_matmul<A>(!(heuristic_args.trans_a),
+                                                                      heuristic_args.m,
+                                                                      heuristic_args.k,
+                                                                      heuristic_args.lda,
+                                                                      heuristic_args.batch_count,
+                                                                      heuristic_args.stride_a);
       query_heuristic(heuristic_a, r.c);
     } else {
       query_heuristic(r.a, r.c);
@@ -349,6 +386,47 @@ struct coef_wrapper<true, S> {
 };
 
 /**
+ * Shared implementation behind all cublasLt matmul wrappers: look up (or create and cache) the
+ * matmul descriptor for `mm_key` and run it. Batching, if any, is described by `mm_key`.
+ */
+template <bool DevicePointerMode, typename S, typename A, typename B, typename C>
+void matmul_impl(raft::resources const& res,
+                 const matmul_key_t& mm_key,
+                 const S* alpha,
+                 const A* a_ptr,
+                 const B* b_ptr,
+                 const S* beta,
+                 C* c_ptr,
+                 cudaStream_t stream)
+{
+  std::shared_ptr<matmul_desc> mm_desc{nullptr};
+  auto& cache =
+    resource::get_custom_resource<matmul_cache<S, A, B, C, DevicePointerMode>>(res)->value;
+  if (!cache.get(mm_key, &mm_desc)) {
+    mm_desc.reset(new matmul_desc{matmul_desc::create<S, A, B, C, DevicePointerMode>(res, mm_key)});
+    cache.set(mm_key, mm_desc);
+  }
+  // Allocate alpha and beta pointers if not provided.
+  coef_wrapper<DevicePointerMode, S> w(alpha, beta, stream);
+  RAFT_CUBLAS_TRY(cublasLtMatmul(resource::get_cublaslt_handle(res),
+                                 mm_desc->desc,
+                                 w.alpha,
+                                 a_ptr,
+                                 mm_desc->a,
+                                 b_ptr,
+                                 mm_desc->b,
+                                 w.beta,
+                                 c_ptr,
+                                 mm_desc->c,
+                                 c_ptr,
+                                 mm_desc->c,
+                                 &(mm_desc->heuristics.algo),
+                                 nullptr,
+                                 0,
+                                 stream));
+}
+
+/**
  * Compatibility version of the cublasLt matmul wrapper: It takes the cudaStream_t argument
  * explicitly rather than through the raft::resources. This function is used by other legacy
  * functions, which take the cudaStream_t argument explicitly; by using `legacy_matmul`, such
@@ -376,32 +454,8 @@ template <bool DevicePointerMode = false, typename S, typename A, typename B, ty
 {
   common::nvtx::range<common::nvtx::domain::raft> batch_scope(
     "linalg::matmul(m = %d, n = %d, k = %d)", m, n, k);
-  std::shared_ptr<matmul_desc> mm_desc{nullptr};
   matmul_key_t mm_key{m, n, k, lda, ldb, ldc, trans_a, trans_b};
-  auto& cache =
-    resource::get_custom_resource<matmul_cache<S, A, B, C, DevicePointerMode>>(res)->value;
-  if (!cache.get(mm_key, &mm_desc)) {
-    mm_desc.reset(new matmul_desc{matmul_desc::create<S, A, B, C, DevicePointerMode>(res, mm_key)});
-    cache.set(mm_key, mm_desc);
-  }
-  // Allocate alpha and beta pointers if not provided.
-  coef_wrapper<DevicePointerMode, S> w(alpha, beta, stream);
-  RAFT_CUBLAS_TRY(cublasLtMatmul(resource::get_cublaslt_handle(res),
-                                 mm_desc->desc,
-                                 w.alpha,
-                                 a_ptr,
-                                 mm_desc->a,
-                                 b_ptr,
-                                 mm_desc->b,
-                                 w.beta,
-                                 c_ptr,
-                                 mm_desc->c,
-                                 c_ptr,
-                                 mm_desc->c,
-                                 &(mm_desc->heuristics.algo),
-                                 nullptr,
-                                 0,
-                                 stream));
+  matmul_impl<DevicePointerMode, S, A, B, C>(res, mm_key, alpha, a_ptr, b_ptr, beta, c_ptr, stream);
 }
 
 /**
@@ -460,6 +514,73 @@ void matmul(raft::resources const& res,
                                           c_ptr,
                                           ldc,
                                           resource::get_cuda_stream(res));
+}
+
+/**
+ * @brief the wrapper of the strided-batched cublasLt matmul function
+ *  For every batch index i it computes:
+ *    C_i = alpha .* opA(A_i) * opB(B_i) + beta .* C_i
+ *  where X_i is the matrix starting at `x_ptr + i * stride_x`.
+ *
+ * All matrices of a batch share the same shape, leading dimension and transpose op; only the
+ * base pointers differ. A stride of zero broadcasts the same matrix over the whole batch.
+ *
+ * @tparam DevicePointerMode whether pointers alpha, beta point to device memory
+ * @tparam S the type of scale parameters alpha, beta
+ * @tparam A the element type of matrix A
+ * @tparam B the element type of matrix B
+ * @tparam C the element type of matrix C
+ *
+ * @param [in] res raft resources
+ * @param [in] trans_a cublas transpose op for A
+ * @param [in] trans_b cublas transpose op for B
+ * @param [in] m number of rows of C
+ * @param [in] n number of columns of C
+ * @param [in] k number of rows of opB(B) / number of columns of opA(A)
+ * @param [in] alpha host or device scalar, if nullptr, the default value 1 will be used
+ * @param [in] a_ptr such a matrix that the shape of column-major opA(A) is [m, k]
+ * @param [in] lda leading dimension of A
+ * @param [in] stride_a offset in elements between consecutive matrices of A
+ * @param [in] b_ptr such a matrix that the shape of column-major opA(B) is [k, n]
+ * @param [in] ldb leading dimension of B
+ * @param [in] stride_b offset in elements between consecutive matrices of B
+ * @param [in] beta host or device scalar, if nullptr, the default value 0 will be used
+ * @param [inout] c_ptr column-major matrix of size [m, n]
+ * @param [in] ldc leading dimension of C
+ * @param [in] stride_c offset in elements between consecutive matrices of C
+ * @param [in] batch_count number of matrices in the batch
+ */
+template <bool DevicePointerMode = false, typename S, typename A, typename B, typename C>
+void matmul_strided_batched(raft::resources const& res,
+                            bool trans_a,
+                            bool trans_b,
+                            uint64_t m,
+                            uint64_t n,
+                            uint64_t k,
+                            const S* alpha,
+                            const A* a_ptr,
+                            uint64_t lda,
+                            int64_t stride_a,
+                            const B* b_ptr,
+                            uint64_t ldb,
+                            int64_t stride_b,
+                            const S* beta,
+                            C* c_ptr,
+                            uint64_t ldc,
+                            int64_t stride_c,
+                            uint64_t batch_count)
+{
+  common::nvtx::range<common::nvtx::domain::raft> batch_scope(
+    "linalg::matmul_strided_batched(m = %d, n = %d, k = %d, batch_count = %d)",
+    m,
+    n,
+    k,
+    batch_count);
+  if (batch_count == 0) { return; }
+  matmul_key_t mm_key{
+    m, n, k, lda, ldb, ldc, trans_a, trans_b, batch_count, stride_a, stride_b, stride_c};
+  matmul_impl<DevicePointerMode, S, A, B, C>(
+    res, mm_key, alpha, a_ptr, b_ptr, beta, c_ptr, resource::get_cuda_stream(res));
 }
 
 }  // namespace linalg::detail
