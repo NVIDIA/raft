@@ -86,6 +86,45 @@ struct sparse_lanczos_svd_config {
   bool use_mgs2_orthogonalization = false;
 };
 
+/**
+ * @brief Optional per-call diagnostics for the sparse Lanczos SVD solver.
+ *
+ * Purely host-side counters, filled in as the restart loop runs. Pass a pointer to one of
+ * these to `sparse_lanczos_svd` to observe the restart path; pass `nullptr` (the default)
+ * to skip collection entirely. Collecting these adds no device work and no extra
+ * synchronization.
+ */
+struct sparse_lanczos_svd_stats {
+  /**
+   * @brief Number of restarts performed.
+   *
+   * A restart is a sweep after which a new starting vector was built and another
+   * bidiagonalization followed, i.e. it excludes the final sweep that completes
+   * `n_components` and exits the loop.
+   */
+  int n_restarts = 0;
+
+  /**
+   * @brief Largest number of Ritz pairs locked in a single sweep that was followed by a
+   *        restart.
+   *
+   * This is the `num_found` (`d`) of the restart path. Values >= 2 mean the restart window
+   * `V_full[:, n_locked : n_locked + active_ncv]` extended past the bidiagonalization write
+   * frontier, which is the multi-vector locking case. Sweeps that lock the final components
+   * and exit are deliberately not counted, because no restart vector is built from them.
+   */
+  int max_locked_per_restart = 0;
+
+  /** @brief Number of bidiagonalization sweeps executed, including the final one. */
+  int total_iterations = 0;
+
+  /**
+   * @brief Number of times a candidate Lanczos vector fell below the breakdown threshold
+   *        and was replaced by a random vector.
+   */
+  int breakdown_events = 0;
+};
+
 /** @} */
 
 }  // namespace raft::sparse::solver

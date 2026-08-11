@@ -252,7 +252,8 @@ void lanczos_bidiagonalize(raft::resources const& handle,
                            ValueTypeT* ortho_coeffs,
                            bool use_mgs2,
                            std::vector<ValueTypeT>& alphas,
-                           std::vector<ValueTypeT>& betas)
+                           std::vector<ValueTypeT>& betas,
+                           int* breakdown_events = nullptr)
 {
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::bidiagonalize");
   int m       = op.rows();
@@ -281,6 +282,7 @@ void lanczos_bidiagonalize(raft::resources const& handle,
                          breakdown_threshold(ValueTypeT(1)),
                          use_mgs2,
                          &used_random);
+  if (used_random && breakdown_events != nullptr) { ++(*breakdown_events); }
 
   for (int i = 0; i < ncv; ++i) {
     int idx_u = n_locked + i;
@@ -315,6 +317,7 @@ void lanczos_bidiagonalize(raft::resources const& handle,
                                              &used_random);
     alphas[i]       = used_random ? ValueTypeT(0) : alpha_norm;
     scale           = std::max(scale, alphas[i]);
+    if (used_random && breakdown_events != nullptr) { ++(*breakdown_events); }
 
     auto* v_next = V_full.data_handle() + static_cast<std::size_t>(idx_v + 1) * n;
     {
@@ -341,6 +344,7 @@ void lanczos_bidiagonalize(raft::resources const& handle,
                                            &used_random);
     betas[i + 1]  = used_random ? ValueTypeT(0) : beta_nrm;
     scale         = std::max(scale, betas[i + 1]);
+    if (used_random && breakdown_events != nullptr) { ++(*breakdown_events); }
   }
 }
 
@@ -446,10 +450,18 @@ void compute_ritz_vectors(raft::resources const& handle,
   }
 }
 
+/**
+ * @brief Build the next starting vector from the active Krylov basis.
+ *
+ * @param n_cols number of basis columns to combine. This is clamped by the caller to the
+ *        number of columns the bidiagonalization actually wrote, so the read never extends
+ *        past the write frontier and correctness does not depend on `U_full`/`V_full`
+ *        having been zeroed. `coeffs` is truncated to match.
+ */
 template <typename ValueTypeT>
 void compute_restart_vector(raft::resources const& handle,
                             int n,
-                            int ncv,
+                            int n_cols,
                             int n_locked,
                             std::vector<ValueTypeT> const& coeffs,
                             raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major> V_full,
@@ -458,14 +470,14 @@ void compute_restart_vector(raft::resources const& handle,
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::compute_restart_vector");
   auto stream = resource::get_cuda_stream(handle);
   auto d_coeffs =
-    raft::make_device_vector<ValueTypeT, uint32_t>(handle, static_cast<uint32_t>(ncv));
-  raft::update_device(d_coeffs.data_handle(), coeffs.data(), ncv, stream);
+    raft::make_device_vector<ValueTypeT, uint32_t>(handle, static_cast<uint32_t>(n_cols));
+  raft::update_device(d_coeffs.data_handle(), coeffs.data(), n_cols, stream);
 
   auto const* V_segment = V_full.data_handle() + static_cast<std::size_t>(n_locked) * n;
   raft::linalg::gemv(handle,
                      V_segment,
                      n,
-                     ncv,
+                     n_cols,
                      d_coeffs.data_handle(),
                      v_start,
                      false,
@@ -532,7 +544,8 @@ void sparse_lanczos_svd(
   OperatorT const& op,
   raft::device_vector_view<ValueTypeT, uint32_t> singular_values,
   std::optional<raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> U,
-  std::optional<raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> Vt)
+  std::optional<raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> Vt,
+  sparse_lanczos_svd_stats* stats = nullptr)
 {
   common::nvtx::range<common::nvtx::domain::raft> fun_scope(
     "raft::sparse::solver::sparse_lanczos_svd(%d, %d, %d)",
@@ -623,6 +636,12 @@ void sparse_lanczos_svd(
   int n_locked   = 0;
   int total_iter = 0;
 
+  // Host-side diagnostics. Written to `stats` on exit; never read by the algorithm.
+  int stat_sweeps           = 0;
+  int stat_restarts         = 0;
+  int stat_max_locked       = 0;
+  int stat_breakdown_events = 0;
+
   while (n_locked < k && total_iter < config.max_iterations) {
     common::nvtx::range<common::nvtx::domain::raft> restart_scope(
       "lanczos_svds::restart_iteration");
@@ -642,7 +661,9 @@ void sparse_lanczos_svd(
                           ortho_coeffs.data_handle(),
                           config.use_mgs2_orthogonalization,
                           alphas,
-                          betas);
+                          betas,
+                          &stat_breakdown_events);
+    ++stat_sweeps;
 
     auto B = raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(
       handle, static_cast<uint32_t>(active_ncv), static_cast<uint32_t>(active_ncv));
@@ -739,9 +760,37 @@ void sparse_lanczos_svd(
       }
     }
 
+    // Clamp the restart read to the bidiagonalization write frontier.
+    //
+    // The coefficients index the active basis starting at the *pre-lock* n_locked (call it
+    // L), but n_locked has already advanced by `num_found` (d) above, so the read starts at
+    // column L + d. The bidiagonalization wrote columns L .. L + active_ncv inclusive,
+    // which leaves active_ncv - d + 1 readable columns. Without this clamp a d >= 2 sweep
+    // reads d - 1 columns that were never written by this or any earlier sweep (earlier
+    // write frontiers are strictly lower).
+    //
+    // Reading those columns is only well defined because U_full/V_full are memset to zero
+    // below; on a pooled memory resource the bytes are otherwise whatever the allocator
+    // last held, and could be Inf/NaN. Clamping removes that dependency outright rather
+    // than relying on the memset to make it benign, and is mathematically identical:
+    // the dropped coefficients would have multiplied exact zeros.
+    int locked_this_sweep = static_cast<int>(selected.size());
+    int restart_cols      = active_ncv - std::max(0, locked_this_sweep - 1);
     compute_restart_vector(
-      handle, n, active_ncv, n_locked, restart_coeffs, V_full.view(), v_start.data_handle());
+      handle, n, restart_cols, n_locked, restart_coeffs, V_full.view(), v_start.data_handle());
+    // Counted here rather than at the lock site: only sweeps that actually go on to build a
+    // restart vector read the shifted window, so only their `num_found` is meaningful for
+    // the multi-vector locking diagnostics.
+    ++stat_restarts;
+    stat_max_locked = std::max(stat_max_locked, static_cast<int>(selected.size()));
     ++total_iter;
+  }
+
+  if (stats != nullptr) {
+    stats->n_restarts             = stat_restarts;
+    stats->max_locked_per_restart = stat_max_locked;
+    stats->total_iterations       = stat_sweeps;
+    stats->breakdown_events       = stat_breakdown_events;
   }
 
   RAFT_EXPECTS(n_locked >= k,

@@ -58,6 +58,8 @@ namespace raft::sparse::solver {
  *             Pass `std::nullopt` to skip storing U.
  * @param[out] Vt optional output right singular vectors of shape (n_components, n), col-major.
  *             Pass `std::nullopt` to skip storing Vt.
+ * @param[out] stats optional host-side restart diagnostics. Pass `nullptr` (the default) to
+ *             skip collection; collecting adds no device work or synchronization.
  */
 template <typename ValueTypeT, typename OperatorT>
 void sparse_lanczos_svd(
@@ -68,9 +70,10 @@ void sparse_lanczos_svd(
   detail::nondeduced_optional_matrix_view_t<
     raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> U = std::nullopt,
   detail::nondeduced_optional_matrix_view_t<
-    raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> Vt = std::nullopt)
+    raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> Vt = std::nullopt,
+  sparse_lanczos_svd_stats* stats                                       = nullptr)
 {
-  detail::sparse_lanczos_svd(handle, config, op, singular_values, U, Vt);
+  detail::sparse_lanczos_svd(handle, config, op, singular_values, U, Vt, stats);
 }
 
 /**
@@ -93,6 +96,8 @@ void sparse_lanczos_svd(
  *             Pass `std::nullopt` to skip storing U.
  * @param[out] Vt optional output right singular vectors of shape (n_components, n), col-major.
  *             Pass `std::nullopt` to skip storing Vt.
+ * @param[out] stats optional host-side restart diagnostics. Pass `nullptr` (the default) to
+ *             skip collection; collecting adds no device work or synchronization.
  */
 template <typename ValueTypeT, typename NNZTypeT>
 void sparse_lanczos_svd(
@@ -103,10 +108,11 @@ void sparse_lanczos_svd(
   detail::nondeduced_optional_matrix_view_t<
     raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> U = std::nullopt,
   detail::nondeduced_optional_matrix_view_t<
-    raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> Vt = std::nullopt)
+    raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>> Vt = std::nullopt,
+  sparse_lanczos_svd_stats* stats                                       = nullptr)
 {
   detail::csr_linear_operator<ValueTypeT, NNZTypeT> op(A);
-  detail::sparse_lanczos_svd(handle, config, op, singular_values, U, Vt);
+  detail::sparse_lanczos_svd(handle, config, op, singular_values, U, Vt, stats);
 }
 
 /** @} */
