@@ -4,7 +4,9 @@
  */
 #pragma once
 
+#include <raft/core/logger.hpp>
 #include <raft/core/memory_stats_resources.hpp>
+#include <raft/core/resource/device_id.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/managed_memory_resource.hpp>
@@ -20,8 +22,7 @@
 
 #include <cuda/stream_ref>
 
-#include <cstddef>
-#include <cstdint>
+#include <exception>
 #include <memory>
 #include <utility>
 
@@ -62,7 +63,8 @@ class dry_run_resources : public resources {
     : resources(existing),
       active_(!resource::get_dry_run_flag(existing)),
       old_host_(raft::mr::get_default_host_resource()),
-      old_device_(rmm::mr::get_current_device_resource_ref())
+      old_device_(
+        rmm::mr::get_per_device_resource_ref(rmm::cuda_device_id{resource::get_device_id(*this)}))
   {
     if (active_) init();
   }
@@ -72,7 +74,16 @@ class dry_run_resources : public resources {
     if (!active_) return;
     resource::set_dry_run_flag(*this, false);
     raft::mr::set_default_host_resource(old_host_);
-    rmm::mr::set_current_device_resource(old_device_);
+    try {
+      rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                       std::move(old_device_));
+    } catch (const std::exception& e) {
+      RAFT_LOG_ERROR("dry_run_resources failed to restore the per-device memory resource: %s",
+                     e.what());
+    } catch (...) {
+      RAFT_LOG_ERROR(
+        "dry_run_resources failed to restore the per-device memory resource: unknown exception");
+    }
 
     // Drop all base-class entries so that probe container RAII cleanup runs
     // while old_device_ and snapshot_ are still alive
@@ -193,7 +204,8 @@ class dry_run_resources : public resources {
       device_dry_run_t dr{rmm::device_async_resource_ref{old_device_}};
       device_stats_   = dr.get_counter();
       device_adaptor_ = std::make_unique<device_dry_run_t>(std::move(dr));
-      rmm::mr::set_current_device_resource(*device_adaptor_);
+      rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                       *device_adaptor_);
     }
 
     // --- Workspace ---
