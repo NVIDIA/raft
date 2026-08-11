@@ -6,7 +6,7 @@
 
 **Context**: RAFT is a foundational library of GPU-accelerated primitives (core/mdspan/resources, linalg, sparse, stats, distance, random, cluster, matrix, neighbors, solvers) built with CUDA. Dependencies include RMM, libcudacxx, thrust, CUB, cuBLAS, and cuSOLVER.
 
-**Verify changes against `docs/source/developer_guide.md`**, especially *Preferred APIs and idioms*, *Public Interface*, *Resource Management*, and *Asynchronous operations and stream ordering*.
+**Verify changes against `docs/source/developer_guide.md`**, especially *Preferred APIs and idioms*, *Public Interface*, *Resource Management*, and *Asynchronous operations and stream ordering*. For code taking `raft::resources`, also verify dry run compliance against `docs/source/dry_run_protocol.md`.
 
 ## IGNORE These Issues
 
@@ -44,6 +44,18 @@
 - C++ API changes without proper deprecation warnings
 - Changes to data structures exposed in public headers (`cpp/include/raft/`, `cpp/include/raft_runtime/`)
 - Breaking changes to algorithm behavior
+
+### Dry Run Protocol Compliance
+- Code reachable from public APIs taking `raft::resources` must follow `docs/source/dry_run_protocol.md`:
+  allocations run in dry run; meaningful CUDA work does not; entry points remain callable.
+- Prefer `if (!resource::get_dry_run_flag(handle)) { /* CUDA work */ }` so allocations/cleanup still execute.
+  Early `return` on dry-run is acceptable only when the skipped path clearly cannot allocate (own code or callees),
+  now or in likely future edits, or when no other compliant structure works.
+  Flag early returns that skip allocations or sit on wrappers before allocating callees.
+- Other anti-patterns: guarding allocations; unguarded meaningful CUDA work
+  (kernels, Thrust, library compute, raw memcpy/memset, `interruptible::synchronize`);
+  unguarded low-level accesses to any resource-allocated memory;
+  `resize()` instead of sized construction when that hides peak.
 
 ## HIGH Issues (Comment if Substantial)
 
@@ -85,6 +97,11 @@
 ### Test Quality
 - Missing validation of numerical correctness
 - **Using external datasets** (tests must not depend on external resources; use synthetic data or bundled datasets)
+- **Dry-run test coverage**: when the PR adds or materially changes `raft::resources` algorithms/primitives,
+  cover a sensible fraction of the new functionality with dry-run checks
+  (main public paths; not every overload/edge).
+  Prefer `raft::execute_with_dry_run_check` from `cpp/tests/test_utils.cuh` with the appropriate `alloc_behavior`
+  (`NO_ALLOCATIONS`, `ARGUMENT_DRIVEN`, or `DATA_DRIVEN`).
 
 ## MEDIUM Issues (Comment Selectively)
 
@@ -101,7 +118,8 @@
 5. **API stability**: Breaking changes to C++ APIs?
 6. **Data layout**: Row/column major handled correctly?
 7. **Stream lifecycle**: Are CUDA streams explicitly created/destroyed for concurrent operations?
-8. **Ask, don't tell**: "Have you considered X?" not "You should do X"
+8. **Dry-run compliance**: For `raft::resources` APIs, are allocations unguarded, meaningful CUDA work guarded, and early returns safe? Do new tests use `execute_with_dry_run_check` where appropriate?
+9. **Ask, don't tell**: "Have you considered X?" not "You should do X"
 
 ## Quality Threshold
 
@@ -192,6 +210,28 @@ cudaStream_t per_device_stream;
 cudaStreamCreate(&per_device_stream);
 // Use per_device_stream for this GPU's operations
 // cudaStreamDestroy(per_device_stream) in cleanup
+```
+
+**CRITICAL** (dry-run: wrapper early return hides allocations):
+```
+CRITICAL: Dry-run early return skips allocating callee
+
+Issue: Public wrapper returns on get_dry_run_flag before calling detail::foo
+Why: Callee allocations are never tracked; dry-run peak under-reports memory
+
+Suggested fix:
+// Delegate unconditionally; detail::foo must guard its own CUDA work
+detail::foo(handle, ...);
+```
+
+**HIGH** (dry-run: missing test coverage):
+```
+HIGH: New raft::resources API missing dry-run test coverage
+
+Issue: New primitive has correctness tests but no dry-run check
+Why: Dry-run regressions (unguarded CUDA work / skipped allocations) go unnoticed
+Consider: raft::execute_with_dry_run_check(handle, [&](auto const& h) { ... },
+          raft::alloc_behavior::ARGUMENT_DRIVEN);
 ```
 
 ## Examples to Avoid
@@ -310,8 +350,17 @@ cudaStreamCreate(&per_device_stream);
 - [ ] Are all datasets synthetic or bundled (no external resource dependencies)?
 - [ ] Is numerical correctness validated?
 - [ ] Are edge cases tested (empty, single element, extreme values)?
+- [ ] For new/changed `raft::resources` functionality, is a sensible fraction of main paths covered with `execute_with_dry_run_check`?
+
+### When Reviewing Dry-Run Compliance
+- [ ] Allocations (`rmm` / `make_*_mdarray`, workspace buffers) run in dry-run (unguarded)?
+- [ ] Meaningful CUDA work guarded via `resource::get_dry_run_flag`?
+- [ ] Early dry-run `return` only if the skipped path cannot allocate (or no alternative)?
+- [ ] Public wrappers call through to allocating callees (no early return that hides them)?
+- [ ] No control-flow/writes on dry-run probe memory; no peak-hiding `resize()` patterns?
 
 ---
 
 **Remember**: Focus on correctness and safety. Catch real bugs (crashes, wrong results, leaks),
-ignore style preferences. For RAFT C++: CUDA correctness and numerical stability are paramount.
+ignore style preferences. For RAFT C++: CUDA correctness, numerical stability, and dry-run
+compliance for `raft::resources` APIs are paramount.
