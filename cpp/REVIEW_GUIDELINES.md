@@ -48,7 +48,7 @@
 ### Dry Run Protocol Compliance
 - Code reachable from public APIs taking `raft::resources` must follow `docs/source/dry_run_protocol.md`:
   allocations run in dry run; meaningful CUDA work does not; entry points remain callable.
-- Prefer `if (!resource::get_dry_run_flag(handle)) { /* CUDA work */ }` so allocations/cleanup still execute.
+- Prefer `if (!resource::get_dry_run_flag(res)) { /* CUDA work */ }` so allocations/cleanup still execute.
   Early `return` on dry-run is acceptable only when the skipped path clearly cannot allocate (own code or callees),
   now or in likely future edits, or when no other compliant structure works.
   Flag early returns that skip allocations or sit on wrappers before allocating callees.
@@ -56,6 +56,14 @@
   (kernels, Thrust, library compute, raw memcpy/memset, `interruptible::synchronize`);
   unguarded low-level accesses to any resource-allocated memory;
   `resize()` instead of sized construction when that hides peak.
+- Treat RAFT resource-aware APIs as compliant only after checking their implementation or the dry run protocol.
+  Do not report `resource::sync_stream(res)`, `raft::copy(res, ...)`, or another listed compliant RAFT API
+  as unguarded CUDA work when it accepts `raft::resources` and implements its own dry-run guard.
+- Before suggesting a dry-run early return or moving an existing guard, trace all preceding workspace-size queries,
+  allocations, required cleanup, and allocating callees. The suggested control flow must keep those operations
+  reachable in dry-run mode.
+- Report direct CUDA work, such as `raft::interruptible::synchronize`, kernels, CUDA memory operations, and library
+  compute calls, unless the code or its resource-aware wrapper guards that work.
 
 ## HIGH Issues (Comment if Substantial)
 
@@ -358,6 +366,8 @@ Consider: raft::execute_with_dry_run_check(handle, [&](auto const& h) { ... },
 - [ ] Early dry-run `return` only if the skipped path cannot allocate (or no alternative)?
 - [ ] Public wrappers call through to allocating callees (no early return that hides them)?
 - [ ] No control-flow/writes on dry-run probe memory; no peak-hiding `resize()` patterns?
+- [ ] Did the review inspect the implementation or protocol classification of each resource-aware wrapper before reporting it as unguarded CUDA work?
+- [ ] Does a proposed guard preserve all required workspace queries, allocations, and cleanup in dry-run mode?
 
 ---
 
