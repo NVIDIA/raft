@@ -23,6 +23,20 @@ constexpr auto kInt32Max = std::numeric_limits<int32_t>::max();
  * @brief Perform fast integer division and modulo using a known divisor
  * From Hacker's Delight, Second Edition, Chapter 10
  *
+ * **Usage**
+ *
+ * Construct the divisor once and call `/` and `%` operators repeatedly with
+ * different numerators.
+
+ * @code{.cpp}
+ * raft::util::FastIntDiv<int32_t> div(stride);
+ * int32_t quotient  = flat_index / div;
+ * int32_t remainder = flat_index % div;
+ * @endcode
+ *
+ * @note It will auto-fallback to the plain division when the divisor or the numerator
+ * is beyond the 32-bit signed integer range.
+ *
  * @todo Extend support for signed divisors
  */
 template <typename IntT>
@@ -104,9 +118,12 @@ struct FastIntDiv {
 
 /**
  * @brief Division overload, so that FastIntDiv can be transparently switched
- *        to even on device
+ *
+ * @note Not meant to be called directly, but via `n / div` where `div` is a
+ *       `FastIntDiv` instance
+ *
  * @param n numerator
- * @param divisor the denominator
+ * @param divisor the precomputed divisor
  * @return the quotient
  */
 template <typename NumIntT, typename DivIntT>
@@ -122,10 +139,13 @@ HDI std::common_type_t<NumIntT, DivIntT> operator/(NumIntT n, const FastIntDiv<D
 }
 
 /**
- * @brief Modulo overload, so that FastIntDiv can be transparently switched
- *        to even on device
+ * @brief Modulo overload enabling transparent use of `FastIntDiv` with `%`.
+ *
+ * @note Not meant to be called directly, but via `n % div` where `div` is a
+ *       `FastIntDiv` instance
+ *
  * @param n numerator
- * @param divisor the denominator
+ * @param divisor the precomputed divisor
  * @return the remainder
  */
 template <typename NumIntT, typename DivIntT>
