@@ -315,27 +315,23 @@ void gemm(raft::resources const& res,
  * @param[in] batch_count number of matrix multiplications
  * @param[in] compute_type cublasLt compute type
  */
-template <typename A_t, typename B_t, typename C_t, typename S_t, bool DevicePointerMode = false>
-void gemm_strided_batched(
-  raft::resources const& res,
-  bool trans_a,
-  bool trans_b,
-  uint64_t m,
-  uint64_t n,
-  uint64_t k,
-  const S_t* alpha,
-  const A_t* a,
-  uint64_t lda,
-  int64_t stride_a,
-  const B_t* b,
-  uint64_t ldb,
-  int64_t stride_b,
-  const S_t* beta,
-  C_t* c,
-  uint64_t ldc,
-  int64_t stride_c,
-  int32_t batch_count,
-  cublasComputeType_t compute_type = detail::get_matmul_type<S_t, A_t, B_t, C_t>())
+template <typename ValueType,
+          typename IndexType,
+          typename LayoutPolicyX,
+          typename LayoutPolicyY,
+          typename LayoutPolicyZ,
+          typename ScalarIdxType  = std::uint32_t,
+          typename ScalarViewType = raft::host_scalar_view<ValueType, ScalarIdxType>,
+          typename                = std::enable_if_t<std::disjunction_v<
+                           std::is_same<ScalarViewType, raft::host_scalar_view<ValueType, ScalarIdxType>>,
+                           std::is_same<ScalarViewType, raft::device_scalar_view<ValueType, ScalarIdxType>>>>>
+void gemm_batched(raft::resources const& res,
+          raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyX> x,
+          raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyY> y,
+          raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyZ> z,
+          std::optional<ScalarViewType> alpha = std::nullopt,
+          std::optional<ScalarViewType> beta  = std::nullopt,
+          cublasComputeType_t compute_type_override = detail::get_matmul_type<ValueType, ValueType, ValueType, ValueType>()))
 {
   detail::matmul_strided_batched<DevicePointerMode>(res,
                                                     trans_a,
