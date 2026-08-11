@@ -75,8 +75,10 @@ class dry_run_resources : public resources {
     resource::set_dry_run_flag(*this, false);
     raft::mr::set_default_host_resource(old_host_);
     try {
+      // Pass a copy rather than moving out of old_device_: device_adaptor_ holds a non-owning ref
+      // into it and its probe deallocates through that ref later, during member destruction.
       rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
-                                       std::move(old_device_));
+                                       old_device_);
     } catch (const std::exception& e) {
       RAFT_LOG_ERROR("dry_run_resources failed to restore the per-device memory resource: %s",
                      e.what());
