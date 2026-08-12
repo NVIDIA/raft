@@ -328,13 +328,13 @@ template <typename RedOp, typename math_t, typename out_t, typename idx_t>
 inline void argReduce(const math_t* in, idx_t D, idx_t N, out_t* out, cudaStream_t stream)
 {
   if (D <= 32) {
-    raft::launch_kernel(stream, N, 32)(argReduceKernel<RedOp, 32>, in, D, N, out);
+    raft::launch_kernel(stream, N, 32, argReduceKernel<RedOp, 32>, in, D, N, out);
   } else if (D <= 64) {
-    raft::launch_kernel(stream, N, 64)(argReduceKernel<RedOp, 64>, in, D, N, out);
+    raft::launch_kernel(stream, N, 64, argReduceKernel<RedOp, 64>, in, D, N, out);
   } else if (D <= 128) {
-    raft::launch_kernel(stream, N, 128)(argReduceKernel<RedOp, 128>, in, D, N, out);
+    raft::launch_kernel(stream, N, 128, argReduceKernel<RedOp, 128>, in, D, N, out);
   } else {
-    raft::launch_kernel(stream, N, 256)(argReduceKernel<RedOp, 256>, in, D, N, out);
+    raft::launch_kernel(stream, N, 256, argReduceKernel<RedOp, 256>, in, D, N, out);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }
@@ -390,13 +390,13 @@ void signFlip(math_t* inout, int n_rows, int n_cols, cudaStream_t stream)
   int N     = n_cols;
   auto data = inout;
   if (D <= 32) {
-    raft::launch_kernel(stream, N, 32)(signFlipKernel<math_t, 32>, data, D, N);
+    raft::launch_kernel(stream, N, 32, signFlipKernel<math_t, 32>, data, D, N);
   } else if (D <= 64) {
-    raft::launch_kernel(stream, N, 64)(signFlipKernel<math_t, 64>, data, D, N);
+    raft::launch_kernel(stream, N, 64, signFlipKernel<math_t, 64>, data, D, N);
   } else if (D <= 128) {
-    raft::launch_kernel(stream, N, 128)(signFlipKernel<math_t, 128>, data, D, N);
+    raft::launch_kernel(stream, N, 128, signFlipKernel<math_t, 128>, data, D, N);
   } else {
-    raft::launch_kernel(stream, N, 256)(signFlipKernel<math_t, 256>, data, D, N);
+    raft::launch_kernel(stream, N, 256, signFlipKernel<math_t, 256>, data, D, N);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }

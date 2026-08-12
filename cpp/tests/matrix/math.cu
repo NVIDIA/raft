@@ -34,7 +34,7 @@ void naivePower(Type* in, Type* out, int len, cudaStream_t stream)
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(naivePowerKernel<Type>, in, out, len);
+  raft::launch_kernel(stream, nblks, TPB, naivePowerKernel<Type>, in, out, len);
 }
 
 template <typename Type>
@@ -49,7 +49,7 @@ void naiveSqrt(Type* in, Type* out, int len, cudaStream_t stream)
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(naiveSqrtKernel<Type>, in, out, len);
+  raft::launch_kernel(stream, nblks, TPB, naiveSqrtKernel<Type>, in, out, len);
 }
 
 template <typename Type>
@@ -85,7 +85,7 @@ RAFT_KERNEL naiveSignFlipKernel(Type* in, Type* out, int rowCount, int colCount)
 template <typename Type>
 void naiveSignFlip(Type* in, Type* out, int rowCount, int colCount, cudaStream_t stream)
 {
-  raft::launch_kernel(stream, colCount, 1)(naiveSignFlipKernel<Type>, in, out, rowCount, colCount);
+  raft::launch_kernel(stream, colCount, 1, naiveSignFlipKernel<Type>, in, out, rowCount, colCount);
 }
 
 template <typename T>

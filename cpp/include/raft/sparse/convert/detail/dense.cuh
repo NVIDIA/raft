@@ -124,8 +124,15 @@ void csr_to_dense(cusparseHandle_t handle,
   } else {
     int blockdim = block_dim(ncols);
     RAFT_CUDA_TRY(cudaMemsetAsync(out, 0, nrows * ncols * sizeof(value_t), stream));
-    raft::launch_kernel(stream, nrows, blockdim)(
-      csr_to_dense_warp_per_row_kernel, ncols, csr_data, csr_indptr, csr_indices, out);
+    raft::launch_kernel(stream,
+                        nrows,
+                        blockdim,
+                        csr_to_dense_warp_per_row_kernel,
+                        ncols,
+                        csr_data,
+                        csr_indptr,
+                        csr_indices,
+                        out);
   }
 }
 

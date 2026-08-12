@@ -156,8 +156,16 @@ void stridedReduction(OutType* dots,
                     raft::min((IdxType)MaxBlocksDimY, raft::ceildiv(N, (IdxType)MinRowsPerBlk)));
     const size_t shmemSize = sizeof(OutType) * Block.x * 2;
 
-    raft::launch_kernel(stream, grid, Block, shmemSize)(
-      stridedSummationKernel<InType, IdxType>, dots, data, D, N, init, main_op);
+    raft::launch_kernel({stream, shmemSize},
+                        grid,
+                        Block,
+                        stridedSummationKernel<InType, IdxType>,
+                        dots,
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op);
   } else {
     // Arbitrary numbers for now, probably need to tune
     const dim3 thrds(32, 16);
@@ -167,8 +175,17 @@ void stridedReduction(OutType* dots,
                      raft::ceildiv(N, (IdxType)thrds.y * elemsPerThread));
     const size_t shmemSize = sizeof(OutType) * thrds.x * thrds.y;
 
-    raft::launch_kernel(stream, nblks, thrds, shmemSize)(
-      stridedReductionKernel<InType, OutType, IdxType>, dots, data, D, N, init, main_op, reduce_op);
+    raft::launch_kernel({stream, shmemSize},
+                        nblks,
+                        thrds,
+                        stridedReductionKernel<InType, OutType, IdxType>,
+                        dots,
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op,
+                        reduce_op);
   }
 
   ///@todo: this complication should go away once we have eliminated the need

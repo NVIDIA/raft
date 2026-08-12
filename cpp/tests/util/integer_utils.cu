@@ -54,13 +54,16 @@ class Multiplication64bit : public testing::TestWithParam<MulInputs> {
     wmul_64bit(result_high, result_low, params.operand_1, params.operand_2);
     wmul_64bit(swapped_result_high, swapped_result_low, params.operand_2, params.operand_1);
 
-    raft::launch_kernel(stream, 1, 1)(mul64_test_kernel,
-                                      d_result_high.data(),
-                                      d_result_low.data(),
-                                      d_swapped_result_high.data(),
-                                      d_swapped_result_low.data(),
-                                      params.operand_1,
-                                      params.operand_2);
+    raft::launch_kernel(stream,
+                        1,
+                        1,
+                        mul64_test_kernel,
+                        d_result_high.data(),
+                        d_result_low.data(),
+                        d_swapped_result_high.data(),
+                        d_swapped_result_low.data(),
+                        params.operand_1,
+                        params.operand_2);
   }
 
   raft::resources handle;

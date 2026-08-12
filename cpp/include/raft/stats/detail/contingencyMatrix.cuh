@@ -59,13 +59,16 @@ void computeCMatWAtomics(const T* groundTruth,
     cudaFuncSetCacheConfig(devConstructContingencyMatrix<T, OutT>, cudaFuncCachePreferL1));
   static const int block = 128;
   auto grid              = raft::ceildiv(nSamples, block);
-  raft::launch_kernel(stream, grid, block)(devConstructContingencyMatrix<T, OutT>,
-                                           groundTruth,
-                                           predictedLabel,
-                                           nSamples,
-                                           outMat,
-                                           outIdxOffset,
-                                           outDimN);
+  raft::launch_kernel(stream,
+                      grid,
+                      block,
+                      devConstructContingencyMatrix<T, OutT>,
+                      groundTruth,
+                      predictedLabel,
+                      nSamples,
+                      outMat,
+                      outIdxOffset,
+                      outDimN);
 }
 
 template <typename T, typename OutT = int>
@@ -107,14 +110,16 @@ void computeCMatWSmemAtomics(const T* groundTruth,
   static const int block  = 128;
   auto grid               = raft::ceildiv(nSamples, block);
   size_t smemSizePerBlock = outDimN * outDimN * sizeof(OutT);
-  raft::launch_kernel(stream, grid, block, smemSizePerBlock)(
-    devConstructContingencyMatrixSmem<T, OutT>,
-    groundTruth,
-    predictedLabel,
-    nSamples,
-    outMat,
-    outIdxOffset,
-    outDimN);
+  raft::launch_kernel({stream, smemSizePerBlock},
+                      grid,
+                      block,
+                      devConstructContingencyMatrixSmem<T, OutT>,
+                      groundTruth,
+                      predictedLabel,
+                      nSamples,
+                      outMat,
+                      outIdxOffset,
+                      outDimN);
 }
 
 template <typename T, typename OutT = int>

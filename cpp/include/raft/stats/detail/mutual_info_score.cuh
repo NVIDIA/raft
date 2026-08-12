@@ -151,14 +151,16 @@ double mutual_info_score(const T* firstClusterArray,
                  raft::ceildiv<int>(numUniqueClasses, numThreadsPerBlock.y));
 
   // calling the kernel
-  raft::launch_kernel(stream, numBlocks, numThreadsPerBlock)(
-    mutual_info_kernel<T, BLOCK_DIM_X, BLOCK_DIM_Y>,
-    dContingencyMatrix.data(),
-    a.data(),
-    b.data(),
-    numUniqueClasses,
-    size,
-    d_MI.data());
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      numThreadsPerBlock,
+                      mutual_info_kernel<T, BLOCK_DIM_X, BLOCK_DIM_Y>,
+                      dContingencyMatrix.data(),
+                      a.data(),
+                      b.data(),
+                      numUniqueClasses,
+                      size,
+                      d_MI.data());
 
   // updating in the host memory
   h_MI = d_MI.value(stream);

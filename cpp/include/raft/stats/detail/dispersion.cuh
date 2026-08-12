@@ -110,15 +110,30 @@ DataT dispersion(const DataT* centroids,
   }
   RAFT_CUDA_TRY(cudaMemsetAsync(mu, 0, sizeof(DataT) * dim, stream));
   RAFT_CUDA_TRY(cudaMemsetAsync(result.data(), 0, sizeof(DataT), stream));
-  raft::launch_kernel(stream, grid, TPB)(
-    weightedMeanKernel<DataT, IdxT, TPB, ColsPerBlk>, mu, centroids, clusterSizes, dim, nClusters);
+  raft::launch_kernel(stream,
+                      grid,
+                      TPB,
+                      weightedMeanKernel<DataT, IdxT, TPB, ColsPerBlk>,
+                      mu,
+                      centroids,
+                      clusterSizes,
+                      dim,
+                      nClusters);
   DataT ratio = DataT(1) / DataT(nPoints);
   raft::linalg::scalarMultiply(mu, mu, ratio, dim, stream);
   // finally, compute the dispersion
   constexpr int ItemsPerThread = 4;
   int nblks                    = raft::ceildiv<int>(dim * nClusters, TPB * ItemsPerThread);
-  raft::launch_kernel(stream, nblks, TPB)(
-    dispersionKernel<DataT, IdxT, TPB>, result.data(), centroids, clusterSizes, mu, dim, nClusters);
+  raft::launch_kernel(stream,
+                      nblks,
+                      TPB,
+                      dispersionKernel<DataT, IdxT, TPB>,
+                      result.data(),
+                      centroids,
+                      clusterSizes,
+                      mu,
+                      dim,
+                      nClusters);
   DataT h_result;
   raft::update_host(&h_result, result.data(), 1, stream);
   raft::interruptible::synchronize(stream);

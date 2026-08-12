@@ -109,14 +109,14 @@ TEST(Raft, InterruptibleOpenMP)
     auto i = omp_get_thread_num();
     common::nvtx::range omp_scope("interruptible::thread-%d", i);
     rmm::cuda_stream stream;
-    raft::launch_kernel(stream.value(), 1, 1)(gpu_wait, 1);
+    raft::launch_kernel(stream.value(), 1, 1, gpu_wait, 1);
     interruptible::synchronize(stream);
     thread_tokens[i] = interruptible::get_token();
 
 #pragma omp barrier
     try {
       common::nvtx::range wait_scope("interruptible::wait-%d", i);
-      raft::launch_kernel(stream.value(), 1, 1)(gpu_wait, (1 + i) * thread_delay_millis);
+      raft::launch_kernel(stream.value(), 1, 1, gpu_wait, (1 + i) * thread_delay_millis);
       interruptible::synchronize(stream);
       n_finished = 1;
     } catch (interrupted_exception&) {

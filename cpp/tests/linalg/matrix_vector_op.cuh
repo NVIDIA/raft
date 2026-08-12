@@ -51,8 +51,8 @@ void naiveMatVec(OutT* out,
   static const IdxType TPB = 64;
   IdxType len              = N * D;
   IdxType nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveMatVecKernel, out, mat, vec, D, N, rowMajor, bcastAlongRows, op);
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveMatVecKernel, out, mat, vec, D, N, rowMajor, bcastAlongRows, op);
 }
 
 template <typename OutT, typename MatT, typename VecT, typename IdxType = int>
@@ -129,8 +129,19 @@ void naiveMatVec(OutT* out,
   static const IdxType TPB = 64;
   IdxType len              = N * D;
   IdxType nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveMatVecKernel, out, mat, vec1, vec2, D, N, rowMajor, bcastAlongRows, op);
+  raft::launch_kernel(stream,
+                      nblks,
+                      TPB,
+                      naiveMatVecKernel,
+                      out,
+                      mat,
+                      vec1,
+                      vec2,
+                      D,
+                      N,
+                      rowMajor,
+                      bcastAlongRows,
+                      op);
 }
 
 template <typename OutT, typename MatT, typename Vec1T, typename Vec2T, typename IdxType = int>

@@ -56,17 +56,19 @@ void naiveReduceRowsByKey(const Type* d_A,
 {
   cudaMemset(d_sums, 0, sizeof(Type) * nkeys * ncols);
 
-  raft::launch_kernel(stream, dim3((ncols + 31) / 32, nkeys), dim3(32, 1))(
-    naiveReduceRowsByKeyKernel,
-    d_A,
-    lda,
-    d_keys,
-    d_weight,
-    d_char_keys,
-    nrows,
-    ncols,
-    nkeys,
-    d_sums);
+  raft::launch_kernel(stream,
+                      dim3((ncols + 31) / 32, nkeys),
+                      dim3(32, 1),
+                      naiveReduceRowsByKeyKernel,
+                      d_A,
+                      lda,
+                      d_keys,
+                      d_weight,
+                      d_char_keys,
+                      nrows,
+                      ncols,
+                      nkeys,
+                      d_sums);
 }
 
 template <typename T>

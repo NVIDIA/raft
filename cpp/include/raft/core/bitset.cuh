@@ -155,8 +155,14 @@ void bitset_repeat(raft::resources const& handle,
 
   int threadsPerBlock = 128;
   int blocksPerGrid   = (output_size + threadsPerBlock - 1) / threadsPerBlock;
-  raft::launch_kernel(handle, blocksPerGrid, threadsPerBlock)(
-    bitset_repeat_kernel, d_src, d_output, src_bit_len, repeat_times);
+  raft::launch_kernel(handle,
+                      blocksPerGrid,
+                      threadsPerBlock,
+                      bitset_repeat_kernel,
+                      d_src,
+                      d_output,
+                      src_bit_len,
+                      repeat_times);
 
   return;
 }

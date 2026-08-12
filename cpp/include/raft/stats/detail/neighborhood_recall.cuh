@@ -100,7 +100,10 @@ void neighborhood_recall(
   auto constexpr kThreadsPerBlock = 32;
   auto const num_blocks           = indices.extent(0);
 
-  raft::launch_kernel(res, num_blocks, kThreadsPerBlock)(
+  raft::launch_kernel(
+    res,
+    num_blocks,
+    kThreadsPerBlock,
     neighborhood_recall<IndicesValueType, DistanceValueType, IndexType, ScalarType>,
     indices,
     ref_indices,

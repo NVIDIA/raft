@@ -43,8 +43,12 @@ TEST(Raft, AtomicIncWarp)
   std::array<int, num_elts> out_host{0};
 
   // Write all 1M thread indices to a unique location in `out_device`
-  raft::launch_kernel(s, num_blocks, threads_per_block)(
-    test_atomic_inc_warp_kernel, counter.data(), out_device.data());
+  raft::launch_kernel(s,
+                      num_blocks,
+                      threads_per_block,
+                      test_atomic_inc_warp_kernel,
+                      counter.data(),
+                      out_device.data());
   // Copy data to host
   RAFT_CUDA_TRY(cudaMemcpyAsync(out_host.data(),
                                 (const void*)out_device.data(),

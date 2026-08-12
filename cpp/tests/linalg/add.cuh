@@ -24,7 +24,7 @@ void naiveAddElem(OutT* out, const InT* in1, const InT* in2, int len, cudaStream
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(naiveAddElemKernel<InT, OutT>, out, in1, in2, len);
+  raft::launch_kernel(stream, nblks, TPB, naiveAddElemKernel<InT, OutT>, out, in1, in2, len);
 }
 
 template <typename InT, typename OutT = InT>

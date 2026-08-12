@@ -117,16 +117,24 @@ inline void initialReduction(raft::resources const& handle,
 
   detail::calculateRectangularDims(blocks_per_grid, threads_per_block, total_blocks, N, SP);
 
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_rowReduction<vertex_t, weight_t>, d_costs, d_vertices_dev.row_duals, SP, N);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_rowReduction<vertex_t, weight_t>,
+                      d_costs,
+                      d_vertices_dev.row_duals,
+                      SP,
+                      N);
 
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_columnReduction<vertex_t, weight_t>,
-    d_costs,
-    d_vertices_dev.row_duals,
-    d_vertices_dev.col_duals,
-    SP,
-    N);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_columnReduction<vertex_t, weight_t>,
+                      d_costs,
+                      d_vertices_dev.row_duals,
+                      d_vertices_dev.col_duals,
+                      SP,
+                      N);
 }
 
 template <typename vertex_t, typename weight_t>
@@ -153,18 +161,20 @@ inline void computeInitialAssignments(raft::resources const& handle,
 
   detail::calculateRectangularDims(blocks_per_grid, threads_per_block, total_blocks, N, SP);
 
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_computeInitialAssignments<vertex_t, weight_t>,
-    d_costs,
-    d_vertices.row_duals,
-    d_vertices.col_duals,
-    d_vertices.row_assignments,
-    d_vertices.col_assignments,
-    row_lock_v.data(),
-    col_lock_v.data(),
-    SP,
-    N,
-    epsilon);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_computeInitialAssignments<vertex_t, weight_t>,
+                      d_costs,
+                      d_vertices.row_duals,
+                      d_vertices.col_duals,
+                      d_vertices.row_assignments,
+                      d_vertices.col_assignments,
+                      row_lock_v.data(),
+                      col_lock_v.data(),
+                      SP,
+                      N,
+                      epsilon);
 }
 
 // Function for finding row cover on individual devices.
@@ -193,12 +203,15 @@ inline int computeRowCovers(raft::resources const& handle,
   thrust::fill_n(thrust::device, d_col_data.children, size, vertex_t{-1});
 
   detail::calculateRectangularDims(blocks_per_grid, threads_per_block, total_blocks, N, SP);
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(kernel_computeRowCovers<vertex_t>,
-                                                                  d_vertices.row_assignments,
-                                                                  d_vertices.row_covers,
-                                                                  d_row_data.is_visited,
-                                                                  SP,
-                                                                  N);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_computeRowCovers<vertex_t>,
+                      d_vertices.row_assignments,
+                      d_vertices.row_covers,
+                      d_row_data.is_visited,
+                      SP,
+                      N);
 
   return thrust::reduce(thrust::device, d_vertices.row_covers, d_vertices.row_covers + size);
 }
@@ -223,18 +236,20 @@ inline void coverZeroAndExpand(raft::resources const& handle,
 
   detail::calculateRectangularDims(blocks_per_grid, threads_per_block, total_blocks, N, SP);
 
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_coverAndExpand<vertex_t, weight_t>,
-    d_flag,
-    d_rows_csr_ptrs,
-    d_rows_csr_neighbors,
-    d_costs_dev,
-    d_vertices_dev,
-    d_row_data_dev,
-    d_col_data_dev,
-    SP,
-    N,
-    epsilon);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_coverAndExpand<vertex_t, weight_t>,
+                      d_flag,
+                      d_rows_csr_ptrs,
+                      d_rows_csr_neighbors,
+                      d_costs_dev,
+                      d_vertices_dev,
+                      d_row_data_dev,
+                      d_col_data_dev,
+                      SP,
+                      N,
+                      epsilon);
 }
 
 template <typename vertex_t, typename weight_t>
@@ -271,13 +286,15 @@ inline vertex_t zeroCoverIteration(raft::resources const& handle,
     detail::calculateRectangularDims(blocks_per_grid, threads_per_block, total_blocks, N, SP);
 
     // construct predicate matrix for edges.
-    raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-      kernel_rowPredicateConstructionCSR<vertex_t>,
-      predicates_v.data(),
-      addresses_v.data(),
-      d_row_data_dev.is_visited,
-      SP,
-      N);
+    raft::launch_kernel(handle,
+                        blocks_per_grid,
+                        threads_per_block,
+                        kernel_rowPredicateConstructionCSR<vertex_t>,
+                        predicates_v.data(),
+                        addresses_v.data(),
+                        d_row_data_dev.is_visited,
+                        SP,
+                        N);
 
     M = thrust::reduce(thrust::device, addresses_v.begin(), addresses_v.end());
     thrust::exclusive_scan(
@@ -286,15 +303,17 @@ inline vertex_t zeroCoverIteration(raft::resources const& handle,
     if (M > 0) {
       csr_neighbors_v.resize(M, resource::get_cuda_stream(handle));
 
-      raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-        kernel_rowScatterCSR<vertex_t>,
-        predicates_v.data(),
-        addresses_v.data(),
-        csr_neighbors_v.data(),
-        csr_ptrs_v.data(),
-        M,
-        SP,
-        N);
+      raft::launch_kernel(handle,
+                          blocks_per_grid,
+                          threads_per_block,
+                          kernel_rowScatterCSR<vertex_t>,
+                          predicates_v.data(),
+                          addresses_v.data(),
+                          csr_neighbors_v.data(),
+                          csr_ptrs_v.data(),
+                          M,
+                          SP,
+                          N);
     }
   }
 
@@ -358,12 +377,14 @@ inline void reversePass(raft::resources const& handle,
   thrust::fill_n(thrust::device, addresses_v.data(), size, vertex_t{0});
 
   // compact the reverse pass row vertices.
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_augmentPredicateConstruction<vertex_t>,
-    predicates_v.data(),
-    addresses_v.data(),
-    d_col_data_dev.is_visited,
-    size);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_augmentPredicateConstruction<vertex_t>,
+                      predicates_v.data(),
+                      addresses_v.data(),
+                      d_col_data_dev.is_visited,
+                      size);
 
   // calculate total number of vertices.
   std::size_t csr_size = thrust::reduce(thrust::device, addresses_v.begin(), addresses_v.end());
@@ -379,18 +400,23 @@ inline void reversePass(raft::resources const& handle,
 
     rmm::device_uvector<vertex_t> elements_v(csr_size, resource::get_cuda_stream(handle));
 
-    raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(kernel_augmentScatter<vertex_t>,
-                                                                    elements_v.data(),
-                                                                    predicates_v.data(),
-                                                                    addresses_v.data(),
-                                                                    size);
+    raft::launch_kernel(handle,
+                        blocks_per_grid,
+                        threads_per_block,
+                        kernel_augmentScatter<vertex_t>,
+                        elements_v.data(),
+                        predicates_v.data(),
+                        addresses_v.data(),
+                        size);
 
-    raft::launch_kernel(handle, blocks_per_grid_1, threads_per_block_1)(
-      kernel_reverseTraversal<vertex_t>,
-      elements_v.data(),
-      d_row_data_dev,
-      d_col_data_dev,
-      csr_size);
+    raft::launch_kernel(handle,
+                        blocks_per_grid_1,
+                        threads_per_block_1,
+                        kernel_reverseTraversal<vertex_t>,
+                        elements_v.data(),
+                        d_row_data_dev,
+                        d_col_data_dev,
+                        csr_size);
   }
 }
 
@@ -415,12 +441,14 @@ inline void augmentationPass(raft::resources const& handle,
   thrust::fill_n(thrust::device, addresses_v.data(), SP * N, vertex_t{0});
 
   // compact the reverse pass row vertices.
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_augmentPredicateConstruction<vertex_t>,
-    predicates_v.data(),
-    addresses_v.data(),
-    d_row_data_dev.is_visited,
-    SP * N);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_augmentPredicateConstruction<vertex_t>,
+                      predicates_v.data(),
+                      addresses_v.data(),
+                      d_row_data_dev.is_visited,
+                      SP * N);
 
   // calculate total number of vertices.
   // TODO: should be vertex_t
@@ -439,21 +467,26 @@ inline void augmentationPass(raft::resources const& handle,
 
     rmm::device_uvector<vertex_t> elements_v(row_ids_csr_size, resource::get_cuda_stream(handle));
 
-    raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(kernel_augmentScatter<vertex_t>,
-                                                                    elements_v.data(),
-                                                                    predicates_v.data(),
-                                                                    addresses_v.data(),
-                                                                    vertex_t{SP * N});
+    raft::launch_kernel(handle,
+                        blocks_per_grid,
+                        threads_per_block,
+                        kernel_augmentScatter<vertex_t>,
+                        elements_v.data(),
+                        predicates_v.data(),
+                        addresses_v.data(),
+                        vertex_t{SP * N});
 
-    raft::launch_kernel(handle, blocks_per_grid_1, threads_per_block_1)(
-      kernel_augmentation<vertex_t>,
-      d_vertices_dev.row_assignments,
-      d_vertices_dev.col_assignments,
-      elements_v.data(),
-      d_row_data_dev,
-      d_col_data_dev,
-      vertex_t{N},
-      row_ids_csr_size);
+    raft::launch_kernel(handle,
+                        blocks_per_grid_1,
+                        threads_per_block_1,
+                        kernel_augmentation<vertex_t>,
+                        d_vertices_dev.row_assignments,
+                        d_vertices_dev.col_assignments,
+                        elements_v.data(),
+                        d_row_data_dev,
+                        d_col_data_dev,
+                        vertex_t{N},
+                        row_ids_csr_size);
   }
 }
 
@@ -473,28 +506,32 @@ inline void dualUpdate(raft::resources const& handle,
   rmm::device_uvector<weight_t> sp_min_v(SP, resource::get_cuda_stream(handle));
 
   detail::calculateLinearDims(blocks_per_grid, threads_per_block, total_blocks, SP);
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_dualUpdate_1<vertex_t, weight_t>,
-    sp_min_v.data(),
-    d_vertices_dev.col_slacks,
-    d_vertices_dev.col_covers,
-    SP,
-    N);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_dualUpdate_1<vertex_t, weight_t>,
+                      sp_min_v.data(),
+                      d_vertices_dev.col_slacks,
+                      d_vertices_dev.col_covers,
+                      SP,
+                      N);
 
   detail::calculateRectangularDims(blocks_per_grid, threads_per_block, total_blocks, N, SP);
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_dualUpdate_2<vertex_t, weight_t>,
-    sp_min_v.data(),
-    d_vertices_dev.row_duals,
-    d_vertices_dev.col_duals,
-    d_vertices_dev.col_slacks,
-    d_vertices_dev.row_covers,
-    d_vertices_dev.col_covers,
-    d_row_data_dev.is_visited,
-    d_col_data_dev.parents,
-    SP,
-    N,
-    epsilon);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_dualUpdate_2<vertex_t, weight_t>,
+                      sp_min_v.data(),
+                      d_vertices_dev.row_duals,
+                      d_vertices_dev.col_duals,
+                      d_vertices_dev.col_slacks,
+                      d_vertices_dev.row_covers,
+                      d_vertices_dev.col_covers,
+                      d_row_data_dev.is_visited,
+                      d_col_data_dev.parents,
+                      SP,
+                      N,
+                      epsilon);
 }
 
 // Function for calculating optimal objective function value using dual variables.
@@ -511,13 +548,15 @@ inline void calcObjValDual(raft::resources const& handle,
 
   detail::calculateLinearDims(blocks_per_grid, threads_per_block, total_blocks, SP);
 
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_calcObjValDual<vertex_t, weight_t>,
-    d_obj_val,
-    d_vertices_dev.row_duals,
-    d_vertices_dev.col_duals,
-    SP,
-    N);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_calcObjValDual<vertex_t, weight_t>,
+                      d_obj_val,
+                      d_vertices_dev.row_duals,
+                      d_vertices_dev.col_duals,
+                      SP,
+                      N);
 }
 
 // Function for calculating optimal objective function value using dual variables.
@@ -535,8 +574,15 @@ inline void calcObjValPrimal(raft::resources const& handle,
 
   detail::calculateLinearDims(blocks_per_grid, threads_per_block, total_blocks, SP);
 
-  raft::launch_kernel(handle, blocks_per_grid, threads_per_block)(
-    kernel_calcObjValPrimal<vertex_t, weight_t>, d_obj_val, d_costs, d_row_assignments, SP, N);
+  raft::launch_kernel(handle,
+                      blocks_per_grid,
+                      threads_per_block,
+                      kernel_calcObjValPrimal<vertex_t, weight_t>,
+                      d_obj_val,
+                      d_costs,
+                      d_row_assignments,
+                      SP,
+                      N);
 }
 
 }  // namespace solver::detail

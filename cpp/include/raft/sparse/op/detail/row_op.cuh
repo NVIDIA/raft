@@ -54,8 +54,8 @@ void csr_row_op(const Index_* row_ind, Index_ n_rows, Index_ nnz, Lambda op, cud
 {
   dim3 grid(raft::ceildiv(n_rows, Index_(TPB_X)), 1, 1);
   dim3 blk(TPB_X, 1, 1);
-  raft::launch_kernel(stream, grid, blk)(
-    csr_row_op_kernel<Index_, TPB_X, Lambda>, row_ind, n_rows, nnz, op);
+  raft::launch_kernel(
+    stream, grid, blk, csr_row_op_kernel<Index_, TPB_X, Lambda>, row_ind, n_rows, nnz, op);
 }
 
 };  // namespace detail

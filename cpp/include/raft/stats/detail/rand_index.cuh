@@ -140,13 +140,15 @@ double compute_rand_index(const T* firstClusterArray,
                  raft::ceildiv<int>(size, numThreadsPerBlock.y));
 
   // calling the kernel
-  raft::launch_kernel(stream, numBlocks, numThreadsPerBlock)(
-    computeTheNumerator<T, BLOCK_DIM_X, BLOCK_DIM_Y>,
-    firstClusterArray,
-    secondClusterArray,
-    size,
-    arr_buf.data(),
-    arr_buf.data() + 1);
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      numThreadsPerBlock,
+                      computeTheNumerator<T, BLOCK_DIM_X, BLOCK_DIM_Y>,
+                      firstClusterArray,
+                      secondClusterArray,
+                      size,
+                      arr_buf.data(),
+                      arr_buf.data() + 1);
 
   // synchronizing and updating the calculated values of a and b from device to host
   uint64_t ab_host[2] = {0};

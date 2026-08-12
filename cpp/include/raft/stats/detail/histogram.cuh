@@ -95,8 +95,15 @@ void gmemHist(int* bins,
 {
   auto blks = computeGridDim<IdxT, VecLen>(
     nrows, ncols, (const void*)gmemHistKernel<DataT, BinnerOp, IdxT, VecLen>);
-  raft::launch_kernel(stream, blks, ThreadsPerBlock)(
-    gmemHistKernel<DataT, BinnerOp, IdxT, VecLen>, bins, data, nrows, nbins, binner);
+  raft::launch_kernel(stream,
+                      blks,
+                      ThreadsPerBlock,
+                      gmemHistKernel<DataT, BinnerOp, IdxT, VecLen>,
+                      bins,
+                      data,
+                      nrows,
+                      nbins,
+                      binner);
 }
 
 template <typename DataT, typename BinnerOp, typename IdxT, int VecLen, bool UseMatchAny>
@@ -146,8 +153,15 @@ void smemHist(int* bins,
   auto blks = computeGridDim<IdxT, VecLen>(
     nrows, ncols, (const void*)smemHistKernel<DataT, BinnerOp, IdxT, VecLen, UseMatchAny>);
   size_t smemSize = nbins * sizeof(unsigned);
-  raft::launch_kernel(stream, blks, ThreadsPerBlock, smemSize)(
-    smemHistKernel<DataT, BinnerOp, IdxT, VecLen, UseMatchAny>, bins, data, nrows, nbins, binner);
+  raft::launch_kernel({stream, smemSize},
+                      blks,
+                      ThreadsPerBlock,
+                      smemHistKernel<DataT, BinnerOp, IdxT, VecLen, UseMatchAny>,
+                      bins,
+                      data,
+                      nrows,
+                      nbins,
+                      binner);
 }
 
 template <unsigned _BIN_BITS>
@@ -232,13 +246,15 @@ void smemBitsHist(int* bins,
   auto blks = computeGridDim<IdxT, VecLen>(
     nrows, ncols, (const void*)smemBitsHistKernel<DataT, BinnerOp, IdxT, Bits::BIN_BITS, VecLen>);
   size_t smemSize = raft::ceildiv<size_t>(nbins, Bits::WORD_BITS / Bits::BIN_BITS) * sizeof(int);
-  raft::launch_kernel(stream, blks, ThreadsPerBlock, smemSize)(
-    smemBitsHistKernel<DataT, BinnerOp, IdxT, Bits::BIN_BITS, VecLen>,
-    bins,
-    data,
-    nrows,
-    nbins,
-    binner);
+  raft::launch_kernel({stream, smemSize},
+                      blks,
+                      ThreadsPerBlock,
+                      smemBitsHistKernel<DataT, BinnerOp, IdxT, Bits::BIN_BITS, VecLen>,
+                      bins,
+                      data,
+                      nrows,
+                      nbins,
+                      binner);
 }
 
 #define INVALID_KEY -1
@@ -355,15 +371,17 @@ void smemHashHist(int* bins,
     nrows, ncols, (const void*)smemHashHistKernel<DataT, BinnerOp, IdxT, 1>);
   int hashSize    = computeHashTableSize();
   size_t smemSize = hashSize * sizeof(int2) + sizeof(int);
-  raft::launch_kernel(stream, blks, ThreadsPerBlock, smemSize)(
-    smemHashHistKernel<DataT, BinnerOp, IdxT, 1>,
-    bins,
-    data,
-    nrows,
-    nbins,
-    binner,
-    hashSize,
-    flushThreshold);
+  raft::launch_kernel({stream, smemSize},
+                      blks,
+                      ThreadsPerBlock,
+                      smemHashHistKernel<DataT, BinnerOp, IdxT, 1>,
+                      bins,
+                      data,
+                      nrows,
+                      nbins,
+                      binner,
+                      hashSize,
+                      flushThreshold);
 }
 
 template <typename DataT, typename BinnerOp, typename IdxT, int VecLen>

@@ -38,8 +38,8 @@ void naiveMapReduce(OutType* out, const InType* in, size_t len, MapOp map, cudaS
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, (size_t)TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveMapReduceKernel<InType, OutType, MapOp>, out, in, len, map);
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveMapReduceKernel<InType, OutType, MapOp>, out, in, len, map);
 }
 
 template <typename T>

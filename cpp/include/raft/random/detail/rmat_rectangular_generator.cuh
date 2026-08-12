@@ -118,8 +118,19 @@ void rmat_rectangular_gen_caller(IdxT* out,
   auto max_scale                 = max(r_scale, c_scale);
   size_t smem_size               = sizeof(ProbT) * max_scale * 2 * 2;
   auto n_blks                    = raft::ceildiv<IdxT>(n_edges, N_THREADS);
-  raft::launch_kernel(stream, n_blks, N_THREADS, smem_size)(
-    rmat_gen_kernel, out, out_src, out_dst, theta, r_scale, c_scale, n_edges, max_scale, r);
+  raft::launch_kernel({stream, smem_size},
+                      n_blks,
+                      N_THREADS,
+                      rmat_gen_kernel,
+                      out,
+                      out_src,
+                      out_dst,
+                      theta,
+                      r_scale,
+                      c_scale,
+                      n_edges,
+                      max_scale,
+                      r);
   r.advance(n_edges, max_scale);
 }
 
@@ -171,8 +182,21 @@ void rmat_rectangular_gen_caller(IdxT* out,
   static constexpr int N_THREADS = 512;
   auto max_scale                 = max(r_scale, c_scale);
   auto n_blks                    = raft::ceildiv<IdxT>(n_edges, N_THREADS);
-  raft::launch_kernel(stream, n_blks, N_THREADS)(
-    rmat_gen_kernel, out, out_src, out_dst, a, b, c, r_scale, c_scale, n_edges, max_scale, r);
+  raft::launch_kernel(stream,
+                      n_blks,
+                      N_THREADS,
+                      rmat_gen_kernel,
+                      out,
+                      out_src,
+                      out_dst,
+                      a,
+                      b,
+                      c,
+                      r_scale,
+                      c_scale,
+                      n_edges,
+                      max_scale,
+                      r);
   r.advance(n_edges, max_scale);
 }
 

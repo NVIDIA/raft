@@ -67,8 +67,19 @@ void naiveCoalescedReduction(OutType* dots,
 {
   static const IdxType TPB = 64;
   IdxType nblks            = raft::ceildiv(N, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveCoalescedReductionKernel, dots, data, D, N, init, inplace, main_op, reduce_op, fin_op);
+  raft::launch_kernel(stream,
+                      nblks,
+                      TPB,
+                      naiveCoalescedReductionKernel,
+                      dots,
+                      data,
+                      D,
+                      N,
+                      init,
+                      inplace,
+                      main_op,
+                      reduce_op,
+                      fin_op);
 }
 
 template <typename InType,
@@ -120,8 +131,19 @@ void naiveStridedReduction(OutType* dots,
 {
   static const IdxType TPB = 64;
   IdxType nblks            = raft::ceildiv(D, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveStridedReductionKernel, dots, data, D, N, init, inplace, main_op, reduce_op, fin_op);
+  raft::launch_kernel(stream,
+                      nblks,
+                      TPB,
+                      naiveStridedReductionKernel,
+                      dots,
+                      data,
+                      D,
+                      N,
+                      init,
+                      inplace,
+                      main_op,
+                      reduce_op,
+                      fin_op);
 }
 
 template <typename InType,

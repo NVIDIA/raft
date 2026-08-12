@@ -80,8 +80,16 @@ class AxpyTest : public ::testing::TestWithParam<AxpyInputs<T>> {
     int threads = 64;
     int blocks  = raft::ceildiv<int>(params.len, threads);
 
-    raft::launch_kernel(handle, blocks, threads)(
-      naiveAxpy<T>, params.len, params.alpha, x.data(), refy.data(), params.incx, params.incy);
+    raft::launch_kernel(handle,
+                        blocks,
+                        threads,
+                        naiveAxpy<T>,
+                        params.len,
+                        params.alpha,
+                        x.data(),
+                        refy.data(),
+                        params.incx,
+                        params.incy);
 
     auto host_alpha_view = make_host_scalar_view<const T>(&params.alpha);
 

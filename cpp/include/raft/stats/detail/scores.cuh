@@ -164,12 +164,15 @@ void regression_metrics(const T* predictions,
   rmm::device_uvector<double> tmp_sums(2 * sizeof(double), stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(tmp_sums.data(), 0, 2 * sizeof(double), stream));
 
-  raft::launch_kernel(stream, block_cnt, thread_cnt)(reg_metrics_kernel<T>,
-                                                     predictions,
-                                                     ref_predictions,
-                                                     n,
-                                                     abs_diffs_array.data(),
-                                                     tmp_sums.data());
+  raft::launch_kernel(stream,
+                      block_cnt,
+                      thread_cnt,
+                      reg_metrics_kernel<T>,
+                      predictions,
+                      ref_predictions,
+                      n,
+                      abs_diffs_array.data(),
+                      tmp_sums.data());
   raft::update_host(&mean_errors[0], tmp_sums.data(), 2, stream);
   raft::interruptible::synchronize(stream);
 

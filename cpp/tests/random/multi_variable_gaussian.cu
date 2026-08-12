@@ -155,15 +155,15 @@ class MVGTest : public ::testing::TestWithParam<MVGInputs<T>> {
     RAFT_CUDA_TRY(cudaMemset(Rand_mean.data(), 0, dim * sizeof(T)));
     dim3 block = (64);
     dim3 grid  = (raft::ceildiv(nPoints * dim, (int)block.x));
-    raft::launch_kernel(handle, grid, block)(
-      En_KF_accumulate<T>, nPoints, dim, X_d.data(), Rand_mean.data());
+    raft::launch_kernel(
+      handle, grid, block, En_KF_accumulate<T>, nPoints, dim, X_d.data(), Rand_mean.data());
     grid = (raft::ceildiv(dim, (int)block.x));
-    raft::launch_kernel(handle, grid, block)(En_KF_normalize, nPoints, dim, Rand_mean.data());
+    raft::launch_kernel(handle, grid, block, En_KF_normalize, nPoints, dim, Rand_mean.data());
 
     // storing the error wrt random point mean in X_d
     grid = (raft::ceildiv(dim * nPoints, (int)block.x));
-    raft::launch_kernel(handle, grid, block)(
-      En_KF_dif<T>, nPoints, dim, X_d.data(), Rand_mean.data(), X_d.data());
+    raft::launch_kernel(
+      handle, grid, block, En_KF_dif<T>, nPoints, dim, X_d.data(), Rand_mean.data(), X_d.data());
 
     // finding the cov matrix, placing in Rand_cov
     T alfa = 1.0 / (nPoints - 1), beta = 0.0;
@@ -285,15 +285,15 @@ class MVGMdspanTest : public ::testing::TestWithParam<MVGInputs<T>> {
     RAFT_CUDA_TRY(cudaMemset(Rand_mean.data(), 0, dim * sizeof(T)));
     dim3 block = (64);
     dim3 grid  = (raft::ceildiv(nPoints * dim, (int)block.x));
-    raft::launch_kernel(handle, grid, block)(
-      En_KF_accumulate<T>, nPoints, dim, X_d.data(), Rand_mean.data());
+    raft::launch_kernel(
+      handle, grid, block, En_KF_accumulate<T>, nPoints, dim, X_d.data(), Rand_mean.data());
     grid = (raft::ceildiv(dim, (int)block.x));
-    raft::launch_kernel(handle, grid, block)(En_KF_normalize, nPoints, dim, Rand_mean.data());
+    raft::launch_kernel(handle, grid, block, En_KF_normalize, nPoints, dim, Rand_mean.data());
 
     // storing the error wrt random point mean in X_d
     grid = (raft::ceildiv(dim * nPoints, (int)block.x));
-    raft::launch_kernel(handle, grid, block)(
-      En_KF_dif<T>, nPoints, dim, X_d.data(), Rand_mean.data(), X_d.data());
+    raft::launch_kernel(
+      handle, grid, block, En_KF_dif<T>, nPoints, dim, X_d.data(), Rand_mean.data(), X_d.data());
 
     // finding the cov matrix, placing in Rand_cov
     T alfa = 1.0 / (nPoints - 1), beta = 0.0;

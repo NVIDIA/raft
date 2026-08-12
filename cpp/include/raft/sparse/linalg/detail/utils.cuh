@@ -100,7 +100,7 @@ void faster_dot_on_csr(raft::resources const& handle,
   constexpr value_idx MAX_ROW_PER_ITER = 500;
   int dev_id, sm_count, blocks_per_sm;
 
-  const int smem_size = dim * sizeof(value_t);
+  const size_t smem_size = dim * sizeof(value_t);
   cudaGetDevice(&dev_id);
   cudaDeviceGetAttribute(&sm_count, cudaDevAttrMultiProcessorCount, dev_id);
 
@@ -113,16 +113,18 @@ void faster_dot_on_csr(raft::resources const& handle,
       (std::min(value_idx(blocks_per_sm * sm_count * 16), nnz) + block_x - 1) / block_x;
     dim3 blocks(block_x, block_y, 1);
 
-    raft::launch_kernel(handle, blocks, tpb, smem_size)(
-      faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
-      dot,
-      indptr,
-      cols,
-      A,
-      B,
-      nnz,
-      n_rows,
-      dim);
+    raft::launch_kernel({handle, smem_size},
+                        blocks,
+                        tpb,
+                        faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
+                        dot,
+                        indptr,
+                        cols,
+                        A,
+                        B,
+                        nnz,
+                        n_rows,
+                        dim);
 
   } else if (dim < 256) {
     constexpr int tpb = 128;
@@ -133,16 +135,18 @@ void faster_dot_on_csr(raft::resources const& handle,
       (std::min(value_idx(blocks_per_sm * sm_count * 16), nnz) + block_x - 1) / block_x;
     dim3 blocks(block_x, block_y, 1);
 
-    raft::launch_kernel(handle, blocks, tpb, smem_size)(
-      faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
-      dot,
-      indptr,
-      cols,
-      A,
-      B,
-      nnz,
-      n_rows,
-      dim);
+    raft::launch_kernel({handle, smem_size},
+                        blocks,
+                        tpb,
+                        faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
+                        dot,
+                        indptr,
+                        cols,
+                        A,
+                        B,
+                        nnz,
+                        n_rows,
+                        dim);
   } else if (dim < 512) {
     constexpr int tpb = 256;
     cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -152,16 +156,18 @@ void faster_dot_on_csr(raft::resources const& handle,
       (std::min(value_idx(blocks_per_sm * sm_count * 16), nnz) + block_x - 1) / block_x;
     dim3 blocks(block_x, block_y, 1);
 
-    raft::launch_kernel(handle, blocks, tpb, smem_size)(
-      faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
-      dot,
-      indptr,
-      cols,
-      A,
-      B,
-      nnz,
-      n_rows,
-      dim);
+    raft::launch_kernel({handle, smem_size},
+                        blocks,
+                        tpb,
+                        faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
+                        dot,
+                        indptr,
+                        cols,
+                        A,
+                        B,
+                        nnz,
+                        n_rows,
+                        dim);
   } else {
     constexpr int tpb = 512;
     cudaOccupancyMaxActiveBlocksPerMultiprocessor(
@@ -171,16 +177,18 @@ void faster_dot_on_csr(raft::resources const& handle,
       (std::min(value_idx(blocks_per_sm * sm_count * 16), nnz) + block_x - 1) / block_x;
     dim3 blocks(block_x, block_y, 1);
 
-    raft::launch_kernel(handle, blocks, tpb, smem_size)(
-      faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
-      dot,
-      indptr,
-      cols,
-      A,
-      B,
-      nnz,
-      n_rows,
-      dim);
+    raft::launch_kernel({handle, smem_size},
+                        blocks,
+                        tpb,
+                        faster_dot_on_csr_kernel<value_idx, value_t, dot_t>,
+                        dot,
+                        indptr,
+                        cols,
+                        A,
+                        B,
+                        nnz,
+                        n_rows,
+                        dim);
   }
 
   RAFT_CUDA_TRY(cudaPeekAtLastError());

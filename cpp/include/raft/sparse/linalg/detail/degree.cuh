@@ -51,7 +51,7 @@ void coo_degree(const T* rows, nnz_t nnz, outT* results, cudaStream_t stream)
   dim3 grid_rc(raft::ceildiv((nnz_t)nnz, (nnz_t)TPB_X), 1, 1);
   dim3 blk_rc(TPB_X, 1, 1);
 
-  raft::launch_kernel(stream, grid_rc, blk_rc)(coo_degree_kernel<TPB_X>, rows, nnz, results);
+  raft::launch_kernel(stream, grid_rc, blk_rc, coo_degree_kernel<TPB_X>, rows, nnz, results);
 }
 
 template <int TPB_X = 64, typename T, typename idx_t, typename nnz_t>
@@ -86,8 +86,15 @@ void coo_degree_scalar(
 {
   dim3 grid_rc(raft::ceildiv(nnz, static_cast<nnz_t>(TPB_X)), 1, 1);
   dim3 blk_rc(TPB_X, 1, 1);
-  raft::launch_kernel(stream, grid_rc, blk_rc)(
-    coo_degree_scalar_kernel<TPB_X, T, idx_t, outT, nnz_t>, rows, vals, nnz, scalar, results);
+  raft::launch_kernel(stream,
+                      grid_rc,
+                      blk_rc,
+                      coo_degree_scalar_kernel<TPB_X, T, idx_t, outT, nnz_t>,
+                      rows,
+                      vals,
+                      nnz,
+                      scalar,
+                      results);
 }
 
 /**
@@ -105,8 +112,14 @@ void coo_degree_nz(const idx_t* rows, const T* vals, nnz_t nnz, idx_t* results, 
 {
   dim3 grid_rc(raft::ceildiv(nnz, TPB_X), 1, 1);
   dim3 blk_rc(TPB_X, 1, 1);
-  raft::launch_kernel(stream, grid_rc, blk_rc)(
-    coo_degree_nz_kernel<TPB_X, T, idx_t, nnz_t>, rows, vals, nnz, results);
+  raft::launch_kernel(stream,
+                      grid_rc,
+                      blk_rc,
+                      coo_degree_nz_kernel<TPB_X, T, idx_t, nnz_t>,
+                      rows,
+                      vals,
+                      nnz,
+                      results);
 }
 
 };  // end NAMESPACE detail

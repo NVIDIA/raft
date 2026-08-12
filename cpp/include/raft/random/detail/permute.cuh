@@ -85,8 +85,17 @@ struct permute_impl_t {
     // check if we can execute at this vector length
     if (D % VLen == 0 && raft::is_aligned(vout, sizeof(VType)) &&
         raft::is_aligned(vin, sizeof(VType))) {
-      raft::launch_kernel(stream, nblks, TPB)(
-        permuteKernel<VType, IntType, IdxType, TPB, rowMajor>, perms, vout, vin, a, b, N, D / VLen);
+      raft::launch_kernel(stream,
+                          nblks,
+                          TPB,
+                          permuteKernel<VType, IntType, IdxType, TPB, rowMajor>,
+                          perms,
+                          vout,
+                          vin,
+                          a,
+                          b,
+                          N,
+                          D / VLen);
     } else {  // otherwise try the next lower vector length
       permute_impl_t<Type, IntType, IdxType, TPB, rowMajor, VLen / 2>::permuteImpl(
         perms, out, in, N, D, nblks, a, b, stream);
@@ -107,8 +116,17 @@ struct permute_impl_t<Type, IntType, IdxType, TPB, rowMajor, 1> {
                           IdxType b,
                           cudaStream_t stream)
   {
-    raft::launch_kernel(stream, nblks, TPB)(
-      permuteKernel<Type, IntType, IdxType, TPB, rowMajor>, perms, out, in, a, b, N, D);
+    raft::launch_kernel(stream,
+                        nblks,
+                        TPB,
+                        permuteKernel<Type, IntType, IdxType, TPB, rowMajor>,
+                        perms,
+                        out,
+                        in,
+                        a,
+                        b,
+                        N,
+                        D);
   }
 };
 

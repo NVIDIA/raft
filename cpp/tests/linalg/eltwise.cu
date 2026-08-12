@@ -30,7 +30,7 @@ void naiveScale(Type* out, const Type* in, Type scalar, int len, cudaStream_t st
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(naiveScaleKernel<Type>, out, in, scalar, len);
+  raft::launch_kernel(stream, nblks, TPB, naiveScaleKernel<Type>, out, in, scalar, len);
 }
 
 template <typename T>
@@ -116,7 +116,7 @@ void naiveAdd(Type* out, const Type* in1, const Type* in2, int len, cudaStream_t
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(naiveAddKernel<Type>, out, in1, in2, len);
+  raft::launch_kernel(stream, nblks, TPB, naiveAddKernel<Type>, out, in1, in2, len);
 }
 
 template <typename T>

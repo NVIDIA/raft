@@ -181,20 +181,23 @@ double trustworthiness_score(const raft::resources& h,
 
     int work     = curBatchSize * n;
     int n_blocks = raft::ceildiv(work, N_THREADS);
-    raft::launch_kernel(h, n_blocks, N_THREADS)(
-      build_lookup_table, lookup_table.data(), X_ind.data(), n, work);
+    raft::launch_kernel(
+      h, n_blocks, N_THREADS, build_lookup_table, lookup_table.data(), X_ind.data(), n, work);
 
     RAFT_CUDA_TRY(cudaMemsetAsync(t_dbuf.data(), 0, sizeof(double), stream));
 
     work     = curBatchSize * (n_neighbors + 1);
     n_blocks = raft::ceildiv(work, N_THREADS);
-    raft::launch_kernel(h, n_blocks, N_THREADS)(compute_rank,
-                                                t_dbuf.data(),
-                                                lookup_table.data(),
-                                                &emb_ind.data()[(n - toDo) * (n_neighbors + 1)],
-                                                n,
-                                                n_neighbors + 1,
-                                                work);
+    raft::launch_kernel(h,
+                        n_blocks,
+                        N_THREADS,
+                        compute_rank,
+                        t_dbuf.data(),
+                        lookup_table.data(),
+                        &emb_ind.data()[(n - toDo) * (n_neighbors + 1)],
+                        n,
+                        n_neighbors + 1,
+                        work);
 
     t += t_dbuf.value(stream);
 

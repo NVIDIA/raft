@@ -222,7 +222,7 @@ class multi_variable_gaussian_impl {
       // upper part (0) being filled with 0.0
       dim3 block(32, 32);
       dim3 grid(raft::ceildiv(dim, (int)block.x), raft::ceildiv(dim, (int)block.y));
-      raft::launch_kernel(handle, grid, block)(fill_uplo<T>, dim, UPPER, (T)0.0, P);
+      raft::launch_kernel(handle, grid, block, fill_uplo<T>, dim, UPPER, (T)0.0, P);
 
       // P is lower triangular chol decomp mtrx
       raft::linalg::gemm(
@@ -233,7 +233,7 @@ class multi_variable_gaussian_impl {
       dim3 grid(raft::ceildiv(dim, (int)block.x));
       RAFT_CUDA_TRY(cudaMemsetAsync(info, 0, sizeof(int), cudaStream));
       grid.x = raft::ceildiv(dim * dim, (int)block.x);
-      raft::launch_kernel(handle, grid, block)(combined_dot_product<T>, dim, dim, eig, P, info);
+      raft::launch_kernel(handle, grid, block, combined_dot_product<T>, dim, dim, eig, P, info);
 
       // checking if any eigen vals were negative
       raft::update_host(&info_h, info, 1, cudaStream);

@@ -152,17 +152,20 @@ void call_generate_data_kernel(raft::random::DeviceState<GenType> const& rng_sta
                                int64_t n_blocks,
                                cudaStream_t stream)
 {
-  raft::launch_kernel(stream, n_blocks, 128)(generate_data_kernel<DataT, IdxT, GenType>,
-                                             rng_state,
-                                             out,
-                                             labels,
-                                             n_rows,
-                                             n_cols,
-                                             n_clusters,
-                                             row_major,
-                                             centers,
-                                             cluster_std,
-                                             cluster_std_scalar);
+  raft::launch_kernel(stream,
+                      n_blocks,
+                      128,
+                      generate_data_kernel<DataT, IdxT, GenType>,
+                      rng_state,
+                      out,
+                      labels,
+                      n_rows,
+                      n_cols,
+                      n_clusters,
+                      row_major,
+                      centers,
+                      cluster_std,
+                      cluster_std_scalar);
 }
 
 template <typename DataT, typename IdxT>

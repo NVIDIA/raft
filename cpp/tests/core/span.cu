@@ -74,20 +74,20 @@ TEST(GPUSpan, FromOther)
   // dynamic extent
   {
     device_span<float> span(d_vec.data().get(), d_vec.size());
-    raft::launch_kernel(cudaStream_t{0}, 1, 16)(TestFromOtherKernel, span);
+    raft::launch_kernel(cudaStream_t{0}, 1, 16, TestFromOtherKernel, span);
   }
   {
     device_span<float> span(d_vec.data().get(), d_vec.size());
-    raft::launch_kernel(cudaStream_t{0}, 1, 16)(TestFromOtherKernelConst, span);
+    raft::launch_kernel(cudaStream_t{0}, 1, 16, TestFromOtherKernelConst, span);
   }
   // static extent
   {
     device_span<float, 16> span(d_vec.data().get(), d_vec.data().get() + 16);
-    raft::launch_kernel(cudaStream_t{0}, 1, 16)(TestFromOtherKernel, span);
+    raft::launch_kernel(cudaStream_t{0}, 1, 16, TestFromOtherKernel, span);
   }
   {
     device_span<float, 16> span(d_vec.data().get(), d_vec.data().get() + 16);
-    raft::launch_kernel(cudaStream_t{0}, 1, 16)(TestFromOtherKernelConst, span);
+    raft::launch_kernel(cudaStream_t{0}, 1, 16, TestFromOtherKernelConst, span);
   }
 }
 
@@ -186,7 +186,7 @@ TEST(GPUSpan, Modify)
 
   device_span<float> span(d_vec.data().get(), d_vec.size());
 
-  raft::launch_kernel(cudaStream_t{0}, 1, 16)(TestModifyKernel, span);
+  raft::launch_kernel(cudaStream_t{0}, 1, 16, TestModifyKernel, span);
 
   for (size_t i = 0; i < d_vec.size(); ++i) {
     ASSERT_EQ(d_vec[i], d_vec.size() - i);

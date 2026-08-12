@@ -504,8 +504,12 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
       raft::ceildiv(typename config::index_type(dst.size()),
                     typename config::index_type(mdspan_copy_tile_elems)));
     auto constexpr const threads = dim3{mdspan_copy_tile_dim, mdspan_copy_tile_dim, 1};
-    raft::launch_kernel(res, blocks, threads)(
-      mdspan_copy_kernel<typename config::dst_type, typename config::src_type>, dst, src);
+    raft::launch_kernel(res,
+                        blocks,
+                        threads,
+                        mdspan_copy_kernel<typename config::dst_type, typename config::src_type>,
+                        dst,
+                        src);
 #else
     // Should never actually reach this because of enable_ifs. Included for
     // safety.

@@ -20,6 +20,7 @@
 #include <source_location>
 #include <string>
 #include <type_traits>
+#include <utility>
 #include <vector>
 
 namespace raft {
@@ -38,7 +39,7 @@ inline std::string format_cuda_launch_error(cudaError_t status, std::source_loca
   char const* location_prefix = "CUDA error encountered at: ";
   char const* location_fmt    = "file=%s line=%d function=%s: ";
   char const* fmt             = "call='%s', Reason=%s:%s";
-  char const* call            = "cudaLaunchKernel";
+  char const* call            = "cudaLaunchKernelExC";
   char const* file            = location.file_name();
   auto line                   = static_cast<int>(location.line());
   char const* function        = location.function_name();
@@ -64,8 +65,21 @@ inline std::string format_cuda_launch_error(cudaError_t status, std::source_loca
   return std::string(buf.data(), buf.data() + size - 1);
 }
 
-inline void throw_on_cuda_launch_error(cudaError_t status, std::source_location location)
+/**
+ * @brief Launch a kernel, copying the launch arguments into parameters first.
+ *
+ * Taking the address of a copy rather than of the caller's object means passing a constant (e.g. a
+ * @c static @c const data member) does not odr-use it, matching the @c <<<>>> launch syntax.
+ */
+template <typename... Params>
+void dispatch(cudaLaunchConfig_t const& config,
+              void* kernel,
+              std::source_location location,
+              Params... params)
 {
+  std::array<void*, sizeof...(Params)> arg_ptrs{
+    {const_cast<void*>(static_cast<void const*>(std::addressof(params)))...}};
+  cudaError_t status = cudaLaunchKernelExC(&config, kernel, arg_ptrs.data());
   if (status == cudaSuccess) { return; }
   cudaGetLastError();  // clear sticky error
   throw raft::cuda_error(format_cuda_launch_error(status, location));
@@ -74,170 +88,142 @@ inline void throw_on_cuda_launch_error(cudaError_t status, std::source_location 
 }  // namespace detail
 
 /**
- * @brief Temporary object that launches a CUDA kernel with call-site error reporting.
- *
- * @ingroup kernel_launch
- *
- * Capture @c std::source_location on @ref launch_kernel, then launch via rvalue @c operator().
- * Prefer the one-liner form so diagnostics point at the launch expression:
- * @code
- *   raft::launch_kernel(res, grid, block)(kernel, args...);
- *   raft::launch_kernel(stream, grid, block, smem)(kernel, args...);
- * @endcode
- *
- * The kernel must resolve to a unique @c __global__ function pointer. Partially-specified function
- * templates are OK when the remaining parameters can be deduced from the launch argument types.
- * Overload sets that remain ambiguous after that conversion are not supported.
- */
-class kernel_launcher {
- public:
-  kernel_launcher(kernel_launcher const&)            = delete;
-  kernel_launcher& operator=(kernel_launcher const&) = delete;
-  kernel_launcher(kernel_launcher&&)                 = default;
-  kernel_launcher& operator=(kernel_launcher&&)      = delete;
-
-  /**
-   * @brief Launch @p kernel with @p args, which already have the kernel parameter types.
-   *
-   * The function-pointer parameter type is a non-deduced context derived from @p args, so a
-   * partially specified function template (e.g. @c map_kernel<R, PassOffset>) can still convert to
-   * a unique @c __global__ pointer by deducing its remaining template parameters from that type.
-   */
-  template <typename... Args>
-  void operator()(std::type_identity_t<void (*)(std::remove_cvref_t<Args>...)> kernel,
-                  Args&&... args) &&
-  {
-    dispatch_by_value<std::remove_cvref_t<Args>...>(reinterpret_cast<void*>(kernel),
-                                                    std::forward<Args>(args)...);
-  }
-
-  /**
-   * @brief Launch @p kernel, converting @p args to the kernel parameter types.
-   *
-   * Handles call sites where an argument merely converts to its parameter (e.g. @c T* to
-   * @c const T*), so they do not need casts. @p kernel must name a single specialization here,
-   * because its parameter types are what the arguments are converted to.
-   */
-  template <typename... Params, typename... Args>
-  requires(sizeof...(Params) == sizeof...(Args) &&
-           !(std::is_same_v<std::remove_cvref_t<Args>, Params> && ...)) void
-  operator()(void (*kernel)(Params...), Args&&... args) &&
-  {
-    static_assert((std::is_convertible_v<Args, Params> && ...),
-                  "Each launch argument must be convertible to the corresponding kernel parameter");
-
-    dispatch_by_value<Params...>(reinterpret_cast<void*>(kernel), std::forward<Args>(args)...);
-  }
-
- private:
-  friend kernel_launcher launch_kernel(
-    resources const&, dim3, dim3, std::size_t, std::source_location);
-  friend kernel_launcher launch_kernel(
-    rmm::cuda_stream_view, dim3, dim3, std::size_t, std::source_location);
-
-  /**
-   * @brief Copy the launch arguments into parameters and pass their addresses to dispatch().
-   *
-   * Taking the address of a copy rather than of the caller's object means passing a constant (e.g.
-   * a
-   * @c static @c const data member) does not odr-use it, matching the @c <<<>>> launch syntax.
-   */
-  template <typename... Params>
-  void dispatch_by_value(void* kernel, Params... params) const
-  {
-    std::array<void*, sizeof...(Params)> arg_ptrs{
-      {const_cast<void*>(static_cast<void const*>(std::addressof(params)))...}};
-    dispatch(kernel, arg_ptrs.data());
-  }
-
-  void dispatch(void* kernel, void** arg_ptrs) const
-  {
-    cudaError_t status =
-      cudaLaunchKernel(kernel, grid_, block_, arg_ptrs, shared_mem_bytes_, stream_.value());
-
-    if (status == cudaSuccess) {
-#ifndef NDEBUG
-      status = cudaStreamSynchronize(stream_.value());
-#else
-      status = cudaPeekAtLastError();
-#endif
-    }
-    detail::throw_on_cuda_launch_error(status, location_);
-  }
-
-  kernel_launcher(rmm::cuda_stream_view stream,
-                  dim3 grid,
-                  dim3 block,
-                  std::size_t shared_mem_bytes,
-                  std::source_location location)
-    : stream_{stream},
-      grid_{grid},
-      block_{block},
-      shared_mem_bytes_{shared_mem_bytes},
-      location_{location}
-  {
-  }
-
-  rmm::cuda_stream_view stream_;
-  dim3 grid_{};
-  dim3 block_{};
-  std::size_t shared_mem_bytes_{0};
-  std::source_location location_{};
-};
-
-/**
  * @defgroup kernel_launch Type-checked CUDA kernel launch
  * @{
  */
 
 /**
- * @brief Launch a CUDA kernel on the stream of @p res, reporting errors at the call site.
+ * @brief Where a kernel is launched: the stream, the dynamic shared memory size, and the call site
+ * to blame for launch errors.
  *
- * The returned launcher is a temporary that must be called immediately, so that the diagnostics of
- * a failed launch blame the launch expression rather than this header:
+ * Converts implicitly from raft resources or from a stream, so that a launch reads as a single
+ * call and the diagnostics of a failed launch point at the launch expression:
  * @code
- *   raft::launch_kernel(res, grid, block)(my_kernel, arg0, arg1);
+ *   raft::launch_kernel(res, grid, block, my_kernel, arg0, arg1);
+ *   raft::launch_kernel({stream, smem}, grid, block, my_kernel, arg0, arg1);
  * @endcode
- * The launch arguments are checked against the kernel parameters at compile time, and a failed
- * launch throws @c raft::cuda_error.
  *
- * @param[in] res raft resources providing the stream to launch on
+ * Copy and move are deleted and @c launch_kernel takes this by value, so the parameter can only be
+ * initialized from a prvalue: an instance stored in a variable can never be launched, and the
+ * captured location is therefore always the one of the launch expression.
+ */
+struct launch_on {
+ public:
+  /**
+   * @param[in] res raft resources providing the stream to launch on
+   * @param[in] smem dynamic shared memory size in bytes
+   * @param[in] loc call site to blame for launch errors; leave at its default
+   */
+  launch_on(  // NOLINT(google-explicit-constructor)
+    resources const& res,
+    std::size_t smem         = 0,
+    std::source_location loc = std::source_location::current())
+    : launch_on{resource::get_cuda_stream(res), smem, loc}
+  {
+  }
+
+  /**
+   * @param[in] stream stream to launch on
+   * @param[in] smem dynamic shared memory size in bytes
+   * @param[in] loc call site to blame for launch errors; leave at its default
+   */
+  launch_on(  // NOLINT(google-explicit-constructor)
+    rmm::cuda_stream_view stream,
+    std::size_t smem         = 0,
+    std::source_location loc = std::source_location::current())
+    : launch_on{stream.value(), smem, loc}
+  {
+  }
+
+  /**
+   * @param[in] stream stream to launch on
+   * @param[in] smem dynamic shared memory size in bytes
+   * @param[in] loc call site to blame for launch errors; leave at its default
+   */
+  launch_on(  // NOLINT(google-explicit-constructor)
+    cudaStream_t stream,
+    std::size_t smem         = 0,
+    std::source_location loc = std::source_location::current())
+    : location{loc}
+  {
+    config.stream           = stream;
+    config.dynamicSmemBytes = smem;
+  }
+
+  launch_on(launch_on const&)            = delete;
+  launch_on& operator=(launch_on const&) = delete;
+  launch_on(launch_on&&)                 = delete;
+  launch_on& operator=(launch_on&&)      = delete;
+  ~launch_on()                           = default;
+
+  /** Call site to blame for launch errors. */
+  std::source_location location;
+  /** Launch configuration; the grid and block dimensions are filled in by the launch. */
+  cudaLaunchConfig_t config{};
+};
+
+/**
+ * @brief Launch @p kernel with @p args, which already have the kernel parameter types.
+ *
+ * The launch arguments are checked against the kernel parameters at compile time, and a failed
+ * launch throws @c raft::cuda_error blaming the call site:
+ * @code
+ *   raft::launch_kernel(res, grid, block, my_kernel, arg0, arg1);
+ * @endcode
+ *
+ * The function-pointer parameter type is a non-deduced context derived from @p args, so a
+ * partially specified function template (e.g. @c map_kernel<R, PassOffset>) can still convert to a
+ * unique @c __global__ pointer by deducing its remaining template parameters from that type.
+ * Overload sets that remain ambiguous after that conversion are not supported.
+ *
+ * @param[in] where stream to launch on, dynamic shared memory size, and the call site
  * @param[in] grid grid dimensions
  * @param[in] block block dimensions
- * @param[in] shared_mem_bytes dynamic shared memory size in bytes
- * @param[in] location call site to blame for launch errors; leave at its default
- * @return a launcher to invoke with the kernel and its arguments
+ * @param[in] kernel the @c __global__ function to launch
+ * @param[in] args arguments to pass to @p kernel
  */
-inline kernel_launcher launch_kernel(
-  resources const& res,
-  dim3 grid,
-  dim3 block,
-  std::size_t shared_mem_bytes  = 0,
-  std::source_location location = std::source_location::current())
+template <typename... Args>
+void launch_kernel(launch_on where,
+                   dim3 grid,
+                   dim3 block,
+                   std::type_identity_t<void (*)(std::remove_cvref_t<Args>...)> kernel,
+                   Args&&... args)
 {
-  return kernel_launcher{resource::get_cuda_stream(res), grid, block, shared_mem_bytes, location};
+  where.config.gridDim  = grid;
+  where.config.blockDim = block;
+  detail::dispatch<std::remove_cvref_t<Args>...>(
+    where.config, reinterpret_cast<void*>(kernel), where.location, std::forward<Args>(args)...);
 }
 
 /**
- * @brief Launch a CUDA kernel on @p stream, reporting errors at the call site.
+ * @brief Launch @p kernel, converting @p args to the kernel parameter types.
  *
- * Same as the overload taking raft resources; prefer that one where resources are available.
+ * Handles call sites where an argument merely converts to its parameter (e.g. @c T* to
+ * @c const T*), so they do not need casts. @p kernel must name a single specialization here,
+ * because its parameter types are what the arguments are converted to.
  *
- * @param[in] stream stream to launch on
+ * @param[in] where stream to launch on, dynamic shared memory size, and the call site
  * @param[in] grid grid dimensions
  * @param[in] block block dimensions
- * @param[in] shared_mem_bytes dynamic shared memory size in bytes
- * @param[in] location call site to blame for launch errors; leave at its default
- * @return a launcher to invoke with the kernel and its arguments
+ * @param[in] kernel the @c __global__ function to launch
+ * @param[in] args arguments to convert and pass to @p kernel
  */
-inline kernel_launcher launch_kernel(
-  rmm::cuda_stream_view stream,
-  dim3 grid,
-  dim3 block,
-  std::size_t shared_mem_bytes  = 0,
-  std::source_location location = std::source_location::current())
+template <typename... Params, typename... Args>
+requires(sizeof...(Params) == sizeof...(Args) &&
+         !(std::is_same_v<std::remove_cvref_t<Args>, Params> &&
+           ...)) void launch_kernel(launch_on where,
+                                    dim3 grid,
+                                    dim3 block,
+                                    void (*kernel)(Params...),
+                                    Args&&... args)
 {
-  return kernel_launcher{stream, grid, block, shared_mem_bytes, location};
+  static_assert((std::is_convertible_v<Args, Params> && ...),
+                "Each launch argument must be convertible to the corresponding kernel parameter");
+
+  where.config.gridDim  = grid;
+  where.config.blockDim = block;
+  detail::dispatch<Params...>(
+    where.config, reinterpret_cast<void*>(kernel), where.location, std::forward<Args>(args)...);
 }
 
 /** @} */  // end group kernel_launch

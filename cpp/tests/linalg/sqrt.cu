@@ -28,7 +28,7 @@ void naiveSqrtElem(Type* out, const Type* in1, int len)
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(cudaStream_t{0}, nblks, TPB)(naiveSqrtElemKernel<Type>, out, in1, len);
+  raft::launch_kernel(cudaStream_t{0}, nblks, TPB, naiveSqrtElemKernel<Type>, out, in1, len);
 }
 
 template <typename T>

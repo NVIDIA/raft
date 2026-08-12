@@ -84,16 +84,19 @@ class GemmLayoutTest : public ::testing::TestWithParam<GemmLayoutInputs<T>> {
     dim3 blocks(raft::ceildiv<int>(params.M, 128), raft::ceildiv<int>(params.N, 4), 1);
     dim3 threads(128, 4, 1);
 
-    raft::launch_kernel(cudaStream_t{0}, blocks, threads)(naiveGemm,
-                                                          refZ,
-                                                          X,
-                                                          Y,
-                                                          params.M,
-                                                          params.N,
-                                                          params.K,
-                                                          params.zLayout,
-                                                          params.xLayout,
-                                                          params.yLayout);
+    raft::launch_kernel(cudaStream_t{0},
+                        blocks,
+                        threads,
+                        naiveGemm,
+                        refZ,
+                        X,
+                        Y,
+                        params.M,
+                        params.N,
+                        params.K,
+                        params.zLayout,
+                        params.xLayout,
+                        params.yLayout);
 
     auto x_view_row_major = raft::make_device_matrix_view(X, params.M, params.K);
     auto y_view_row_major = raft::make_device_matrix_view(Y, params.K, params.N);

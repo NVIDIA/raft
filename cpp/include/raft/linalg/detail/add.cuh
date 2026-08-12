@@ -45,8 +45,8 @@ void addDevScalar(
   // TODO: block dimension has not been tuned
   dim3 block(256);
   dim3 grid(raft::ceildiv(len, (IdxType)block.x));
-  raft::launch_kernel(stream, grid, block)(
-    add_dev_scalar_kernel, outDev, inDev, singleScalarDev, len);
+  raft::launch_kernel(
+    stream, grid, block, add_dev_scalar_kernel, outDev, inDev, singleScalarDev, len);
 }
 
 }  // namespace detail

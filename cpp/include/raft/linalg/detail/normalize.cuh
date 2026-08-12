@@ -74,8 +74,19 @@ inline void coalesced_normalize_thin(Type* out,
 {
   dim3 grid(ceildiv(N, (IdxType)Policy::RowsPerBlock), 1, 1);
   dim3 block(Policy::LogicalWarpSize, Policy::RowsPerBlock, 1);
-  raft::launch_kernel(stream, grid, block)(
-    coalesced_normalize_thin_kernel<Policy>, out, in, D, N, init, main_op, reduce_op, fin_op, eps);
+  raft::launch_kernel(stream,
+                      grid,
+                      block,
+                      coalesced_normalize_thin_kernel<Policy>,
+                      out,
+                      in,
+                      D,
+                      N,
+                      init,
+                      main_op,
+                      reduce_op,
+                      fin_op,
+                      eps);
 }
 
 template <int TPB,
@@ -130,8 +141,19 @@ inline void coalesced_normalize_medium(Type* out,
                                        FinalLambda fin_op,
                                        Type eps)
 {
-  raft::launch_kernel(stream, N, TPB)(
-    coalesced_normalize_medium_kernel<TPB>, out, in, D, N, init, main_op, reduce_op, fin_op, eps);
+  raft::launch_kernel(stream,
+                      N,
+                      TPB,
+                      coalesced_normalize_medium_kernel<TPB>,
+                      out,
+                      in,
+                      D,
+                      N,
+                      init,
+                      main_op,
+                      reduce_op,
+                      fin_op,
+                      eps);
 }
 
 template <typename Type,

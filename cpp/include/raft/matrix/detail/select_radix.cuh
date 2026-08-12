@@ -931,36 +931,41 @@ void radix_topk(const T* in,
         kernel = radix_kernel<T, IdxT, BitsPerPass, BlockSize, true, RowLayout>;
       }
 
-      raft::launch_kernel(stream, blocks, BlockSize)(kernel,
-                                                     in,
-                                                     in_idx,
-                                                     reinterpret_cast<uintptr_t>(bufs.data()),
-                                                     offset,
-                                                     chunk_out,
-                                                     chunk_out_idx,
-                                                     counters.data(),
-                                                     histograms.data(),
-                                                     len,
-                                                     chunk_len_i,
-                                                     k,
-                                                     select_min,
-                                                     pass);
+      raft::launch_kernel(stream,
+                          blocks,
+                          BlockSize,
+                          kernel,
+                          in,
+                          in_idx,
+                          reinterpret_cast<uintptr_t>(bufs.data()),
+                          offset,
+                          chunk_out,
+                          chunk_out_idx,
+                          counters.data(),
+                          histograms.data(),
+                          len,
+                          chunk_len_i,
+                          k,
+                          select_min,
+                          pass);
     }
 
     if (!fused_last_filter) {
-      raft::launch_kernel(stream, blocks, BlockSize)(
-        last_filter_kernel<T, IdxT, BitsPerPass, RowLayout>,
-        in,
-        in_idx,
-        reinterpret_cast<uintptr_t>(bufs.data()),
-        offset,
-        chunk_out,
-        chunk_out_idx,
-        len,
-        chunk_len_i,
-        k,
-        counters.data(),
-        select_min);
+      raft::launch_kernel(stream,
+                          blocks,
+                          BlockSize,
+                          last_filter_kernel<T, IdxT, BitsPerPass, RowLayout>,
+                          in,
+                          in_idx,
+                          reinterpret_cast<uintptr_t>(bufs.data()),
+                          offset,
+                          chunk_out,
+                          chunk_out_idx,
+                          len,
+                          chunk_len_i,
+                          k,
+                          counters.data(),
+                          select_min);
     }
   }
 }
@@ -1178,17 +1183,20 @@ void radix_topk_one_block(const T* in,
   for (size_t offset = 0; offset < static_cast<size_t>(batch_size); offset += max_chunk_size) {
     int chunk_size          = std::min(max_chunk_size, batch_size - offset);
     const IdxT* chunk_len_i = len_i ? (len_i + offset) : nullptr;
-    raft::launch_kernel(stream, chunk_size, BlockSize)(kernel,
-                                                       in,
-                                                       in_idx,
-                                                       len,
-                                                       chunk_len_i,
-                                                       k,
-                                                       out + offset * k,
-                                                       out_idx + offset * k,
-                                                       select_min,
-                                                       reinterpret_cast<uintptr_t>(bufs.data()),
-                                                       offset);
+    raft::launch_kernel(stream,
+                        chunk_size,
+                        BlockSize,
+                        kernel,
+                        in,
+                        in_idx,
+                        len,
+                        chunk_len_i,
+                        k,
+                        out + offset * k,
+                        out_idx + offset * k,
+                        select_min,
+                        reinterpret_cast<uintptr_t>(bufs.data()),
+                        offset);
   }
 }
 

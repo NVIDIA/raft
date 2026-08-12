@@ -116,13 +116,16 @@ void calc_nnz_by_rows(raft::resources const& handle,
 
   auto block = bitmap_to_csr_tpb;
 
-  raft::launch_kernel(handle, grid, block)(calc_nnz_by_rows_kernel<bitmap_t, index_t, nnz_t>,
-                                           bitmap,
-                                           num_rows,
-                                           num_cols,
-                                           bitmap_num,
-                                           sub_col_nnz,
-                                           bits_per_sub_col);
+  raft::launch_kernel(handle,
+                      grid,
+                      block,
+                      calc_nnz_by_rows_kernel<bitmap_t, index_t, nnz_t>,
+                      bitmap,
+                      num_rows,
+                      num_cols,
+                      bitmap_num,
+                      sub_col_nnz,
+                      bits_per_sub_col);
 }
 
 template <typename bitmap_t, typename index_t, typename nnz_t, bool check_nnz>
@@ -254,16 +257,18 @@ void fill_indices_by_rows(raft::resources const& handle,
 
   auto block = bitmap_to_csr_tpb;
 
-  raft::launch_kernel(handle, grid, block)(
-    fill_indices_by_rows_kernel<bitmap_t, index_t, nnz_t, check_nnz>,
-    bitmap,
-    indptr,
-    num_rows,
-    num_cols,
-    nnz,
-    indices,
-    sub_col_nnz,
-    bits_per_sub_col);
+  raft::launch_kernel(handle,
+                      grid,
+                      block,
+                      fill_indices_by_rows_kernel<bitmap_t, index_t, nnz_t, check_nnz>,
+                      bitmap,
+                      indptr,
+                      num_rows,
+                      num_cols,
+                      nnz,
+                      indices,
+                      sub_col_nnz,
+                      bits_per_sub_col);
 }
 
 template <typename bitmap_t,

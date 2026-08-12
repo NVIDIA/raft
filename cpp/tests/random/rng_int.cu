@@ -86,8 +86,13 @@ class RngTest : public ::testing::TestWithParam<RngInputs<T>> {
         break;
     };
     static const int threads = 128;
-    raft::launch_kernel(stream, raft::ceildiv(params.len, threads), threads)(
-      meanKernel<T, threads>, stats.data(), data.data(), params.len);
+    raft::launch_kernel(stream,
+                        raft::ceildiv(params.len, threads),
+                        threads,
+                        meanKernel<T, threads>,
+                        stats.data(),
+                        data.data(),
+                        params.len);
     update_host<float>(h_stats, stats.data(), 2, stream);
     resource::sync_stream(handle, stream);
     h_stats[0] /= params.len;
@@ -139,8 +144,13 @@ class RngMdspanTest : public ::testing::TestWithParam<RngInputs<T>> {
       case RNG_Uniform: uniformInt(handle, r, data_view, params.start, params.end); break;
     };
     static const int threads = 128;
-    raft::launch_kernel(stream, raft::ceildiv(params.len, threads), threads)(
-      meanKernel<T, threads>, stats.data(), data.data(), params.len);
+    raft::launch_kernel(stream,
+                        raft::ceildiv(params.len, threads),
+                        threads,
+                        meanKernel<T, threads>,
+                        stats.data(),
+                        data.data(),
+                        params.len);
     update_host<float>(h_stats, stats.data(), 2, stream);
     resource::sync_stream(handle, stream);
     h_stats[0] /= params.len;

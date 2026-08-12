@@ -26,8 +26,8 @@ void naiveAdd(OutType* out, const InType* in1, const InType* in2, IdxType len)
 {
   static const IdxType TPB = 64;
   IdxType nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(cudaStream_t{0}, nblks, TPB)(
-    naiveAddKernel<InType, OutType, IdxType>, out, in1, in2, len);
+  raft::launch_kernel(
+    cudaStream_t{0}, nblks, TPB, naiveAddKernel<InType, OutType, IdxType>, out, in1, in2, len);
 }
 
 template <typename InType, typename IdxType = int, typename OutType = InType>

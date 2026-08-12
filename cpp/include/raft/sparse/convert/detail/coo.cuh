@@ -59,8 +59,8 @@ void csr_to_coo(
   dim3 grid(raft::ceildiv(m, (value_idx)TPB_X), 1, 1);
   dim3 blk(TPB_X, 1, 1);
 
-  raft::launch_kernel(stream, grid, blk)(
-    csr_to_coo_kernel<value_idx, TPB_X>, row_ind, m, coo_rows, nnz);
+  raft::launch_kernel(
+    stream, grid, blk, csr_to_coo_kernel<value_idx, TPB_X>, row_ind, m, coo_rows, nnz);
 }
 
 };  // end NAMESPACE detail

@@ -253,19 +253,32 @@ void coalescedReductionThin(OutType* dots,
   dim3 threads(Policy::LogicalWarpSize, Policy::NumLogicalWarps, 1);
   dim3 blocks(ceildiv<IdxType>(N, Policy::RowsPerBlock), 1, 1);
   if constexpr (std::is_same_v<ReduceLambda, raft::add_op>) {
-    raft::launch_kernel(stream, blocks, threads)(
-      coalescedSumThinKernel<Policy>, dots, data, D, N, init, main_op, final_op, inplace);
+    raft::launch_kernel(stream,
+                        blocks,
+                        threads,
+                        coalescedSumThinKernel<Policy>,
+                        dots,
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op,
+                        final_op,
+                        inplace);
   } else {
-    raft::launch_kernel(stream, blocks, threads)(coalescedReductionThinKernel<Policy>,
-                                                 dots,
-                                                 data,
-                                                 D,
-                                                 N,
-                                                 init,
-                                                 main_op,
-                                                 reduce_op,
-                                                 final_op,
-                                                 inplace);
+    raft::launch_kernel(stream,
+                        blocks,
+                        threads,
+                        coalescedReductionThinKernel<Policy>,
+                        dots,
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op,
+                        reduce_op,
+                        final_op,
+                        inplace);
   }
 }
 
@@ -406,19 +419,32 @@ void coalescedReductionMedium(OutType* dots,
 {
   common::nvtx::range<common::nvtx::domain::raft> fun_scope("coalescedReductionMedium<%d>", TPB);
   if constexpr (std::is_same_v<ReduceLambda, raft::add_op>) {
-    raft::launch_kernel(stream, N, TPB)(
-      coalescedSumMediumKernel<TPB>, dots, data, D, N, init, main_op, final_op, inplace);
+    raft::launch_kernel(stream,
+                        N,
+                        TPB,
+                        coalescedSumMediumKernel<TPB>,
+                        dots,
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op,
+                        final_op,
+                        inplace);
   } else {
-    raft::launch_kernel(stream, N, TPB)(coalescedReductionMediumKernel<TPB>,
-                                        dots,
-                                        data,
-                                        D,
-                                        N,
-                                        init,
-                                        main_op,
-                                        reduce_op,
-                                        final_op,
-                                        inplace);
+    raft::launch_kernel(stream,
+                        N,
+                        TPB,
+                        coalescedReductionMediumKernel<TPB>,
+                        dots,
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op,
+                        reduce_op,
+                        final_op,
+                        inplace);
   }
 }
 
@@ -540,17 +566,28 @@ void coalescedReductionThick(OutType* dots,
    *     main_op but applies final_op. If in-place, the existing and new values are reduced.
    */
   if constexpr (std::is_same_v<ReduceLambda, raft::add_op>) {
-    raft::launch_kernel(stream, blocks, threads)(
-      coalescedSumThickKernel<ThickPolicy>, buffer.data(), data, D, N, init, main_op);
+    raft::launch_kernel(stream,
+                        blocks,
+                        threads,
+                        coalescedSumThickKernel<ThickPolicy>,
+                        buffer.data(),
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op);
   } else {
-    raft::launch_kernel(stream, blocks, threads)(coalescedReductionThickKernel<ThickPolicy>,
-                                                 buffer.data(),
-                                                 data,
-                                                 D,
-                                                 N,
-                                                 init,
-                                                 main_op,
-                                                 reduce_op);
+    raft::launch_kernel(stream,
+                        blocks,
+                        threads,
+                        coalescedReductionThickKernel<ThickPolicy>,
+                        buffer.data(),
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op,
+                        reduce_op);
   }
 
   coalescedReductionThin<ThinPolicy>(dots,

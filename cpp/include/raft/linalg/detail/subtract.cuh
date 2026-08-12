@@ -49,8 +49,8 @@ void subtractDevScalar(math_t* outDev,
   // Just for the note - there is no way to express such operation with cuBLAS in effective way
   // https://stackoverflow.com/questions/14051064/add-scalar-to-vector-in-blas-cublas-cuda
   const IdxType nblks = raft::ceildiv(len, (IdxType)TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    subtract_dev_scalar_kernel<math_t>, outDev, inDev, singleScalarDev, len);
+  raft::launch_kernel(
+    stream, nblks, TPB, subtract_dev_scalar_kernel<math_t>, outDev, inDev, singleScalarDev, len);
 }
 
 };  // end namespace detail

@@ -72,8 +72,8 @@ void naiveRowNorm(
 {
   static const IdxT TPB = 64;
   IdxT nblks            = raft::ceildiv(N, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveRowNormKernel<Type, IdxT, OutType>, dots, data, D, N, type, do_sqrt);
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveRowNormKernel<Type, IdxT, OutType>, dots, data, D, N, type, do_sqrt);
 }
 
 template <typename T, typename IdxT, typename OutT = T>
@@ -163,8 +163,8 @@ void naiveColNorm(
 {
   static const IdxT TPB = 64;
   IdxT nblks            = raft::ceildiv(D, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveColNormKernel<Type, IdxT, OutType>, dots, data, D, N, type, do_sqrt);
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveColNormKernel<Type, IdxT, OutType>, dots, data, D, N, type, do_sqrt);
 }
 
 template <typename T, typename IdxT, typename OutT = T>

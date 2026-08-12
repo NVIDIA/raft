@@ -142,13 +142,13 @@ void svd_sign_correction(
 
   // threads_per_block must be a power of 2 for the tree reduction in the kernel
   constexpr int threads_per_block = 256;
-  int smem_size                   = threads_per_block * (sizeof(ValueTypeT) + sizeof(int));
+  size_t smem_size                = threads_per_block * (sizeof(ValueTypeT) + sizeof(int));
 
   ValueTypeT* U_ptr  = U ? U->data_handle() : nullptr;
   ValueTypeT* Vt_ptr = Vt ? Vt->data_handle() : nullptr;
 
-  raft::launch_kernel(handle, k, threads_per_block, smem_size)(
-    svd_sign_correction_kernel, U_ptr, Vt_ptr, m, n, k);
+  raft::launch_kernel(
+    {handle, smem_size}, k, threads_per_block, svd_sign_correction_kernel, U_ptr, Vt_ptr, m, n, k);
 }
 
 }  // namespace raft::sparse::solver::detail

@@ -42,7 +42,7 @@ void naiveHist(int* bins, int nbins, int* in, int nrows, int ncols, cudaStream_t
   const int TPB = 128;
   int nblksx    = raft::ceildiv(nrows, TPB);
   dim3 blks(nblksx, ncols);
-  raft::launch_kernel(stream, blks, TPB)(naiveHistKernel, bins, nbins, in, nrows);
+  raft::launch_kernel(stream, blks, TPB, naiveHistKernel, bins, nbins, in, nrows);
 }
 
 struct HistInputs {

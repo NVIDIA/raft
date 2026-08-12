@@ -181,8 +181,8 @@ class Cache {
   void GetVecs(const int* idx, int n, math_t* out, cudaStream_t stream)
   {
     if (n > 0) {
-      raft::launch_kernel(stream, raft::ceildiv(n * n_vec, TPB), TPB)(
-        get_vecs, cache.data(), n_vec, idx, n, out);
+      raft::launch_kernel(
+        stream, raft::ceildiv(n * n_vec, TPB), TPB, get_vecs, cache.data(), n_vec, idx, n, out);
     }
   }
 
@@ -216,15 +216,18 @@ class Cache {
                  const int* tile_idx = nullptr)
   {
     if (n > 0) {
-      raft::launch_kernel(stream, raft::ceildiv(n * n_vec, TPB), TPB)(store_vecs,
-                                                                      tile,
-                                                                      n_tile,
-                                                                      n_vec,
-                                                                      tile_idx,
-                                                                      n,
-                                                                      cache_idx,
-                                                                      cache.data(),
-                                                                      cache.size() / n_vec);
+      raft::launch_kernel(stream,
+                          raft::ceildiv(n * n_vec, TPB),
+                          TPB,
+                          store_vecs,
+                          tile,
+                          n_tile,
+                          n_vec,
+                          tile_idx,
+                          n,
+                          cache_idx,
+                          cache.data(),
+                          cache.size() / n_vec);
     }
   }
 
@@ -254,16 +257,19 @@ class Cache {
   {
     n_iter++;  // we increase the iteration counter, that is used to time stamp
     // accessing entries from the cache
-    raft::launch_kernel(stream, raft::ceildiv(n, TPB), TPB)(get_cache_idx,
-                                                            keys,
-                                                            n,
-                                                            cached_keys.data(),
-                                                            n_cache_sets,
-                                                            associativity,
-                                                            cache_time.data(),
-                                                            cache_idx,
-                                                            is_cached,
-                                                            n_iter);
+    raft::launch_kernel(stream,
+                        raft::ceildiv(n, TPB),
+                        TPB,
+                        get_cache_idx,
+                        keys,
+                        n,
+                        cached_keys.data(),
+                        n_cache_sets,
+                        associativity,
+                        cache_time.data(),
+                        cache_idx,
+                        is_cached,
+                        n_iter);
   }
 
   /** @brief Map a set of keys to cache indices.
@@ -346,15 +352,18 @@ class Cache {
     RAFT_CUDA_TRY(cudaMemsetAsync(cidx, 255, n * sizeof(int), stream));
     const int nthreads = associativity <= 32 ? associativity : 32;
 
-    raft::launch_kernel(stream, n_cache_sets, nthreads)(assign_cache_idx<nthreads, associativity>,
-                                                        keys,
-                                                        n,
-                                                        ws_tmp.data(),
-                                                        cached_keys.data(),
-                                                        n_cache_sets,
-                                                        cache_time.data(),
-                                                        n_iter,
-                                                        cidx);
+    raft::launch_kernel(stream,
+                        n_cache_sets,
+                        nthreads,
+                        assign_cache_idx<nthreads, associativity>,
+                        keys,
+                        n,
+                        ws_tmp.data(),
+                        cached_keys.data(),
+                        n_cache_sets,
+                        cache_time.data(),
+                        n_iter,
+                        cidx);
     if (debug_mode) RAFT_CUDA_TRY(cudaDeviceSynchronize());
   }
 

@@ -29,8 +29,8 @@ auto eval_op_on_device(OpT op, Args&&... args)
   typedef decltype(op(args...)) OutT;
   auto stream = rmm::cuda_stream_default;
   rmm::device_scalar<OutT> result(stream);
-  raft::launch_kernel(stream, 1, 1)(
-    eval_op_on_device_kernel, result.data(), op, std::forward<Args>(args)...);
+  raft::launch_kernel(
+    stream, 1, 1, eval_op_on_device_kernel, result.data(), op, std::forward<Args>(args)...);
   return result.value(stream);
 }
 

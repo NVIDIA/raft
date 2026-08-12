@@ -236,7 +236,10 @@ class RngImpl {
   {
     switch (state.type) {
       case GenPhilox:
-        raft::launch_kernel(stream, nBlocks, nThreads)(
+        raft::launch_kernel(
+          stream,
+          nBlocks,
+          nThreads,
           fillKernel<OutType, LenType, PhiloxGenerator, ITEMS_PER_CALL, ParamType>,
           state.seed,
           state.base_subsequence,
@@ -246,14 +249,16 @@ class RngImpl {
           params);
         break;
       case GenPC:
-        raft::launch_kernel(stream, nBlocks, nThreads)(
-          fillKernel<OutType, LenType, PCGenerator, ITEMS_PER_CALL, ParamType>,
-          state.seed,
-          state.base_subsequence,
-          0,
-          ptr,
-          len,
-          params);
+        raft::launch_kernel(stream,
+                            nBlocks,
+                            nThreads,
+                            fillKernel<OutType, LenType, PCGenerator, ITEMS_PER_CALL, ParamType>,
+                            state.seed,
+                            state.base_subsequence,
+                            0,
+                            ptr,
+                            len,
+                            params);
         break;
       default: break;
     }

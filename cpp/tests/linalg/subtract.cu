@@ -28,7 +28,7 @@ void naiveSubtractElem(Type* out, const Type* in1, const Type* in2, int len, cud
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(naiveSubtractElemKernel<Type>, out, in1, in2, len);
+  raft::launch_kernel(stream, nblks, TPB, naiveSubtractElemKernel<Type>, out, in1, in2, len);
 }
 
 template <typename Type>
@@ -43,7 +43,7 @@ void naiveSubtractScalar(Type* out, const Type* in1, const Type in2, int len, cu
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(naiveSubtractScalarKernel<Type>, out, in1, in2, len);
+  raft::launch_kernel(stream, nblks, TPB, naiveSubtractScalarKernel<Type>, out, in1, in2, len);
 }
 
 template <typename T>

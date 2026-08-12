@@ -95,8 +95,14 @@ void compute_duplicates_mask(
 {
   RAFT_CUDA_TRY(cudaMemsetAsync(mask, 0, nnz * sizeof(value_idx), stream));
 
-  raft::launch_kernel(stream, raft::ceildiv(nnz, (nnz_t)256), 256)(
-    compute_duplicates_diffs_kernel, rows, cols, mask, nnz);
+  raft::launch_kernel(stream,
+                      raft::ceildiv(nnz, (nnz_t)256),
+                      256,
+                      compute_duplicates_diffs_kernel,
+                      rows,
+                      cols,
+                      mask,
+                      nnz);
 }
 
 /**
@@ -144,16 +150,18 @@ void max_duplicates(raft::resources const& handle,
   out.allocate(size, m, n, true, stream);
 
   // perform reduce
-  raft::launch_kernel(handle, raft::ceildiv(nnz, (nnz_t)256), 256)(
-    max_duplicates_kernel<value_idx, value_t>,
-    rows,
-    cols,
-    vals,
-    diff.data() + 1,
-    out.rows(),
-    out.cols(),
-    out.vals(),
-    nnz);
+  raft::launch_kernel(handle,
+                      raft::ceildiv(nnz, (nnz_t)256),
+                      256,
+                      max_duplicates_kernel<value_idx, value_t>,
+                      rows,
+                      cols,
+                      vals,
+                      diff.data() + 1,
+                      out.rows(),
+                      out.cols(),
+                      out.vals(),
+                      nnz);
 }
 
 };  // END namespace detail

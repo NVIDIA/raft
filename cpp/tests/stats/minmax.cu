@@ -68,11 +68,11 @@ void naiveMinMax(
   const int TPB = 128;
   int nblks     = raft::ceildiv(ncols, TPB);
   T init_val    = std::numeric_limits<T>::max();
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveMinMaxInitKernel, ncols, globalmin, globalmax, init_val);
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveMinMaxInitKernel, ncols, globalmin, globalmax, init_val);
   nblks = raft::ceildiv(nrows * ncols, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveMinMaxKernel, data, nrows, ncols, globalmin, globalmax);
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveMinMaxKernel, data, nrows, ncols, globalmin, globalmax);
 }
 
 template <typename T>
@@ -108,8 +108,14 @@ class MinMaxTest : public ::testing::TestWithParam<MinMaxInputs<T>> {
     T nan_prob = 0.01;
     bernoulli(handle, r, mask.data(), len, nan_prob);
     const int TPB = 256;
-    raft::launch_kernel(handle, raft::ceildiv(len, TPB), TPB)(
-      nanKernel<T>, data.data(), mask.data(), len, std::numeric_limits<T>::quiet_NaN());
+    raft::launch_kernel(handle,
+                        raft::ceildiv(len, TPB),
+                        TPB,
+                        nanKernel<T>,
+                        data.data(),
+                        mask.data(),
+                        len,
+                        std::numeric_limits<T>::quiet_NaN());
     naiveMinMax(data.data(),
                 params.rows,
                 params.cols,

@@ -117,18 +117,21 @@ void coo_remove_scalar(const idx_t* rows,
   dim3 grid(raft::ceildiv(n, static_cast<idx_t>(TPB_X)), 1, 1);
   dim3 blk(TPB_X, 1, 1);
 
-  raft::launch_kernel(stream, grid, blk)(coo_remove_scalar_kernel<TPB_X, T, idx_t, nnz_t>,
-                                         rows,
-                                         cols,
-                                         vals,
-                                         nnz,
-                                         crows,
-                                         ccols,
-                                         cvals,
-                                         dev_ex_scan.get(),
-                                         dev_cur_ex_scan.get(),
-                                         n,
-                                         scalar);
+  raft::launch_kernel(stream,
+                      grid,
+                      blk,
+                      coo_remove_scalar_kernel<TPB_X, T, idx_t, nnz_t>,
+                      rows,
+                      cols,
+                      vals,
+                      nnz,
+                      crows,
+                      ccols,
+                      cvals,
+                      dev_ex_scan.get(),
+                      dev_cur_ex_scan.get(),
+                      n,
+                      scalar);
 }
 
 /**

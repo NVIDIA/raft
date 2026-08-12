@@ -99,14 +99,17 @@ class GemvTest : public ::testing::TestWithParam<GemvInputs<T>> {
     dim3 blocks(raft::ceildiv<int>(yElems, 256), 1, 1);
     dim3 threads(256, 1, 1);
 
-    raft::launch_kernel(handle, blocks, threads)(naiveGemv<T>,
-                                                 refy.data(),
-                                                 A.data(),
-                                                 x.data(),
-                                                 params.n_rows,
-                                                 params.n_cols,
-                                                 params.lda,
-                                                 params.trans_a);
+    raft::launch_kernel(handle,
+                        blocks,
+                        threads,
+                        naiveGemv<T>,
+                        refy.data(),
+                        A.data(),
+                        x.data(),
+                        params.n_rows,
+                        params.n_cols,
+                        params.lda,
+                        params.trans_a);
 
     auto A_row_major =
       raft::make_device_matrix_view<const T>(A.data(), params.n_rows, params.n_cols);

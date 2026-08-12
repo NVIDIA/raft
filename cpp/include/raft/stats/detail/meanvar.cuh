@@ -209,13 +209,28 @@ void meanvar(
 
     const uint64_t len = uint64_t(D) * uint64_t(N);
     ASSERT(len <= uint64_t(std::numeric_limits<I>::max()), "N * D does not fit the indexing type");
-    raft::launch_kernel(stream, gs, bs)(
-      meanvar_kernel_rowmajor<T, I, BlockSize>, data, mvs, locks, len, D);
-    raft::launch_kernel(stream, raft::ceildiv<I>(D, BlockSize), BlockSize)(
-      meanvar_kernel_fill<T, I>, mean, var, mvs, D, sample);
+    raft::launch_kernel(
+      stream, gs, bs, meanvar_kernel_rowmajor<T, I, BlockSize>, data, mvs, locks, len, D);
+    raft::launch_kernel(stream,
+                        raft::ceildiv<I>(D, BlockSize),
+                        BlockSize,
+                        meanvar_kernel_fill<T, I>,
+                        mean,
+                        var,
+                        mvs,
+                        D,
+                        sample);
   } else {
-    raft::launch_kernel(stream, D, BlockSize)(
-      meanvar_kernel_colmajor<T, I, BlockSize>, mean, var, data, D, N, sample);
+    raft::launch_kernel(stream,
+                        D,
+                        BlockSize,
+                        meanvar_kernel_colmajor<T, I, BlockSize>,
+                        mean,
+                        var,
+                        data,
+                        D,
+                        N,
+                        sample);
   }
   RAFT_CHECK_CUDA(stream);
 }

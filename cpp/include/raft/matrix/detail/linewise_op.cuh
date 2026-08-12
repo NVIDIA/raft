@@ -532,7 +532,10 @@ void matrixLinewiseVecCols(Type* out,
     // The value below determines how many scalar elements are processed by on thread in total.
     const IdxType elemsPerThread =
       raft::ceildiv<IdxType>(alignedLen, gs.x * VecElems * BlockSize) * VecElems;
-    raft::launch_kernel(stream, gs, bs)(
+    raft::launch_kernel(
+      stream,
+      gs,
+      bs,
       matrixLinewiseVecColsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>,
       out,
       in,
@@ -546,16 +549,18 @@ void matrixLinewiseVecCols(Type* out,
   if (alignedLen < totalLen) {
     // should be not smaller than the warp size for better branching
     constexpr std::size_t MaxOffset = std::max(std::size_t(raft::WarpSize), VecBytes);
-    raft::launch_kernel(stream, dim3(2, 1, 1), dim3(MaxOffset, 1, 1))(
-      matrixLinewiseVecColsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
-      out,
-      in,
-      alignedOff,
-      alignedEnd,
-      rowLen,
-      totalLen,
-      op,
-      vecs...);
+    raft::launch_kernel(stream,
+                        dim3(2, 1, 1),
+                        dim3(MaxOffset, 1, 1),
+                        matrixLinewiseVecColsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
+                        out,
+                        in,
+                        alignedOff,
+                        alignedEnd,
+                        rowLen,
+                        totalLen,
+                        op,
+                        vecs...);
   }
 }
 
@@ -599,7 +604,10 @@ void matrixLinewiseVecColsSpan(
     // The value below determines how many scalar elements are processed by on thread in total.
     const IdxType elemsPerThread =
       raft::ceildiv<IdxType>(alignedLen, gs.x * VecElems * BlockSize) * VecElems;
-    raft::launch_kernel(stream, gs, bs)(
+    raft::launch_kernel(
+      stream,
+      gs,
+      bs,
       matrixLinewiseVecColsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>,
       out.data_handle(),
       in.data_handle(),
@@ -661,7 +669,10 @@ void matrixLinewiseVecRows(Type* out,
                   1,
                   1);
 
-    raft::launch_kernel(stream, gs, bs)(
+    raft::launch_kernel(
+      stream,
+      gs,
+      bs,
       matrixLinewiseVecRowsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>,
       out + alignedOff,
       alignedStart,
@@ -674,16 +685,18 @@ void matrixLinewiseVecRows(Type* out,
   if (alignedLen < totalLen) {
     // should be not smaller than the warp size for better branching
     constexpr std::size_t MaxOffset = std::max(std::size_t(raft::WarpSize), VecBytes);
-    raft::launch_kernel(stream, dim3(2, 1, 1), dim3(MaxOffset, 1, 1))(
-      matrixLinewiseVecRowsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
-      out,
-      in,
-      alignedOff,
-      alignedEnd,
-      rowLen,
-      totalLen,
-      op,
-      vecs...);
+    raft::launch_kernel(stream,
+                        dim3(2, 1, 1),
+                        dim3(MaxOffset, 1, 1),
+                        matrixLinewiseVecRowsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
+                        out,
+                        in,
+                        alignedOff,
+                        alignedEnd,
+                        rowLen,
+                        totalLen,
+                        op,
+                        vecs...);
   }
 }
 
@@ -744,7 +757,10 @@ void matrixLinewiseVecRowsSpan(
                   1,
                   1);
 
-    raft::launch_kernel(stream, gs, bs)(
+    raft::launch_kernel(
+      stream,
+      gs,
+      bs,
       matrixLinewiseVecRowsSpanKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>,
       out.data_handle(),
       in.data_handle(),

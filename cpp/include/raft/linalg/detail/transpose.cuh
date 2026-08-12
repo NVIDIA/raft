@@ -117,23 +117,27 @@ void transpose_half(raft::resources const& handle,
   dim3 grids(adjusted_grid_x, adjusted_grid_y);
 
   if (stride_in > 1 || stride_out > 1) {
-    raft::launch_kernel(handle, grids, blocks)(
-      transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
-      n_rows,
-      n_cols,
-      in,
-      out,
-      stride_in,
-      stride_out);
+    raft::launch_kernel(handle,
+                        grids,
+                        blocks,
+                        transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
+                        n_rows,
+                        n_cols,
+                        in,
+                        out,
+                        stride_in,
+                        stride_out);
   } else {
-    raft::launch_kernel(handle, grids, blocks)(
-      transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
-      n_rows,
-      n_cols,
-      in,
-      out,
-      n_cols,
-      n_rows);
+    raft::launch_kernel(handle,
+                        grids,
+                        blocks,
+                        transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
+                        n_rows,
+                        n_cols,
+                        in,
+                        out,
+                        n_cols,
+                        n_rows);
   }
 
   RAFT_CUDA_TRY(cudaPeekAtLastError());

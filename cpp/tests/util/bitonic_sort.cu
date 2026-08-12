@@ -86,8 +86,14 @@ struct bitonic_launch {
     const int block_dim  = n_warps * WarpSize;
     const int n_subwarps = block_dim / spec.warp_width;
     const int grid_dim   = ceildiv(spec.n_inputs, n_subwarps);
-    raft::launch_kernel(stream, grid_dim, block_dim)(
-      bitonic_kernel<Capacity, T>, arr, spec.ascending, spec.warp_width, spec.n_inputs);
+    raft::launch_kernel(stream,
+                        grid_dim,
+                        block_dim,
+                        bitonic_kernel<Capacity, T>,
+                        arr,
+                        spec.ascending,
+                        spec.warp_width,
+                        spec.n_inputs);
   }
 };
 

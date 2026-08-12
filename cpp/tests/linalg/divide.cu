@@ -29,7 +29,7 @@ void naiveDivide(Type* out, const Type* in, Type scalar, int len, cudaStream_t s
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(naiveDivideKernel<Type>, out, in, scalar, len);
+  raft::launch_kernel(stream, nblks, TPB, naiveDivideKernel<Type>, out, in, scalar, len);
 }
 
 template <typename T>

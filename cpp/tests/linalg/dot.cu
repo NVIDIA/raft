@@ -64,8 +64,16 @@ class DotTest : public ::testing::TestWithParam<DotInputs<T>> {
     uniform(handle, r, y.data(), y_len, T(-1.0), T(1.0));
 
     rmm::device_scalar<T> ref(0, resource::get_cuda_stream(handle));
-    raft::launch_kernel(handle, 256, 256)(
-      naiveDot<T>, params.len, x.data(), params.incx, y.data(), params.incy, ref.data());
+    raft::launch_kernel(handle,
+                        256,
+                        256,
+                        naiveDot<T>,
+                        params.len,
+                        x.data(),
+                        params.incx,
+                        y.data(),
+                        params.incy,
+                        ref.data());
     raft::update_host(&ref_output, ref.data(), 1, stream);
 
     // Test out both the device and host api's

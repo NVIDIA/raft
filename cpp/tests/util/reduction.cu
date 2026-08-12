@@ -80,8 +80,8 @@ struct reduction_launch {
     rmm::device_scalar<int> ref_d(stream);
     const int block_dim = 64;
     const int grid_dim  = 1;
-    raft::launch_kernel(stream, grid_dim, block_dim)(
-      test_reduction_kernel, arr_d.data(), ref_d.data(), reduce_op);
+    raft::launch_kernel(
+      stream, grid_dim, block_dim, test_reduction_kernel, arr_d.data(), ref_d.data(), reduce_op);
     stream.synchronize();
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);
@@ -98,8 +98,14 @@ struct reduction_launch {
     rmm::device_scalar<int> rank_d(stream);
     const int block_dim = 64;
     const int grid_dim  = 1;
-    raft::launch_kernel(stream, grid_dim, block_dim)(
-      test_ranked_reduction_kernel, arr_d.data(), ref_d.data(), rank_d.data(), reduce_op);
+    raft::launch_kernel(stream,
+                        grid_dim,
+                        block_dim,
+                        test_ranked_reduction_kernel,
+                        arr_d.data(),
+                        ref_d.data(),
+                        rank_d.data(),
+                        reduce_op);
     stream.synchronize();
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);
@@ -113,8 +119,8 @@ struct reduction_launch {
     rmm::device_scalar<int> ref_d(stream);
     const int block_dim = 64;
     const int grid_dim  = 1;
-    raft::launch_kernel(stream, grid_dim, block_dim)(
-      test_block_random_sample_kernel, arr_d.data(), ref_d.data());
+    raft::launch_kernel(
+      stream, grid_dim, block_dim, test_block_random_sample_kernel, arr_d.data(), ref_d.data());
     stream.synchronize();
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);
@@ -127,8 +133,12 @@ struct reduction_launch {
     rmm::device_scalar<int> ref_d(stream);
     constexpr int block_dim = 64;
     const int grid_dim      = 1;
-    raft::launch_kernel(stream, grid_dim, block_dim)(
-      test_binary_reduction_kernel<block_dim>, arr_d.data(), ref_d.data());
+    raft::launch_kernel(stream,
+                        grid_dim,
+                        block_dim,
+                        test_binary_reduction_kernel<block_dim>,
+                        arr_d.data(),
+                        ref_d.data());
     stream.synchronize();
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);

@@ -80,7 +80,10 @@ void mapThenReduceImpl(OutType* out,
 {
   raft::update_device(out, &neutral, 1, stream);
   const int nblks = raft::ceildiv(len, IdxType(TPB));
-  raft::launch_kernel(stream, nblks, TPB)(
+  raft::launch_kernel(
+    stream,
+    nblks,
+    TPB,
     mapThenReduceKernel<InType, OutType, IdxType, MapOp, ReduceLambda, TPB, Args...>,
     out,
     len,

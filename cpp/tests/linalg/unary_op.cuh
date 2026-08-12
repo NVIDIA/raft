@@ -33,8 +33,8 @@ void naiveScale(OutType* out, const InType* in, InType scalar, int len, cudaStre
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  raft::launch_kernel(stream, nblks, TPB)(
-    naiveScaleKernel<InType, OutType, IdxType>, out, in, scalar, len);
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveScaleKernel<InType, OutType, IdxType>, out, in, scalar, len);
 }
 
 template <typename InType, typename IdxType = int, typename OutType = InType>

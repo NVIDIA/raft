@@ -32,8 +32,8 @@ auto math_eval(OpT op, Args&&... args)
   using OutT  = cuda::std::invoke_result_t<OpT, Args...>;
   auto stream = rmm::cuda_stream_default;
   rmm::device_scalar<OutT> result(stream);
-  raft::launch_kernel(stream, 1, 1)(
-    math_eval_kernel, result.data(), op, std::forward<Args>(args)...);
+  raft::launch_kernel(
+    stream, 1, 1, math_eval_kernel, result.data(), op, std::forward<Args>(args)...);
   return result.value(stream);
 }
 

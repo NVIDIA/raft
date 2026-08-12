@@ -46,7 +46,7 @@ void convert_array(IteratorT1 dst, IteratorT2 src, int n, cudaStream_t st)
   grid.x = raft::ceildiv(n, (int)block.x);
   grid.x = std::min(grid.x, MAX_BLOCKS);
 
-  raft::launch_kernel(st, grid, block)(convert_array_kernel, dst, src, n);
+  raft::launch_kernel(st, grid, block, convert_array_kernel, dst, src, n);
 }
 
 template <typename T>
@@ -168,8 +168,18 @@ void sum_rows_by_key_small_nkeys(const DataIteratorT d_A,
   grid.x = std::min(grid.x, 32u);
   grid.y = ncols;
   grid.y = std::min(grid.y, MAX_BLOCKS);
-  raft::launch_kernel(st, grid, block)(
-    sum_rows_by_key_small_nkeys_kernel, d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums);
+  raft::launch_kernel(st,
+                      grid,
+                      block,
+                      sum_rows_by_key_small_nkeys_kernel,
+                      d_A,
+                      lda,
+                      d_keys,
+                      d_weights,
+                      nrows,
+                      ncols,
+                      nkeys,
+                      d_sums);
 }
 
 //
@@ -252,15 +262,18 @@ void sum_rows_by_key_large_nkeys_colmajor(const DataIteratorT d_A,
   grid.x = std::min(grid.x, 32u);
   grid.y = ncols;
   grid.y = std::min(grid.y, MAX_BLOCKS);
-  raft::launch_kernel(st, grid, block)(sum_rows_by_key_large_nkeys_kernel_colmajor,
-                                       d_A,
-                                       lda,
-                                       d_keys,
-                                       nrows,
-                                       ncols,
-                                       key_offset,
-                                       nkeys,
-                                       d_sums);
+  raft::launch_kernel(st,
+                      grid,
+                      block,
+                      sum_rows_by_key_large_nkeys_kernel_colmajor,
+                      d_A,
+                      lda,
+                      d_keys,
+                      nrows,
+                      ncols,
+                      key_offset,
+                      nkeys,
+                      d_sums);
 }
 
 template <typename DataIteratorT,
@@ -302,8 +315,17 @@ void sum_rows_by_key_large_nkeys_rowmajor(const DataIteratorT d_A,
 {
   uint32_t block_dim = 128;
   auto grid_dim      = static_cast<uint32_t>(ceildiv<IdxT>(nrows * ncols, (IdxT)block_dim));
-  raft::launch_kernel(st, grid_dim, block_dim)(
-    sum_rows_by_key_large_nkeys_kernel_rowmajor, d_A, lda, d_weights, d_keys, nrows, ncols, d_sums);
+  raft::launch_kernel(st,
+                      grid_dim,
+                      block_dim,
+                      sum_rows_by_key_large_nkeys_kernel_rowmajor,
+                      d_A,
+                      lda,
+                      d_weights,
+                      d_keys,
+                      nrows,
+                      ncols,
+                      d_sums);
 }
 
 /**

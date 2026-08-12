@@ -181,17 +181,20 @@ size_t csr_add_calc_inds(const int* a_ind,
   rmm::device_uvector<int> row_counts(m + 1, stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(row_counts.data(), 0, (m + 1) * sizeof(int), stream));
 
-  raft::launch_kernel(stream, grid, blk)(csr_add_calc_row_counts_kernel<T, TPB_X>,
-                                         a_ind,
-                                         a_indptr,
-                                         a_val,
-                                         nnz1,
-                                         b_ind,
-                                         b_indptr,
-                                         b_val,
-                                         nnz2,
-                                         m,
-                                         row_counts.data());
+  raft::launch_kernel(stream,
+                      grid,
+                      blk,
+                      csr_add_calc_row_counts_kernel<T, TPB_X>,
+                      a_ind,
+                      a_indptr,
+                      a_val,
+                      nnz1,
+                      b_ind,
+                      b_indptr,
+                      b_val,
+                      nnz2,
+                      m,
+                      row_counts.data());
 
   int cnnz = 0;
   raft::update_host(&cnnz, row_counts.data() + m, 1, stream);
@@ -240,19 +243,22 @@ void csr_add_finalize(const int* a_ind,
   dim3 grid(raft::ceildiv(m, TPB_X), 1, 1);
   dim3 blk(TPB_X, 1, 1);
 
-  raft::launch_kernel(stream, grid, blk)(csr_add_kernel<T, TPB_X>,
-                                         a_ind,
-                                         a_indptr,
-                                         a_val,
-                                         nnz1,
-                                         b_ind,
-                                         b_indptr,
-                                         b_val,
-                                         nnz2,
-                                         m,
-                                         c_ind,
-                                         c_indptr,
-                                         c_val);
+  raft::launch_kernel(stream,
+                      grid,
+                      blk,
+                      csr_add_kernel<T, TPB_X>,
+                      a_ind,
+                      a_indptr,
+                      a_val,
+                      nnz1,
+                      b_ind,
+                      b_indptr,
+                      b_val,
+                      nnz2,
+                      m,
+                      c_ind,
+                      c_indptr,
+                      c_val);
 }
 
 };  // end NAMESPACE detail

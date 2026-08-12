@@ -59,13 +59,15 @@ class HostApiTest {
     RngState r(seed, GenPC);
     DeviceState<PCGenerator> d_state(r);
 
-    raft::launch_kernel(handle, n_blocks, n_threads)(
-      pcg_device_kernel<DataType, ParamType, CPT, IPC>,
-      d_buffer.data(),
-      d_state,
-      dist_params,
-      total_threads,
-      len);
+    raft::launch_kernel(handle,
+                        n_blocks,
+                        n_threads,
+                        pcg_device_kernel<DataType, ParamType, CPT, IPC>,
+                        d_buffer.data(),
+                        d_state,
+                        dist_params,
+                        total_threads,
+                        len);
 
     RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
     for (size_t tid = 0; tid < len; tid++) {

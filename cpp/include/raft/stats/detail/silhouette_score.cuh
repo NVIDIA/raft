@@ -247,14 +247,17 @@ DataT silhouette_score(
   dim3 numBlocks(raft::ceildiv<int>(nRows, numThreadsPerBlock.x), 1, 1);
 
   // calling the kernel
-  raft::launch_kernel(stream, numBlocks, numThreadsPerBlock)(populateAKernel,
-                                                             sampleToClusterSumOfDistances.data(),
-                                                             binCountArray.data(),
-                                                             d_aArray.data(),
-                                                             labels,
-                                                             nRows,
-                                                             nLabels,
-                                                             std::numeric_limits<DataT>::max());
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      numThreadsPerBlock,
+                      populateAKernel,
+                      sampleToClusterSumOfDistances.data(),
+                      binCountArray.data(),
+                      d_aArray.data(),
+                      labels,
+                      nRows,
+                      nLabels,
+                      std::numeric_limits<DataT>::max());
 
   // elementwise dividing by bincounts
   rmm::device_uvector<DataT> averageDistanceBetweenSampleAndCluster(nRows * nLabels, stream);
