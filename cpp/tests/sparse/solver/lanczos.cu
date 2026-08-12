@@ -384,6 +384,16 @@ void expect_correct_selection(raft::resources const& handle,
                               std::vector<ValueType> const& full_spectrum,
                               ValueType tol)
 {
+  // The subset-extraction branches below advance iterators by n_components
+  // in both directions (begin()+n_components, end()-n_components); with
+  // n_components >= full_spectrum.size() that arithmetic goes out of bounds,
+  // which is undefined behavior rather than a clean test failure. No current
+  // fixture violates this (n_components is always well under n), but assert
+  // it so a future fixture that does fails clearly instead of silently.
+  ASSERT_LE(n_components, static_cast<int>(full_spectrum.size()))
+    << "n_components (" << n_components << ") must not exceed the matrix dimension ("
+    << full_spectrum.size() << ")";
+
   auto stream = resource::get_cuda_stream(handle);
   std::vector<ValueType> host_eigenvalues(n_components);
   raft::update_host(host_eigenvalues.data(), eigenvalues, n_components, stream);
