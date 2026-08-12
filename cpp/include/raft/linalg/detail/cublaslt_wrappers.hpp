@@ -396,7 +396,7 @@ void matmul_strided_batched(raft::resources const& res,
                             cublasComputeType_t compute_type)
 {
   common::nvtx::range<common::nvtx::domain::raft> batch_scope(
-    "linalg::matmul_strided_batched(m = %d, n = %d, k = %d, batch_count = %d)",
+    "linalg::detail::matmul_strided_batched(m = %d, n = %d, k = %d, batch_count = %d)",
     m,
     n,
     k,
