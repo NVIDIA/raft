@@ -6,21 +6,25 @@
 #include "../../test_utils.cuh"
 
 #include <raft/core/device_coo_matrix.hpp>
+#include <raft/core/device_csr_matrix.hpp>
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/mdspan.hpp>
 #include <raft/core/mdspan_types.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/cusparse_handle.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/axpy.cuh>
 #include <raft/linalg/dot.cuh>
+#include <raft/linalg/eig.cuh>
 #include <raft/matrix/init.cuh>
 #include <raft/random/rmat_rectangular_generator.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/random/rng_state.hpp>
 #include <raft/sparse/convert/coo.cuh>
 #include <raft/sparse/convert/csr.cuh>
+#include <raft/sparse/convert/dense.cuh>
 #include <raft/sparse/coo.hpp>
 #include <raft/sparse/linalg/degree.cuh>
 #include <raft/sparse/linalg/symmetrize.cuh>
@@ -100,6 +104,23 @@ ValueType compute_frobenius_norm(raft::resources const& handle, ValueType const*
 }
 
 /**
+ * @brief Absolute tolerance for eigenvalue-accuracy comparisons (Rayleigh
+ * quotient, ascending order, and selection correctness). Shared between
+ * expect_valid_eigenpairs() and expect_correct_selection() so both checks
+ * agree on how tightly an eigenvalue must be pinned down. See
+ * expect_valid_eigenpairs() for the derivation.
+ *
+ * @tparam ValueType data type of the eigenvalues (float or double)
+ * @param[in] frobenius_norm Frobenius norm of A
+ */
+template <typename ValueType>
+ValueType eigenvalue_tolerance(ValueType frobenius_norm)
+{
+  auto eps = std::numeric_limits<ValueType>::epsilon();
+  return ValueType(500) * std::max(frobenius_norm, ValueType(1)) * eps;
+}
+
+/**
  * @brief Validate that (eigenvalues[i], eigenvectors[:, i]) are genuine
  * eigenpairs of `A`, without relying on hardcoded golden eigenvalues.
  *
@@ -134,28 +155,40 @@ ValueType compute_frobenius_norm(raft::resources const& handle, ValueType const*
  * @tparam IndexType integral type of the matrix indices
  * @tparam ValueType data type of matrix values and eigenpairs (float or double)
  * @param[in] handle raft resources
- * @param[in] A sparse matrix wrapper providing the A*v product
+ * @param[in] A CSR view of the (symmetric) matrix the eigenpairs belong to
  * @param[in] eigenvalues device pointer to n_components computed eigenvalues
  * @param[in] eigenvectors device pointer to the column-major n x n_components
  *   eigenvector matrix
- * @param[in] n dimension of the (square) matrix
  * @param[in] n_components number of eigenpairs to validate
  * @param[in] frobenius_norm Frobenius norm of A, used to scale tolerances
  * @param[in] which which eigenvalues were requested; selects the tight or
  *   relaxed eigenvector tolerance (SM is relaxed)
  */
 template <typename IndexType, typename ValueType>
-void expect_valid_eigenpairs(raft::resources const& handle,
-                             raft::spectral::matrix::sparse_matrix_t<IndexType, ValueType> const& A,
-                             ValueType const* eigenvalues,
-                             ValueType* eigenvectors,
-                             IndexType n,
-                             int n_components,
-                             ValueType frobenius_norm,
-                             raft::sparse::solver::LANCZOS_WHICH which)
+void expect_valid_eigenpairs(
+  raft::resources const& handle,
+  raft::device_csr_matrix_view<ValueType, IndexType, IndexType, IndexType> A,
+  ValueType const* eigenvalues,
+  ValueType* eigenvectors,
+  int n_components,
+  ValueType frobenius_norm,
+  raft::sparse::solver::LANCZOS_WHICH which)
 {
-  auto stream = resource::get_cuda_stream(handle);
-  auto eps    = std::numeric_limits<ValueType>::epsilon();
+  auto stream    = resource::get_cuda_stream(handle);
+  auto eps       = std::numeric_limits<ValueType>::epsilon();
+  auto structure = A.structure_view();
+  IndexType n    = structure.get_n_rows();
+
+  // sparse_matrix_t provides the A*v product (mv()) used below; built here
+  // from the CSR view's own storage rather than requiring the caller to
+  // construct one separately.
+  raft::spectral::matrix::sparse_matrix_t<IndexType, ValueType> const A_mv{
+    handle,
+    structure.get_indptr().data(),
+    structure.get_indices().data(),
+    A.get_elements().data(),
+    n,
+    static_cast<uint64_t>(structure.get_nnz())};
 
   // Eigenvalue-accuracy tolerance -- applied to the ascending-order check and
   // the Rayleigh-quotient check. Both carry the magnitude of A, so the noise
@@ -165,7 +198,7 @@ void expect_valid_eigenpairs(raft::resources const& handle,
   // tolerance ~40x and let a 1% eigenvalue error pass). This is held tight for
   // every mode: Lanczos returns accurate eigenVALUES even when the
   // eigenVECTOR is poorly conditioned.
-  const ValueType eigenvalue_tol = ValueType(500) * std::max(frobenius_norm, ValueType(1)) * eps;
+  const ValueType eigenvalue_tol = eigenvalue_tolerance(frobenius_norm);
 
   // Eigenvector-accuracy tolerances -- applied to the residual, unit-norm and
   // orthogonality checks. For smallest-magnitude (SM) eigenpairs the returned
@@ -206,7 +239,7 @@ void expect_valid_eigenpairs(raft::resources const& handle,
     auto v_i_view  = raft::make_device_vector_view<const ValueType, uint32_t>(v_i, n);
 
     // residual = A * v_i
-    A.mv(ValueType{1}, v_i, ValueType{0}, residual.data_handle());
+    A_mv.mv(ValueType{1}, v_i, ValueType{0}, residual.data_handle());
 
     ValueType rayleigh{};
     raft::linalg::dot(handle,
@@ -265,6 +298,118 @@ void expect_valid_eigenpairs(raft::resources const& handle,
         << "eigenvectors " << i << " and " << j
         << " are not orthogonal: |v_i . v_j|=" << std::abs(dot_ij);
     }
+  }
+}
+
+/**
+ * @brief Compute the full eigenvalue spectrum of a sparse symmetric matrix
+ * using an independent dense eigensolver (cuSOLVER syevd via
+ * raft::linalg::eigDC), for validating that Lanczos selected the correct
+ * extremal subset of the spectrum (see expect_correct_selection()).
+ *
+ * expect_valid_eigenpairs() only confirms each returned (lambda_i, v_i) is
+ * *some* genuine eigenpair of A; it cannot distinguish a correctly-selected
+ * eigenvalue from a genuine-but-wrong one (e.g. an interior eigenvalue
+ * returned when the smallest algebraic eigenvalues were requested). This
+ * spectrum, computed by a completely different algorithm than Lanczos and
+ * not subject to the same restart/subspace dynamics, is the independent
+ * reference that answers that question.
+ *
+ * @tparam IndexType integral type of the matrix indices
+ * @tparam ValueType data type of matrix values (float or double)
+ * @param[in] handle raft resources
+ * @param[in] A CSR view of the (symmetric) matrix
+ * @return ascending host vector of all n eigenvalues of A
+ */
+template <typename IndexType, typename ValueType>
+std::vector<ValueType> compute_full_spectrum(
+  raft::resources const& handle,
+  raft::device_csr_matrix_view<ValueType, IndexType, IndexType, IndexType> A)
+{
+  auto stream    = resource::get_cuda_stream(handle);
+  auto structure = A.structure_view();
+  IndexType n    = structure.get_n_rows();
+
+  auto dense = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, n, n);
+  RAFT_CUDA_TRY(cudaMemsetAsync(dense.data_handle(), 0, dense.size() * sizeof(ValueType), stream));
+  raft::sparse::convert::csr_to_dense<IndexType, ValueType>(
+    resource::get_cusparse_handle(handle),
+    n,
+    n,
+    static_cast<IndexType>(structure.get_nnz()),
+    structure.get_indptr().data(),
+    structure.get_indices().data(),
+    A.get_elements().data(),
+    n,
+    dense.data_handle(),
+    stream,
+    false);  // column-major output; A is symmetric so row/col-major coincide anyway
+
+  auto ref_vectors = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, n, n);
+  auto ref_values  = raft::make_device_vector<ValueType, uint32_t>(handle, n);
+  raft::linalg::eigDC(
+    handle, dense.data_handle(), n, n, ref_vectors.data_handle(), ref_values.data_handle(), stream);
+
+  std::vector<ValueType> host_spectrum(n);
+  raft::update_host(host_spectrum.data(), ref_values.data_handle(), n, stream);
+  raft::resource::sync_stream(handle);
+  return host_spectrum;
+}
+
+/**
+ * @brief Validate that the returned eigenvalues are the requested extremal
+ * subset (SA/SM/LA/LM) of A's spectrum, not merely *some* genuine eigenpairs
+ * of A. See compute_full_spectrum() for why this needs an independent
+ * reference rather than reusing Lanczos's own output.
+ *
+ * @tparam ValueType data type of the eigenvalues (float or double)
+ * @param[in] handle raft resources
+ * @param[in] eigenvalues device pointer to n_components computed eigenvalues
+ * @param[in] n_components number of eigenpairs
+ * @param[in] which which eigenvalues were requested
+ * @param[in] full_spectrum ascending reference spectrum from compute_full_spectrum()
+ * @param[in] tol absolute tolerance for the comparison
+ */
+template <typename ValueType>
+void expect_correct_selection(raft::resources const& handle,
+                              ValueType const* eigenvalues,
+                              int n_components,
+                              raft::sparse::solver::LANCZOS_WHICH which,
+                              std::vector<ValueType> const& full_spectrum,
+                              ValueType tol)
+{
+  auto stream = resource::get_cuda_stream(handle);
+  std::vector<ValueType> host_eigenvalues(n_components);
+  raft::update_host(host_eigenvalues.data(), eigenvalues, n_components, stream);
+  raft::resource::sync_stream(handle);
+
+  std::vector<ValueType> expected(n_components);
+  using raft::sparse::solver::LANCZOS_WHICH;
+  if (which == LANCZOS_WHICH::SA) {
+    std::copy(full_spectrum.begin(), full_spectrum.begin() + n_components, expected.begin());
+  } else if (which == LANCZOS_WHICH::LA) {
+    std::copy(full_spectrum.end() - n_components, full_spectrum.end(), expected.begin());
+  } else {
+    std::vector<ValueType> by_magnitude(full_spectrum);
+    std::stable_sort(by_magnitude.begin(), by_magnitude.end(), [](ValueType a, ValueType b) {
+      return std::abs(a) < std::abs(b);
+    });
+    if (which == LANCZOS_WHICH::SM) {
+      std::copy(by_magnitude.begin(), by_magnitude.begin() + n_components, expected.begin());
+    } else {  // LM
+      std::copy(by_magnitude.end() - n_components, by_magnitude.end(), expected.begin());
+    }
+    // Lanczos always returns its selection sorted ascending, regardless of
+    // `which`; sort the expected subset the same way for a like-for-like
+    // comparison.
+    std::sort(expected.begin(), expected.end());
+  }
+
+  for (int i = 0; i < n_components; ++i) {
+    EXPECT_NEAR(host_eigenvalues[i], expected[i], tol)
+      << "eigenvalue " << i << " (which=" << static_cast<int>(which)
+      << ") is not part of the requested selection: got=" << host_eigenvalues[i]
+      << " expected (from independent dense reference spectrum)=" << expected[i];
   }
 }
 
@@ -360,13 +505,6 @@ class rmat_lanczos_tests
       raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(
         handle, symmetric_coo.n_rows, n_components);
 
-    raft::spectral::matrix::sparse_matrix_t<IndexType, ValueType> const csr_m{
-      handle,
-      row_indices.data_handle(),
-      symmetric_coo.cols(),
-      symmetric_coo.vals(),
-      symmetric_coo.n_rows,
-      (uint64_t)symmetric_coo.nnz};
     raft::sparse::solver::lanczos_solver_config<ValueType> config{
       n_components, params.maxiter, params.restartiter, params.tol, params.which, rng.seed};
 
@@ -391,14 +529,18 @@ class rmat_lanczos_tests
 
     ValueType frobenius_norm =
       compute_frobenius_norm(handle, symmetric_coo.vals(), symmetric_coo.nnz);
+    std::vector<ValueType> full_spectrum = compute_full_spectrum(handle, csr_matrix);
+    ValueType eigenvalue_tol             = eigenvalue_tolerance(frobenius_norm);
+
     expect_valid_eigenpairs(handle,
-                            csr_m,
+                            csr_matrix,
                             eigenvalues.data_handle(),
                             eigenvectors.data_handle(),
-                            (IndexType)symmetric_coo.n_rows,
                             n_components,
                             frobenius_norm,
                             params.which);
+    expect_correct_selection(
+      handle, eigenvalues.data_handle(), n_components, params.which, full_spectrum, eigenvalue_tol);
 
     // Reproducibility test - run again with same seed and verify exact match
     raft::device_vector<ValueType, uint32_t, raft::col_major> eigenvalues2 =
@@ -449,13 +591,18 @@ class rmat_lanczos_tests
       eigenvectors_coo.view());
 
     expect_valid_eigenpairs(handle,
-                            csr_m,
+                            csr_matrix,
                             eigenvalues_coo.data_handle(),
                             eigenvectors_coo.data_handle(),
-                            (IndexType)symmetric_coo.n_rows,
                             n_components,
                             frobenius_norm,
                             params.which);
+    expect_correct_selection(handle,
+                             eigenvalues_coo.data_handle(),
+                             n_components,
+                             params.which,
+                             full_spectrum,
+                             eigenvalue_tol);
   }
 
  protected:
@@ -530,9 +677,9 @@ class lanczos_tests : public ::testing::TestWithParam<lanczos_inputs<IndexType, 
     auto csr_matrix = raft::make_device_csr_matrix_view<ValueType, IndexType, IndexType, IndexType>(
       const_cast<ValueType*>(vals.data_handle()), csr_structure);
 
-    raft::spectral::matrix::sparse_matrix_t<IndexType, ValueType> const A_check{
-      handle, rows.data_handle(), cols.data_handle(), vals.data_handle(), n, (uint64_t)nnz};
-    ValueType frobenius_norm = compute_frobenius_norm(handle, vals.data_handle(), nnz);
+    ValueType frobenius_norm             = compute_frobenius_norm(handle, vals.data_handle(), nnz);
+    std::vector<ValueType> full_spectrum = compute_full_spectrum(handle, csr_matrix);
+    ValueType eigenvalue_tol             = eigenvalue_tolerance(frobenius_norm);
 
     std::get<0>(stats) = raft::sparse::solver::lanczos_compute_eigenpairs<IndexType, ValueType>(
       handle,
@@ -543,13 +690,18 @@ class lanczos_tests : public ::testing::TestWithParam<lanczos_inputs<IndexType, 
       eigenvectors.view());
 
     expect_valid_eigenpairs(handle,
-                            A_check,
+                            csr_matrix,
                             eigenvalues.data_handle(),
                             eigenvectors.data_handle(),
-                            (IndexType)n,
                             params.n_components,
                             frobenius_norm,
                             params.which);
+    expect_correct_selection(handle,
+                             eigenvalues.data_handle(),
+                             params.n_components,
+                             params.which,
+                             full_spectrum,
+                             eigenvalue_tol);
 
     // Reproducibility test - run again with same seed and verify exact match
     raft::device_vector<ValueType, uint32_t, raft::col_major> eigenvalues2 =
@@ -599,13 +751,18 @@ class lanczos_tests : public ::testing::TestWithParam<lanczos_inputs<IndexType, 
       eigenvectors_coo.view());
 
     expect_valid_eigenpairs(handle,
-                            A_check,
+                            csr_matrix,
                             eigenvalues_coo.data_handle(),
                             eigenvectors_coo.data_handle(),
-                            (IndexType)n,
                             params.n_components,
                             frobenius_norm,
                             params.which);
+    expect_correct_selection(handle,
+                             eigenvalues_coo.data_handle(),
+                             params.n_components,
+                             params.which,
+                             full_spectrum,
+                             eigenvalue_tol);
   }
 
  protected:
