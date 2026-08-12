@@ -157,13 +157,13 @@ void lanczos_solve_ritz(
 
   if (!is_dry_run) {
     int blockSize = 256;
-    int numBlocks = (ncv + blockSize - 1) / blockSize;
-    kernel_triangular_populate<ValueTypeT><<<blockSize, numBlocks, 0, stream>>>(
+    int numBlocks = raft::div_rounding_up_safe(ncv, blockSize);
+    kernel_triangular_populate<ValueTypeT><<<numBlocks, blockSize, 0, stream>>>(
       triangular_matrix.data_handle(), beta.data_handle(), ncv);
 
     if (beta_k) {
       int threadsPerBlock = 256;
-      int blocksPerGrid   = (k + threadsPerBlock - 1) / threadsPerBlock;
+      int blocksPerGrid   = raft::div_rounding_up_safe<int>(k, threadsPerBlock);
       kernel_triangular_beta_k<ValueTypeT><<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
         triangular_matrix.data_handle(), beta_k.value().data_handle(), (int)k, ncv);
     }

@@ -45,6 +45,7 @@ void dot(raft::resources const& handle,
                "Size mismatch between x and y input vectors in raft::linalg::dot");
   if (resource::get_dry_run_flag(handle)) { return; }
 
+  detail::cublas_device_pointer_mode<true> pmode(resource::get_cublas_handle(handle));
   RAFT_CUBLAS_TRY(detail::cublasdot(resource::get_cublas_handle(handle),
                                     x.size(),
                                     x.data_handle(),
