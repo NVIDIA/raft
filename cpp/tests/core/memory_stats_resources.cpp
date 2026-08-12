@@ -1,20 +1,27 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "test_memory_resource.hpp"
+
+#include <raft/core/device_setter.hpp>
 #include <raft/core/memory_stats_resources.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resources.hpp>
 
+#include <rmm/mr/cuda_memory_resource.hpp>
 #include <rmm/mr/per_device_resource.hpp>
+#include <rmm/mr/pool_memory_resource.hpp>
 #include <rmm/resource_ref.hpp>
 
+#include <cuda/memory_resource>
 #include <cuda/stream_ref>
 
 #include <gtest/gtest.h>
 
 #include <cstddef>
+#include <memory>
 
 namespace raft {
 
@@ -91,6 +98,81 @@ TEST(MemoryStatsResources, IndependentCounting_PoolWorkspace)
 
   ws_ref.deallocate(cuda::stream_ref{cudaStreamLegacy}, ws_ptr, kWsSize);
   dev_mr.deallocate(cuda::stream_ref{cudaStreamLegacy}, dev_ptr, kGlobalSize);
+}
+
+TEST(MemoryStatsResources, RestoresDeviceResourceOnConstructionDevice)
+{
+  if (device_setter::get_device_count() < 2) { GTEST_SKIP() << "Requires at least 2 CUDA devices"; }
+
+  auto device0 = 0;
+  auto device1 = 1;
+
+  auto device0_guard = test::install_pool_device_resource(device0);
+  auto device1_guard = test::install_default_device_resource(device1);
+
+  {
+    auto scoped_device = device_setter{device0};
+    raft::resources res;
+    auto tracked      = std::make_unique<memory_stats_resources>(res);
+    auto wrong_device = device_setter{device1};
+    static_cast<void>(wrong_device);
+    tracked.reset();
+  }
+
+  {
+    auto scoped_device = device_setter{device0};
+    auto current_mr    = rmm::mr::get_current_device_resource_ref();
+    EXPECT_NE(cuda::mr::resource_cast<rmm::mr::pool_memory_resource>(&current_mr), nullptr);
+  }
+
+  {
+    auto scoped_device = device_setter{device1};
+    auto current_mr    = rmm::mr::get_current_device_resource_ref();
+    EXPECT_NE(cuda::mr::resource_cast<rmm::mr::cuda_memory_resource>(&current_mr), nullptr);
+  }
+}
+
+TEST(MemoryStatsResources, InstallsTrackedResourceOnHandleDevice)
+{
+  if (device_setter::get_device_count() < 2) { GTEST_SKIP() << "Requires at least 2 CUDA devices"; }
+
+  auto device0 = 0;
+  auto device1 = 1;
+
+  auto device0_guard = test::install_pool_device_resource(device0);
+  auto device1_guard = test::install_default_device_resource(device1);
+
+  {
+    auto scoped_device = device_setter{device0};
+    raft::resources res;
+    static_cast<void>(resource::get_device_id(res));
+
+    auto wrong_device = device_setter{device1};
+    static_cast<void>(wrong_device);
+    auto tracked = std::make_unique<memory_stats_resources>(res);
+
+    {
+      auto verify_device0 = device_setter{device0};
+      EXPECT_FALSE(test::current_device_uses_pool_resource());
+    }
+
+    {
+      auto verify_device1 = device_setter{device1};
+      EXPECT_TRUE(test::current_device_uses_default_cuda_resource());
+    }
+
+    tracked.reset();
+  }
+
+  {
+    auto scoped_device = device_setter{device0};
+    EXPECT_TRUE(test::current_device_uses_pool_resource());
+  }
+
+  {
+    auto scoped_device = device_setter{device1};
+    EXPECT_TRUE(test::current_device_uses_default_cuda_resource());
+  }
 }
 
 }  // namespace raft
