@@ -1,42 +1,16 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
+ */
+
+/**
+ * DISCLAIMER: this file is deprecated: use solver_types.hpp instead
  */
 
 #pragma once
 
-#include <cstdint>
-#include <optional>
+#pragma message(__FILE__                                                  \
+                " is deprecated and will be removed in a future release." \
+                " Please use <raft/sparse/solver/solver_types.hpp> instead.")
 
-namespace raft::sparse::solver {
-
-/**
- * @addtogroup sparse_randomized_svd
- * @{
- */
-
-/**
- * @brief Configuration parameters for the sparse randomized SVD solver
- *
- * @tparam ValueTypeT Data type for values (float or double)
- */
-template <typename ValueTypeT>
-struct sparse_svd_config {
-  /** @brief Number of singular values/vectors to compute. Must be set by the user. */
-  int n_components = 0;
-
-  /** @brief Number of extra random vectors for better approximation.
-   *  Total subspace dimension is n_components + n_oversamples. */
-  int n_oversamples = 10;
-
-  /** @brief Number of power iteration passes. More iterations improve accuracy
-   *  for matrices with slowly decaying singular values. */
-  int n_power_iters = 2;
-
-  /** @brief Random seed for reproducibility */
-  std::optional<uint64_t> seed = std::nullopt;
-};
-
-/** @} */
-
-}  // namespace raft::sparse::solver
+#include <raft/sparse/solver/solver_types.hpp>

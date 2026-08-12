@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -157,13 +157,13 @@ void lanczos_solve_ritz(
   //   alpha.data_handle(), triangular_matrix.data_handle(), ncv, ncv, stream);
 
   int blockSize = 256;
-  int numBlocks = (ncv + blockSize - 1) / blockSize;
+  int numBlocks = raft::div_rounding_up_safe(ncv, blockSize);
   kernel_triangular_populate<ValueTypeT>
-    <<<blockSize, numBlocks, 0, stream>>>(triangular_matrix.data_handle(), beta.data_handle(), ncv);
+    <<<numBlocks, blockSize, 0, stream>>>(triangular_matrix.data_handle(), beta.data_handle(), ncv);
 
   if (beta_k) {
     int threadsPerBlock = 256;
-    int blocksPerGrid   = (k + threadsPerBlock - 1) / threadsPerBlock;
+    int blocksPerGrid   = raft::div_rounding_up_safe<int>(k, threadsPerBlock);
     kernel_triangular_beta_k<ValueTypeT><<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
       triangular_matrix.data_handle(), beta_k.value().data_handle(), (int)k, ncv);
   }

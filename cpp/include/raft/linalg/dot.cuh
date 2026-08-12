@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __DOT_H
@@ -43,6 +43,7 @@ void dot(raft::resources const& handle,
   RAFT_EXPECTS(x.size() == y.size(),
                "Size mismatch between x and y input vectors in raft::linalg::dot");
 
+  detail::cublas_device_pointer_mode<true> pmode(resource::get_cublas_handle(handle));
   RAFT_CUBLAS_TRY(detail::cublasdot(resource::get_cublas_handle(handle),
                                     x.size(),
                                     x.data_handle(),
