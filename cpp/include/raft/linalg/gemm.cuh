@@ -364,13 +364,35 @@ void gemm_batched(raft::resources const& res,
   if (alpha.has_value()) { alpha_ptr = alpha->data_handle(); }
   if (beta.has_value()) { beta_ptr = beta->data_handle(); }
 
+  const bool x_col_major = is_col_major(x);
+  const bool y_col_major = is_col_major(y);
   const bool z_col_major = is_col_major(z);
-  const bool x_col_major = is_col_major(x) ^ z_col_major;
-  const bool y_col_major = is_col_major(y) ^ z_col_major;
   const auto x_ld        = x_col_major ? x.stride(2) : x.stride(1);
   const auto y_ld        = y_col_major ? y.stride(2) : y.stride(1);
   const auto z_ld        = z_col_major ? z.stride(2) : z.stride(1);
   const auto batch_count = static_cast<int32_t>(z.extent(0));
+
+  if (z_col_major) {
+    return detail::matmul_strided_batched<kDeviceMode>(res,
+                                                       !x_col_major,
+                                                       !y_col_major,
+                                                       z.extent(1),
+                                                       z.extent(2),
+                                                       x.extent(2),
+                                                       alpha_ptr,
+                                                       x.data_handle(),
+                                                       x_ld,
+                                                       batch_stride(x),
+                                                       y.data_handle(),
+                                                       y_ld,
+                                                       batch_stride(y),
+                                                       beta_ptr,
+                                                       z.data_handle(),
+                                                       z_ld,
+                                                       batch_stride(z),
+                                                       batch_count,
+                                                       compute_type_override);
+  }
 
   return detail::matmul_strided_batched<kDeviceMode>(res,
                                                      y_col_major,
