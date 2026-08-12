@@ -304,7 +304,7 @@ void expect_valid_eigenpairs(
 /**
  * @brief Compute the full eigenvalue spectrum of a sparse symmetric matrix
  * using an independent dense eigensolver (cuSOLVER syevd via
- * raft::linalg::eigDC), for validating that Lanczos selected the correct
+ * raft::linalg::eig_dc), for validating that Lanczos selected the correct
  * extremal subset of the spectrum (see expect_correct_selection()).
  *
  * expect_valid_eigenpairs() only confirms each returned (lambda_i, v_i) is
@@ -314,6 +314,12 @@ void expect_valid_eigenpairs(
  * spectrum, computed by a completely different algorithm than Lanczos and
  * not subject to the same restart/subspace dynamics, is the independent
  * reference that answers that question.
+ *
+ * Densifies A and runs an O(n^3) dense eigensolve, so this scales poorly for
+ * large n: at the RMAT fixture's current r_scale = c_scale = 12 (n = 4096)
+ * this allocates two ~64 MiB dense matrices and adds a few seconds per test.
+ * If RMAT test scales grow significantly, prefer bounding the selection
+ * check to a smaller fixture over raising this one's n.
  *
  * @tparam IndexType integral type of the matrix indices
  * @tparam ValueType data type of matrix values (float or double)
@@ -347,8 +353,8 @@ std::vector<ValueType> compute_full_spectrum(
 
   auto ref_vectors = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, n, n);
   auto ref_values  = raft::make_device_vector<ValueType, uint32_t>(handle, n);
-  raft::linalg::eigDC(
-    handle, dense.data_handle(), n, n, ref_vectors.data_handle(), ref_values.data_handle(), stream);
+  raft::linalg::eig_dc(
+    handle, raft::make_const_mdspan(dense.view()), ref_vectors.view(), ref_values.view());
 
   std::vector<ValueType> host_spectrum(n);
   raft::update_host(host_spectrum.data(), ref_values.data_handle(), n, stream);
