@@ -1219,6 +1219,11 @@ const std::vector<lanczos_inputs<int, float>> inputsf_SA = {
    cols<int>(),
    vals<float>()}};
 
+// NOTE: r_scale/c_scale = 12 gives n = 4096. expect_correct_selection() validates
+// against a dense reference spectrum (see compute_full_spectrum()), which costs
+// O(n^2) memory and O(n^3) runtime -- at n = 4096 that is two ~64 MiB matrices and
+// a few seconds. Raising these scales grows that cost cubically; prefer adding a
+// separate smaller fixture for the selection check over increasing them here.
 const std::vector<rmat_lanczos_inputs<int, float>> rmat_inputsf = {
   {50, 100, 10000, 0, 0, 1e-9, raft::sparse::solver::LANCZOS_WHICH::SA, 42, 12, 12, 1}};
 
