@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -874,6 +874,49 @@ inline cusolverStatus_t cusolverDnpotrf(cusolverDnHandle_t handle,  // NOLINT
 {
   RAFT_CUSOLVER_TRY(cusolverDnSetStream(handle, stream));
   return cusolverDnDpotrf(handle, uplo, n, A, lda, Workspace, Lwork, devInfo);
+}
+/** @} */
+
+/**
+ * @defgroup potrfBatched cusolver potrfBatched operations
+ * @{
+ */
+template <typename T>
+cusolverStatus_t cusolverDnpotrfBatched(cusolverDnHandle_t handle,  // NOLINT
+                                        cublasFillMode_t uplo,
+                                        int n,
+                                        T* Aarray[],  // NOLINT
+                                        int lda,
+                                        int* infoArray,
+                                        int batchSize,
+                                        cudaStream_t stream);
+
+template <>
+inline cusolverStatus_t cusolverDnpotrfBatched(cusolverDnHandle_t handle,  // NOLINT
+                                               cublasFillMode_t uplo,
+                                               int n,
+                                               float* Aarray[],  // NOLINT
+                                               int lda,
+                                               int* infoArray,
+                                               int batchSize,
+                                               cudaStream_t stream)
+{
+  RAFT_CUSOLVER_TRY(cusolverDnSetStream(handle, stream));
+  return cusolverDnSpotrfBatched(handle, uplo, n, Aarray, lda, infoArray, batchSize);
+}
+
+template <>
+inline cusolverStatus_t cusolverDnpotrfBatched(cusolverDnHandle_t handle,  // NOLINT
+                                               cublasFillMode_t uplo,
+                                               int n,
+                                               double* Aarray[],  // NOLINT
+                                               int lda,
+                                               int* infoArray,
+                                               int batchSize,
+                                               cudaStream_t stream)
+{
+  RAFT_CUSOLVER_TRY(cusolverDnSetStream(handle, stream));
+  return cusolverDnDpotrfBatched(handle, uplo, n, Aarray, lda, infoArray, batchSize);
 }
 /** @} */
 

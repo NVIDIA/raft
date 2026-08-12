@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -929,6 +929,69 @@ inline cublasStatus_t cublastrsm(cublasHandle_t handle,
   RAFT_CUBLAS_TRY(cublasSetStream(handle, stream));
   return cublasDtrsm(handle, side, uplo, trans, diag, m, n, alpha, A, lda, B, ldb);
 }
+
+/**
+ * @defgroup trsmBatched cublas trsmBatched calls
+ * @{
+ */
+template <typename T>
+cublasStatus_t cublastrsmBatched(cublasHandle_t handle,  // NOLINT
+                                 cublasSideMode_t side,
+                                 cublasFillMode_t uplo,
+                                 cublasOperation_t trans,
+                                 cublasDiagType_t diag,
+                                 int m,
+                                 int n,
+                                 const T* alpha,
+                                 const T* const Aarray[],  // NOLINT
+                                 int lda,
+                                 T* const Barray[],  // NOLINT
+                                 int ldb,
+                                 int batchCount,
+                                 cudaStream_t stream);
+
+template <>
+inline cublasStatus_t cublastrsmBatched(cublasHandle_t handle,  // NOLINT
+                                        cublasSideMode_t side,
+                                        cublasFillMode_t uplo,
+                                        cublasOperation_t trans,
+                                        cublasDiagType_t diag,
+                                        int m,
+                                        int n,
+                                        const float* alpha,
+                                        const float* const Aarray[],  // NOLINT
+                                        int lda,
+                                        float* const Barray[],  // NOLINT
+                                        int ldb,
+                                        int batchCount,
+                                        cudaStream_t stream)
+{
+  RAFT_CUBLAS_TRY(cublasSetStream(handle, stream));
+  return cublasStrsmBatched(
+    handle, side, uplo, trans, diag, m, n, alpha, Aarray, lda, Barray, ldb, batchCount);
+}
+
+template <>
+inline cublasStatus_t cublastrsmBatched(cublasHandle_t handle,  // NOLINT
+                                        cublasSideMode_t side,
+                                        cublasFillMode_t uplo,
+                                        cublasOperation_t trans,
+                                        cublasDiagType_t diag,
+                                        int m,
+                                        int n,
+                                        const double* alpha,
+                                        const double* const Aarray[],  // NOLINT
+                                        int lda,
+                                        double* const Barray[],  // NOLINT
+                                        int ldb,
+                                        int batchCount,
+                                        cudaStream_t stream)
+{
+  RAFT_CUBLAS_TRY(cublasSetStream(handle, stream));
+  return cublasDtrsmBatched(
+    handle, side, uplo, trans, diag, m, n, alpha, Aarray, lda, Barray, ldb, batchCount);
+}
+/** @} */
 
 /**
  * @defgroup dot cublas dot calls

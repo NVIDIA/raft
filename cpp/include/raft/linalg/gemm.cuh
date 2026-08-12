@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __GEMM_H
@@ -284,6 +284,124 @@ void gemm(raft::resources const& res,
 }
 
 /** @} */  // end of gemm
+
+/**
+ * @defgroup gemm_batched Batched Matrix-Matrix Multiplication
+ * @{
+ */
+
+/**
+ * @brief Batched GEMM: performs one matrix-matrix multiplication per batch index in a single
+ * kernel launch. For every batch index b it computes:
+ *   Z[b] = alpha . X[b] * Y[b] + beta . Z[b]
+ * If alpha is not provided, it is assumed to be 1.0
+ * If beta is not provided, it is assumed to be 0.0
+ *
+ * The first (slowest-varying) dimension of every operand indexes the batch; the two remaining
+ * dimensions form a raft::row_major or raft::col_major matrix, and all matrices of an operand
+ * share their layout and leading dimension. Batches of row-major matrices are what a plain
+ * `raft::row_major` 3D mdspan describes; other packings (batches of column-major matrices, or a
+ * batch stride that differs from the matrix size) are expressed with a strided layout. A batch
+ * stride of zero broadcasts a single matrix over the whole batch, which is useful when e.g. the
+ * same operator is applied to every matrix of the batch.
+ *
+ * @tparam ValueType Data type of input/output matrices (float/double)
+ * @tparam IndexType Type of index
+ * @tparam LayoutPolicyX layout of X
+ * @tparam LayoutPolicyY layout of Y
+ * @tparam LayoutPolicyZ layout of Z
+ * @param[in] res raft handle
+ * @param[in] x input raft::device_mdspan of size [batch_count, M, K]
+ * @param[in] y input raft::device_mdspan of size [batch_count, K, N]
+ * @param[out] z output raft::device_mdspan of size [batch_count, M, N]
+ * @param[in] alpha optional raft::host_scalar_view or raft::device_scalar_view, default 1.0
+ * @param[in] beta optional raft::host_scalar_view or raft::device_scalar_view, default 0.0
+ */
+template <typename ValueType,
+          typename IndexType,
+          typename LayoutPolicyX,
+          typename LayoutPolicyY,
+          typename LayoutPolicyZ,
+          typename ScalarIdxType  = std::uint32_t,
+          typename ScalarViewType = raft::host_scalar_view<ValueType, ScalarIdxType>,
+          typename                = std::enable_if_t<std::disjunction_v<
+                           std::is_same<ScalarViewType, raft::host_scalar_view<ValueType, ScalarIdxType>>,
+                           std::is_same<ScalarViewType, raft::device_scalar_view<ValueType, ScalarIdxType>>>>>
+void gemm_batched(raft::resources const& res,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyX> x,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyY> y,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyZ> z,
+                  std::optional<ScalarViewType> alpha = std::nullopt,
+                  std::optional<ScalarViewType> beta  = std::nullopt)
+{
+  RAFT_EXPECTS(x.extent(0) == z.extent(0) && y.extent(0) == z.extent(0),
+               "Batch sizes of X, Y and Z should be equal");
+  RAFT_EXPECTS(x.extent(1) == z.extent(1), "Number of rows of X and Z should be equal");
+  RAFT_EXPECTS(y.extent(2) == z.extent(2), "Number of columns of Y and Z should be equal");
+  RAFT_EXPECTS(x.extent(2) == y.extent(1), "Number of columns of X and rows of Y should be equal");
+
+  const auto x_desc = detail::describe_batched_gemm_operand(x, "X");
+  const auto y_desc = detail::describe_batched_gemm_operand(y, "Y");
+  const auto z_desc = detail::describe_batched_gemm_operand(z, "Z");
+
+  // NB: the function type constraints only ever allow two view types, so using std::is_same_v is
+  // fine
+  constexpr auto kDeviceMode =
+    std::is_same_v<ScalarViewType, raft::device_scalar_view<ValueType, ScalarIdxType>>;
+
+  // NB: we rely on the implementation of detail::matmul_strided_batched to set defaults
+  ValueType* alpha_ptr = nullptr;
+  ValueType* beta_ptr  = nullptr;
+  if (alpha.has_value()) { alpha_ptr = alpha.value().data_handle(); }
+  if (beta.has_value()) { beta_ptr = beta.value().data_handle(); }
+
+  const auto batch_count = static_cast<uint64_t>(z.extent(0));
+
+  if (z_desc.col_major) {
+    return detail::matmul_strided_batched<kDeviceMode, ValueType, ValueType, ValueType, ValueType>(
+      res,
+      !x_desc.col_major,
+      !y_desc.col_major,
+      static_cast<uint64_t>(z.extent(1)),
+      static_cast<uint64_t>(z.extent(2)),
+      static_cast<uint64_t>(x.extent(2)),
+      alpha_ptr,
+      x.data_handle(),
+      x_desc.ld,
+      x_desc.batch_stride,
+      y.data_handle(),
+      y_desc.ld,
+      y_desc.batch_stride,
+      beta_ptr,
+      z.data_handle(),
+      z_desc.ld,
+      z_desc.batch_stride,
+      batch_count);
+  } else {
+    // Z is row-major, i.e. Zᵀ is column-major: compute Zᵀ[b] = Yᵀ[b] * Xᵀ[b] instead.
+    return detail::matmul_strided_batched<kDeviceMode, ValueType, ValueType, ValueType, ValueType>(
+      res,
+      y_desc.col_major,
+      x_desc.col_major,
+      static_cast<uint64_t>(z.extent(2)),
+      static_cast<uint64_t>(z.extent(1)),
+      static_cast<uint64_t>(x.extent(2)),
+      alpha_ptr,
+      y.data_handle(),
+      y_desc.ld,
+      y_desc.batch_stride,
+      x.data_handle(),
+      x_desc.ld,
+      x_desc.batch_stride,
+      beta_ptr,
+      z.data_handle(),
+      z_desc.ld,
+      z_desc.batch_stride,
+      batch_count);
+  }
+}
+
+/** @} */  // end of gemm_batched
 
 }  // namespace linalg
 }  // namespace raft
