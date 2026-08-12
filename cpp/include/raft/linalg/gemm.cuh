@@ -364,37 +364,16 @@ void gemm_batched(raft::resources const& res,
   if (alpha.has_value()) { alpha_ptr = alpha->data_handle(); }
   if (beta.has_value()) { beta_ptr = beta->data_handle(); }
 
-  const bool x_col_major    = is_col_major(x);
-  const bool y_col_major    = is_col_major(y);
   const bool z_col_major    = is_col_major(z);
+  const bool x_col_major    = is_col_major(x) ^ z_col_major;
+  const bool y_col_major    = is_col_major(y) ^ z_col_major;
   const auto x_ld           = x_col_major ? x.stride(2) : x.stride(1);
   const auto y_ld           = y_col_major ? y.stride(2) : y.stride(1);
   const auto z_ld           = z_col_major ? z.stride(2) : z.stride(1);
   const auto x_batch_stride = batch_stride(x);
   const auto y_batch_stride = batch_stride(y);
   const auto z_batch_stride = batch_stride(z);
-
-  if (z_col_major) {
-    return detail::matmul_strided_batched<kDeviceMode>(res,
-                                                       !x_col_major,
-                                                       !y_col_major,
-                                                       z.extent(1),
-                                                       z.extent(2),
-                                                       x.extent(2),
-                                                       alpha_ptr,
-                                                       x.data_handle(),
-                                                       x_ld,
-                                                       x_batch_stride,
-                                                       y.data_handle(),
-                                                       y_ld,
-                                                       y_batch_stride,
-                                                       beta_ptr,
-                                                       z.data_handle(),
-                                                       z_ld,
-                                                       z_batch_stride,
-                                                       z.extent(0),
-                                                       compute_type_override);
-  }
+  const auto batch_count    = static_cast<int32_t>(z.extent(0));
 
   return detail::matmul_strided_batched<kDeviceMode>(res,
                                                      y_col_major,
@@ -413,7 +392,7 @@ void gemm_batched(raft::resources const& res,
                                                      z.data_handle(),
                                                      z_ld,
                                                      z_batch_stride,
-                                                     z.extent(0),
+                                                     batch_count,
                                                      compute_type_override);
 }
 
