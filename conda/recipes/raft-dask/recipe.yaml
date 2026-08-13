@@ -119,5 +119,5 @@ tests:
 
 about:
   homepage: ${{ load_from_file("python/raft-dask/pyproject.toml").project.urls.Homepage }}
-  license: ${{ load_from_file("python/raft-dask/pyproject.toml").project.license }}
+  license: ${{ load_from_file("python/raft-dask/pyproject.toml").project.license.text }}
   summary: ${{ load_from_file("python/raft-dask/pyproject.toml").project.description }}
