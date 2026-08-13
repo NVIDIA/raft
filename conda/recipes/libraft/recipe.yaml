@@ -190,7 +190,6 @@ outputs:
     requirements:
       build:
         - cmake ${{ cmake_version }}
-        - ${{ compiler("c") }}
       host:
         - ${{ pin_subpackage("libraft-headers", exact=True) }}
         - cuda-version =${{ cuda_version }}
