@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/mdspan.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/pow2_utils.cuh>
 #include <raft/util/vectorized.cuh>
 
@@ -531,17 +532,35 @@ void matrixLinewiseVecCols(Type* out,
     // The value below determines how many scalar elements are processed by on thread in total.
     const IdxType elemsPerThread =
       raft::ceildiv<IdxType>(alignedLen, gs.x * VecElems * BlockSize) * VecElems;
-    matrixLinewiseVecColsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>
-      <<<gs, bs, 0, stream>>>(out, in, alignedOff, rowLen, alignedLen, elemsPerThread, op, vecs...);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(
+      stream,
+      gs,
+      bs,
+      matrixLinewiseVecColsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>,
+      out,
+      in,
+      alignedOff,
+      rowLen,
+      alignedLen,
+      elemsPerThread,
+      op,
+      vecs...);
   }
   if (alignedLen < totalLen) {
     // should be not smaller than the warp size for better branching
     constexpr std::size_t MaxOffset = std::max(std::size_t(raft::WarpSize), VecBytes);
-    matrixLinewiseVecColsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>
-      <<<dim3(2, 1, 1), dim3(MaxOffset, 1, 1), 0, stream>>>(
-        out, in, alignedOff, alignedEnd, rowLen, totalLen, op, vecs...);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(stream,
+                        dim3(2, 1, 1),
+                        dim3(MaxOffset, 1, 1),
+                        matrixLinewiseVecColsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
+                        out,
+                        in,
+                        alignedOff,
+                        alignedEnd,
+                        rowLen,
+                        totalLen,
+                        op,
+                        vecs...);
   }
 }
 
@@ -585,16 +604,19 @@ void matrixLinewiseVecColsSpan(
     // The value below determines how many scalar elements are processed by on thread in total.
     const IdxType elemsPerThread =
       raft::ceildiv<IdxType>(alignedLen, gs.x * VecElems * BlockSize) * VecElems;
-    matrixLinewiseVecColsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>
-      <<<gs, bs, 0, stream>>>(out.data_handle(),
-                              in.data_handle(),
-                              0,
-                              paddedRowLen,
-                              alignedLen,
-                              elemsPerThread,
-                              op,
-                              vecs...);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(
+      stream,
+      gs,
+      bs,
+      matrixLinewiseVecColsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>,
+      out.data_handle(),
+      in.data_handle(),
+      0,
+      paddedRowLen,
+      alignedLen,
+      elemsPerThread,
+      op,
+      vecs...);
   }
 }
 
@@ -647,18 +669,34 @@ void matrixLinewiseVecRows(Type* out,
                   1,
                   1);
 
-    matrixLinewiseVecRowsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>
-      <<<gs, bs, 0, stream>>>(
-        out + alignedOff, alignedStart, alignedOff, rowLen, alignedLen, op, vecs...);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(
+      stream,
+      gs,
+      bs,
+      matrixLinewiseVecRowsMainKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>,
+      out + alignedOff,
+      alignedStart,
+      alignedOff,
+      rowLen,
+      alignedLen,
+      op,
+      vecs...);
   }
   if (alignedLen < totalLen) {
     // should be not smaller than the warp size for better branching
     constexpr std::size_t MaxOffset = std::max(std::size_t(raft::WarpSize), VecBytes);
-    matrixLinewiseVecRowsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>
-      <<<dim3(2, 1, 1), dim3(MaxOffset, 1, 1), 0, stream>>>(
-        out, in, alignedOff, alignedEnd, rowLen, totalLen, op, vecs...);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(stream,
+                        dim3(2, 1, 1),
+                        dim3(MaxOffset, 1, 1),
+                        matrixLinewiseVecRowsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
+                        out,
+                        in,
+                        alignedOff,
+                        alignedEnd,
+                        rowLen,
+                        totalLen,
+                        op,
+                        vecs...);
   }
 }
 
@@ -719,10 +757,18 @@ void matrixLinewiseVecRowsSpan(
                   1,
                   1);
 
-    matrixLinewiseVecRowsSpanKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>
-      <<<gs, bs, 0, stream>>>(
-        out.data_handle(), in.data_handle(), rowLen, paddedRowLen, alignedLen, op, vecs...);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(
+      stream,
+      gs,
+      bs,
+      matrixLinewiseVecRowsSpanKernel<Type, IdxType, VecBytes, BlockSize, Lambda, Vecs...>,
+      out.data_handle(),
+      in.data_handle(),
+      rowLen,
+      paddedRowLen,
+      alignedLen,
+      op,
+      vecs...);
   }
 }
 

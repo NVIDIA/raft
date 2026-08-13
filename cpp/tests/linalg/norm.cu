@@ -12,6 +12,7 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/itertools.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda_fp16.h>
 
@@ -71,9 +72,8 @@ void naiveRowNorm(
 {
   static const IdxT TPB = 64;
   IdxT nblks            = raft::ceildiv(N, TPB);
-  naiveRowNormKernel<Type, IdxT, OutType>
-    <<<nblks, TPB, 0, stream>>>(dots, data, D, N, type, do_sqrt);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveRowNormKernel<Type, IdxT, OutType>, dots, data, D, N, type, do_sqrt);
 }
 
 template <typename T, typename IdxT, typename OutT = T>
@@ -168,9 +168,8 @@ void naiveColNorm(
 {
   static const IdxT TPB = 64;
   IdxT nblks            = raft::ceildiv(D, TPB);
-  naiveColNormKernel<Type, IdxT, OutType>
-    <<<nblks, TPB, 0, stream>>>(dots, data, D, N, type, do_sqrt);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveColNormKernel<Type, IdxT, OutType>, dots, data, D, N, type, do_sqrt);
 }
 
 template <typename T, typename IdxT, typename OutT = T>

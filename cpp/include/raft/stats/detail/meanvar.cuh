@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/linalg/reduce.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 namespace raft {
 namespace stats::detail {
@@ -209,23 +210,41 @@ void meanvar(bool dry_run,
     // Global memory: one mean_var<T> for each column
     //                one lock per all blocks working on the same set of columns
     rmm::device_buffer buf(sizeof(mean_var<T>) * D + sizeof(int) * gs.x, stream);
-    if (!dry_run) {
-      RAFT_CUDA_TRY(cudaMemsetAsync(buf.data(), 0, buf.size(), stream));
-      mean_var<T>* mvs = static_cast<mean_var<T>*>(buf.data());
-      int* locks       = static_cast<int*>(static_cast<void*>(mvs + D));
+    if (!dry_run) { RAFT_CUDA_TRY(cudaMemsetAsync(buf.data(), 0, buf.size(), stream)); }
+    mean_var<T>* mvs = static_cast<mean_var<T>*>(buf.data());
+    int* locks       = static_cast<int*>(static_cast<void*>(mvs + D));
 
-      const uint64_t len = uint64_t(D) * uint64_t(N);
-      ASSERT(len <= uint64_t(std::numeric_limits<I>::max()),
-             "N * D does not fit the indexing type");
-      meanvar_kernel_rowmajor<T, I, BlockSize><<<gs, bs, 0, stream>>>(data, mvs, locks, len, D);
-      meanvar_kernel_fill<T, I>
-        <<<raft::ceildiv<I>(D, BlockSize), BlockSize, 0, stream>>>(mean, var, mvs, D, sample);
-    }
+    const uint64_t len = uint64_t(D) * uint64_t(N);
+    ASSERT(len <= uint64_t(std::numeric_limits<I>::max()), "N * D does not fit the indexing type");
+    raft::launch_kernel({stream, 0, dry_run},
+                        gs,
+                        bs,
+                        meanvar_kernel_rowmajor<T, I, BlockSize>,
+                        data,
+                        mvs,
+                        locks,
+                        len,
+                        D);
+    raft::launch_kernel({stream, 0, dry_run},
+                        raft::ceildiv<I>(D, BlockSize),
+                        BlockSize,
+                        meanvar_kernel_fill<T, I>,
+                        mean,
+                        var,
+                        mvs,
+                        D,
+                        sample);
   } else {
-    if (!dry_run) {
-      meanvar_kernel_colmajor<T, I, BlockSize>
-        <<<D, BlockSize, 0, stream>>>(mean, var, data, D, N, sample);
-    }
+    raft::launch_kernel({stream, 0, dry_run},
+                        D,
+                        BlockSize,
+                        meanvar_kernel_colmajor<T, I, BlockSize>,
+                        mean,
+                        var,
+                        data,
+                        D,
+                        N,
+                        sample);
   }
   if (!dry_run) { RAFT_CHECK_CUDA(stream); }
 }

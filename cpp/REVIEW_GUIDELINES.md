@@ -64,6 +64,13 @@
   reachable in dry-run mode.
 - Report direct CUDA work, such as `raft::interruptible::synchronize`, kernels, CUDA memory operations, and library
   compute calls, unless the code or its resource-aware wrapper guards that work.
+- `raft::launch_kernel(res, ...)` and `raft::launch_kernel({res, smem}, ...)` are compliant by construction:
+  the handle carries the dry-run flag, so the launch is skipped. Never report them as unguarded CUDA work.
+- A dry-run guard or early return wrapped around such a launch **is** reportable: it is redundant, and it
+  usually also skips the allocations and cleanup that follow.
+- `raft::launch_kernel` on a bare stream is *not* dry-run aware. In code reachable from a `raft::resources`
+  API it must either launch on the handle or pass the dry-run flag as the third argument of `launch_on`,
+  e.g. `raft::launch_kernel({stream, smem, dry_run}, ...)`.
 
 ## HIGH Issues (Comment if Substantial)
 
@@ -161,16 +168,15 @@ if (cudaMalloc(&d_data, size) != cudaSuccess) {
 }
 ```
 
-**CRITICAL** (unchecked CUDA error):
+**HIGH** (manual kernel launch):
 ```
-CRITICAL: Unchecked kernel launch
+HIGH: Manual <<<>>> launch instead of raft::launch_kernel
 
-Issue: Kernel launch error not checked
-Why: Subsequent operations assume success, causing silent corruption
+Issue: The launch error is unchecked, and the launch is not dry-run compliant
+Why: A failed launch surfaces at an unrelated later call, and the launch cannot be skipped in dry-run mode
 
 Suggested fix:
-myKernel<<<grid, block>>>(args);
-RAFT_CUDA_TRY(cudaGetLastError());
+raft::launch_kernel(handle, grid, block, myKernel, args...);
 ```
 
 **HIGH** (numerical stability):
@@ -230,6 +236,19 @@ Why: Callee allocations are never tracked; dry-run peak under-reports memory
 Suggested fix:
 // Delegate unconditionally; detail::foo must guard its own CUDA work
 detail::foo(handle, ...);
+```
+
+**CRITICAL** (dry-run: launch on a bare stream):
+```
+CRITICAL: launch_kernel on a bare stream in dry-run reachable code
+
+Issue: launch_kernel(stream, ...) launches even when the handle is in dry-run mode
+Why: A kernel launch is CUDA work, and dry-run mode must not execute CUDA work
+
+Suggested fix:
+raft::launch_kernel(handle, grid, block, my_kernel, ...);
+// or, if the stream must stay explicit:
+raft::launch_kernel({stream, smem, dry_run}, grid, block, my_kernel, ...);
 ```
 
 **HIGH** (dry-run: missing test coverage):
@@ -326,7 +345,10 @@ Consider: raft::execute_with_dry_run_check(handle, [&](auto const& h) { ... },
 ## Code Review Checklists
 
 ### When Reviewing CUDA Kernels
-- [ ] Are CUDA errors checked after kernel launch (with peek)?
+- [ ] Is the launch written as `raft::launch_kernel`?
+      Always ask for a raw `<<<>>>` launch to be converted: it type-checks the arguments,
+      throws on a failed launch blaming the call site (so no `cudaPeekAtLastError` is needed),
+      and is dry run compliant when given the handle.
 - [ ] Is shared memory usage within limits and avoiding bank conflicts?
 - [ ] Is shared memory used when clearly possible?
 - [ ] Is thread synchronization done correctly? Are any __syncthreads call unnecessary, misplaced or missing?
@@ -363,6 +385,8 @@ Consider: raft::execute_with_dry_run_check(handle, [&](auto const& h) { ... },
 ### When Reviewing Dry-Run Compliance
 - [ ] Allocations (`rmm` / `make_*_mdarray`, workspace buffers) run in dry-run (unguarded)?
 - [ ] Meaningful CUDA work guarded via `resource::get_dry_run_flag`?
+- [ ] Kernels launched through `raft::launch_kernel` with the handle rather than a bare stream?
+- [ ] No redundant dry-run guard around a handle-based `raft::launch_kernel`?
 - [ ] Early dry-run `return` only if the skipped path cannot allocate (or no alternative)?
 - [ ] Public wrappers call through to allocating callees (no early return that hides them)?
 - [ ] No control-flow/writes on dry-run probe memory; no peak-hiding `resize()` patterns?

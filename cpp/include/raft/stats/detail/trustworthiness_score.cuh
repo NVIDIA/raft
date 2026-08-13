@@ -10,6 +10,7 @@
 #include <raft/distance/distance.cuh>
 #include <raft/matrix/col_wise_sort.cuh>
 #include <raft/spatial/knn/knn.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -167,21 +168,23 @@ double trustworthiness_score(const raft::resources& h,
 
     int work     = curBatchSize * n;
     int n_blocks = raft::ceildiv(work, N_THREADS);
-    build_lookup_table<<<n_blocks, N_THREADS, 0, stream>>>(
-      lookup_table.data(), X_ind.data(), n, work);
+    raft::launch_kernel(
+      h, n_blocks, N_THREADS, build_lookup_table, lookup_table.data(), X_ind.data(), n, work);
 
     RAFT_CUDA_TRY(cudaMemsetAsync(t_dbuf.data(), 0, sizeof(double), stream));
 
     work     = curBatchSize * (n_neighbors + 1);
     n_blocks = raft::ceildiv(work, N_THREADS);
-    compute_rank<<<n_blocks, N_THREADS, 0, stream>>>(
-      t_dbuf.data(),
-      lookup_table.data(),
-      &emb_ind.data()[(n - toDo) * (n_neighbors + 1)],
-      n,
-      n_neighbors + 1,
-      work);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(h,
+                        n_blocks,
+                        N_THREADS,
+                        compute_rank,
+                        t_dbuf.data(),
+                        lookup_table.data(),
+                        &emb_ind.data()[(n - toDo) * (n_neighbors + 1)],
+                        n,
+                        n_neighbors + 1,
+                        work);
 
     t += t_dbuf.value(stream);
 

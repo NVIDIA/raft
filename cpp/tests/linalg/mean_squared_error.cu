@@ -8,6 +8,7 @@
 #include <raft/linalg/mean_squared_error.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 
@@ -81,8 +82,15 @@ class MeanSquaredErrorTest : public ::testing::TestWithParam<MeanSquaredErrorInp
       },
       raft::alloc_behavior::NO_ALLOCATIONS);
 
-    naiveMeanSquaredError<<<256, 256, 0, stream>>>(
-      params.len, a.data(), b.data(), params.weight, refoutput.data());
+    raft::launch_kernel(handle,
+                        256,
+                        256,
+                        naiveMeanSquaredError<T>,
+                        params.len,
+                        a.data(),
+                        b.data(),
+                        params.weight,
+                        refoutput.data());
     resource::sync_stream(handle);
   }
 

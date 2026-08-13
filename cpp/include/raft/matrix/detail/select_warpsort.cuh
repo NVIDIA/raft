@@ -16,6 +16,7 @@
 #include <raft/util/cache.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/integer_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/pow2_utils.cuh>
 
 #include <rmm/cuda_stream_view.hpp>
@@ -858,7 +859,7 @@ struct launch_setup {
                      size_t len,
                      int num_blocks,
                      int block_dim,
-                     int smem_size,
+                     size_t smem_size,
                      const T* in_key,
                      const IdxT* in_idx,
                      const IdxT* in_indptr,
@@ -894,13 +895,31 @@ struct launch_setup {
       size_t batch_chunk = std::min<size_t>(kMaxGridDimY, batch_size - offset);
       dim3 gs(num_blocks, batch_chunk, 1);
       if (select_min) {
-        block_kernel<WarpSortClass, Capacity, true, T, IdxT, RowLayout>
-          <<<gs, block_dim, smem_size, stream>>>(
-            in_key, in_idx, in_indptr, g_offset, IdxT(len), k, out_key, out_idx);
+        raft::launch_kernel({stream, smem_size},
+                            gs,
+                            block_dim,
+                            block_kernel<WarpSortClass, Capacity, true, T, IdxT, RowLayout>,
+                            in_key,
+                            in_idx,
+                            in_indptr,
+                            g_offset,
+                            IdxT(len),
+                            k,
+                            out_key,
+                            out_idx);
       } else {
-        block_kernel<WarpSortClass, Capacity, false, T, IdxT, RowLayout>
-          <<<gs, block_dim, smem_size, stream>>>(
-            in_key, in_idx, in_indptr, g_offset, IdxT(len), k, out_key, out_idx);
+        raft::launch_kernel({stream, smem_size},
+                            gs,
+                            block_dim,
+                            block_kernel<WarpSortClass, Capacity, false, T, IdxT, RowLayout>,
+                            in_key,
+                            in_idx,
+                            in_indptr,
+                            g_offset,
+                            IdxT(len),
+                            k,
+                            out_key,
+                            out_idx);
       }
       RAFT_CUDA_TRY(cudaPeekAtLastError());
       out_key += batch_chunk * num_blocks * k;
@@ -1061,6 +1080,7 @@ void select_k_(bool dry_run,
 {
   rmm::device_uvector<T> tmp_val(num_of_block * k * batch_size, stream, mr);
   rmm::device_uvector<IdxT> tmp_idx(num_of_block * k * batch_size, stream, mr);
+
   if (dry_run) { return; }
 
   int capacity   = bound_by_power_of_two(k);

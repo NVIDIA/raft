@@ -25,6 +25,7 @@
 #ifdef __CUDACC__
 #include <raft/linalg/transpose.cuh>
 #include <raft/util/cuda_dev_essentials.cuh>
+#include <raft/util/kernel_launch.hpp>
 #endif
 #endif
 
@@ -500,7 +501,6 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
     throw(raft::non_cuda_build_error("Copying to from or on device in non-CUDA build"));
 #endif
   } else if constexpr (config::custom_kernel_allowed) {
-    if (resource::get_dry_run_flag(res)) { return; }
 #ifdef __CUDACC__
     config::check_for_unique_dst(dst);
     auto const blocks = std::min(
@@ -512,7 +512,12 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
       raft::ceildiv(typename config::index_type(dst.size()),
                     typename config::index_type(mdspan_copy_tile_elems)));
     auto constexpr const threads = dim3{mdspan_copy_tile_dim, mdspan_copy_tile_dim, 1};
-    mdspan_copy_kernel<<<blocks, threads, 0, resource::get_cuda_stream(res)>>>(dst, src);
+    raft::launch_kernel(res,
+                        blocks,
+                        threads,
+                        mdspan_copy_kernel<typename config::dst_type, typename config::src_type>,
+                        dst,
+                        src);
 #else
     // Should never actually reach this because of enable_ifs. Included for
     // safety.

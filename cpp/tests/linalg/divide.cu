@@ -10,6 +10,7 @@
 #include <raft/linalg/divide.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -28,8 +29,7 @@ void naiveDivide(Type* out, const Type* in, Type scalar, int len, cudaStream_t s
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveDivideKernel<Type><<<nblks, TPB, 0, stream>>>(out, in, scalar, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naiveDivideKernel<Type>, out, in, scalar, len);
 }
 
 template <typename T>

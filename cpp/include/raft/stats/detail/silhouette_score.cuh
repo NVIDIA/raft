@@ -18,6 +18,7 @@
 #include <raft/linalg/reduce.cuh>
 #include <raft/linalg/reduce_cols_by_key.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 
@@ -253,14 +254,18 @@ DataT silhouette_score(
   dim3 numThreadsPerBlock(32, 1, 1);
   dim3 numBlocks(raft::ceildiv<int>(nRows, numThreadsPerBlock.x), 1, 1);
 
-  populateAKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-    sampleToClusterSumOfDistances.data(),
-    binCountArray.data(),
-    d_aArray.data(),
-    labels,
-    nRows,
-    nLabels,
-    std::numeric_limits<DataT>::max());
+  // calling the kernel
+  raft::launch_kernel(handle,
+                      numBlocks,
+                      numThreadsPerBlock,
+                      populateAKernel,
+                      sampleToClusterSumOfDistances.data(),
+                      binCountArray.data(),
+                      d_aArray.data(),
+                      labels,
+                      nRows,
+                      nLabels,
+                      std::numeric_limits<DataT>::max());
 
   RAFT_CUDA_TRY(cudaMemsetAsync(
     averageDistanceBetweenSampleAndCluster.data(), 0, nRows * nLabels * sizeof(DataT), stream));

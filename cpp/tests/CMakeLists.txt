@@ -332,6 +332,7 @@ if(BUILD_TESTS)
     util/fast_int_div.cu
     util/integer_utils.cpp
     util/integer_utils.cu
+    util/kernel_launch.cu
     util/memory_type_dispatcher.cu
     util/popc.cu
     util/pow2_utils.cu

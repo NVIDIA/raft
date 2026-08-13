@@ -10,6 +10,7 @@
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -190,8 +191,17 @@ void make_monotonic(
   rmm::device_uvector<Type> map_ids(0, stream);
   int num_clusters = getUniquelabels(map_ids, in, N, stream);
 
-  map_label_kernel<Type, TPB_X><<<blocks, threads, 0, stream>>>(
-    map_ids.data(), num_clusters, in, out, N, filter_op, zero_based);
+  raft::launch_kernel(stream,
+                      blocks,
+                      threads,
+                      map_label_kernel<Type, TPB_X, Lambda>,
+                      map_ids.data(),
+                      num_clusters,
+                      in,
+                      out,
+                      N,
+                      filter_op,
+                      zero_based);
 }
 
 /**

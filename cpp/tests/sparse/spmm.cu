@@ -10,6 +10,7 @@
 #include <raft/random/rng.cuh>
 #include <raft/sparse/linalg/spmm.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <thrust/fill.h>
 
@@ -172,22 +173,26 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
 
     dim3 blocks(raft::ceildiv<int>(params.M, 128), raft::ceildiv<int>(params.N, 4), 1);
     dim3 threads(128, 4, 1);
-    naiveGemm<<<blocks, threads, 0, stream>>>(params.trans_x,
-                                              params.trans_y,
-                                              params.M,
-                                              params.N,
-                                              params.K,
-                                              alpha,
-                                              X,
-                                              ldx,
-                                              true,
-                                              Y,
-                                              ldy,
-                                              params.row_major,
-                                              beta,
-                                              Z_ref,
-                                              ldz,
-                                              params.row_major);
+    raft::launch_kernel(handle,
+                        blocks,
+                        threads,
+                        naiveGemm,
+                        params.trans_x,
+                        params.trans_y,
+                        params.M,
+                        params.N,
+                        params.K,
+                        alpha,
+                        X,
+                        ldx,
+                        true,
+                        Y,
+                        ldy,
+                        params.row_major,
+                        beta,
+                        Z_ref,
+                        ldz,
+                        params.row_major);
 
     // min_alloc: the actual contiguous span of the strided z matrix (what spmm allocates for z_tmp)
     auto z_span = params.row_major ? (size_t(params.M) - 1) * ldz + params.N

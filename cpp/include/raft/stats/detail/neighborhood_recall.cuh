@@ -13,8 +13,8 @@
 #include <raft/core/mdspan_types.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
-#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cub/block/block_reduce.cuh>
 #include <cuda/atomic>
@@ -96,13 +96,21 @@ void neighborhood_recall(
   raft::device_scalar_view<ScalarType> recall_score,
   DistanceValueType const eps)
 {
-  if (resource::get_dry_run_flag(res)) { return; }
   // One warp per row, launch a warp-width block per-row kernel
   auto constexpr kThreadsPerBlock = 32;
   auto const num_blocks           = indices.extent(0);
 
-  neighborhood_recall<<<num_blocks, kThreadsPerBlock, 0, raft::resource::get_cuda_stream(res)>>>(
-    indices, ref_indices, distances, ref_distances, recall_score, eps);
+  raft::launch_kernel(
+    res,
+    num_blocks,
+    kThreadsPerBlock,
+    neighborhood_recall<IndicesValueType, DistanceValueType, IndexType, ScalarType>,
+    indices,
+    ref_indices,
+    distances,
+    ref_distances,
+    recall_score,
+    eps);
 }
 
 }  // namespace stats::detail

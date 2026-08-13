@@ -21,7 +21,7 @@ You can also construct `raft::dry_run_resources` directly for finer control (e.g
 
 1. **Allocations must not be guarded.** Every `rmm::device_uvector`, `rmm::device_scalar`, `rmm::device_buffer`, `raft::make_(device|host|pinned|managed)_(mdarray|matrix|vector|scalar)` allocation must execute in both modes so the tracker sees it.
 
-2. **CUDA work must be guarded.** Kernel launches, Thrust algorithms, cuBLAS/cuSOLVER/cuSPARSE compute calls, `cudaMemcpyAsync`, `cudaMemsetAsync`, and `raft::interruptible::synchronize` must not run in dry-run mode.
+2. **CUDA work must be guarded.** Kernel launches, Thrust algorithms, cuBLAS/cuSOLVER/cuSPARSE compute calls, `cudaMemcpyAsync`, `cudaMemsetAsync`, and `raft::interruptible::synchronize` must not run in dry-run mode. A kernel launched with `raft::launch_kernel` on the handle guards itself — see [Launching kernels](#launching-kernels).
 
 3. **Every function taking `raft::resources` must be callable in dry-run mode.** If it only delegates to other compliant functions, it needs no guard at all. If it performs raw CUDA work, it must guard that work internally.
 
@@ -29,10 +29,10 @@ You can also construct `raft::dry_run_resources` directly for finer control (e.g
 
 | Must guard | Safe in dry-run (no guard needed) |
 |---|---|
-| Kernel launches (`<<<>>>`) | Allocations (`rmm::device_uvector`, `make_device_*`, …) |
+| Raw kernel launches (`<<<>>>`); `raft::launch_kernel` on a bare stream without `skip_execution` | `raft::launch_kernel(res, …)`, allocations (`rmm::device_uvector`, `make_device_*`, …) |
 | `thrust::reduce`, `thrust::for_each`, … | Workspace-size queries (`cub::…(nullptr, &size, …)`, `cusparse…_bufferSize`) |
 | cuBLAS / cuSOLVER / cuSPARSE compute calls | cuSPARSE descriptor create/destroy |
-| CUB compute calls (second pass) | `resource::sync_stream()` |
+| CUB compute calls (second pass) | `resource::sync_stream()`, grid/block sizing and device-metadata queries |
 | `cudaMemcpyAsync`, `cudaMemsetAsync` | `raft::copy` (takes `raft::resources`) |
 | `raft::interruptible::synchronize()` | `raft::linalg::map`, `raft::linalg::reduce`, and other compliant RAFT APIs |
 
@@ -48,12 +48,59 @@ unrelated raw stream breaks that ownership model.
 ```cpp
 void algo(raft::resources const& handle, int n)
 {
-  auto stream = resource::get_cuda_stream(handle);     // stream owned by handle
-  rmm::device_uvector<float> buf(n, stream);           // tracked
-  if (resource::get_dry_run_flag(handle)) { return; }
-  kernel<<<grid, block, 0, stream>>>(buf.data(), n);   // skipped in dry-run
+  auto stream = resource::get_cuda_stream(handle);            // stream owned by handle
+  rmm::device_uvector<float> buf(n, stream);                  // tracked
+  raft::launch_kernel(handle, grid, block, my_kernel, buf.data(), n);  // skipped in dry-run
 }
 ```
+
+### Launching kernels
+
+`raft::launch_kernel` from `<raft/util/kernel_launch.hpp>` is dry-run compliant
+when it is given the handle, because the handle carries the dry-run flag:
+
+```cpp
+// COMPLIANT: the handle carries the dry-run flag, so the launch is skipped for you
+raft::launch_kernel(handle, grid, block, my_kernel, buf.data(), n);
+raft::launch_kernel({handle, smem}, grid, block, my_kernel, buf.data(), n);
+```
+
+Such a launch needs **no** guard, and adding one is a defect rather than a
+harmless redundancy: a guard or early return placed around it tends to also
+swallow the allocations and cleanup that follow, breaking Rule 1.
+
+The stream-taking overloads are **not** dry-run aware, because a bare stream
+carries no dry-run state. Their third constructor argument is `skip_execution`:
+
+```cpp
+raft::launch_kernel(stream, grid, block, my_kernel, ...);           // WRONG when reachable from resources
+raft::launch_kernel({stream, smem}, grid, block, my_kernel, ...);   // WRONG, same reason
+raft::launch_kernel({stream, smem, dry_run}, grid, block, ...);     // correct
+```
+
+When a launch sits behind an explicit stream, the flag still has to reach it, and
+there are only two ways to get it there:
+
+1. change the function to take `raft::resources const&` and launch on it;
+2. if the signature must keep a `cudaStream_t` — a deprecated public overload, or
+   a leaf where duplicating the handle costs too much — thread a `bool dry_run`
+   parameter through it and pass that as `skip_execution`.
+
+Where the function already has the flag and the launch is not the only thing that
+must be skipped — a `cudaMemsetAsync`, a CUB call, a device-to-host read — a
+single guard over that whole run of device work is simpler than passing
+`skip_execution` and guarding the rest separately.
+
+Always convert a raw `kernel<<<>>>` launch to `raft::launch_kernel` first: the
+raw syntax cannot express `skip_execution`, and it does not report a failed
+launch at the call site.
+
+Two consequences worth knowing:
+
+- A skipped launch is not validated by CUDA, so an invalid grid or block size
+  goes unreported in dry-run mode.
+- `RAFT_CUDA_TRY(cudaPeekAtLastError())` after `launch_kernel` is unnecessary: a
+  failed launch already throws `raft::cuda_error` blaming the call site.
 
 ### Workspace-size query before guard
 
