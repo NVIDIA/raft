@@ -212,6 +212,57 @@ TEST_P(COOSymmetrizeView, ResultView)
                                        raft::Compare<float>()));
 }
 
+TEST_P(COOSymmetrizeView, ResultLegacy)
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+
+  raft::sparse::COO<float> in(stream, params.nnz, params.n_rows, params.n_cols, false);
+  raft::sparse::COO<float> out(stream);
+
+  raft::update_device(in.rows(), params.in_rows_h.data(), params.nnz, stream);
+  raft::update_device(in.cols(), params.in_cols_h.data(), params.nnz, stream);
+  raft::update_device(in.vals(), params.in_vals_h.data(), params.nnz, stream);
+
+  linalg::coo_symmetrize(
+    &in,
+    &out,
+    [] __device__(int row, int col, float val, float trans) { return val + trans; },
+    stream);
+
+  RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
+
+  ASSERT_EQ(out.nnz, params.nnz * 2);
+  ASSERT_TRUE(
+    raft::devArrMatch<int>(out.rows(), params.exp_rows_h.data(), out.nnz, raft::Compare<int>()));
+  ASSERT_TRUE(
+    raft::devArrMatch<int>(out.cols(), params.exp_cols_h.data(), out.nnz, raft::Compare<int>()));
+  ASSERT_TRUE(raft::devArrMatch<float>(
+    out.vals(), params.exp_vals_h.data(), out.nnz, raft::Compare<float>()));
+}
+
+TEST(FromKnnSymmetrizeTest, RestrictedPointerArguments)
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+
+  constexpr int n = 2;
+  constexpr int k = 1;
+  std::vector<int> indices_h{1, 0};
+  std::vector<float> distances_h{0.5f, 0.5f};
+  rmm::device_uvector<int> indices(indices_h.size(), stream);
+  rmm::device_uvector<float> distances(distances_h.size(), stream);
+  raft::sparse::COO<float> out(stream);
+
+  raft::update_device(indices.data(), indices_h.data(), indices_h.size(), stream);
+  raft::update_device(distances.data(), distances_h.data(), distances_h.size(), stream);
+
+  linalg::from_knn_symmetrize_matrix(indices.data(), distances.data(), n, k, &out, stream);
+
+  resource::sync_stream(handle);
+  EXPECT_EQ(out.nnz, 2 * n * k);
+}
+
 const std::vector<COOSymmetrizeInputs<float>> inputsf = {
   // first test fails without fix in #2582
   {

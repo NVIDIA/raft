@@ -28,6 +28,16 @@ RAFT_KERNEL write_one_kernel(int* out)
   if (threadIdx.x == 0 && blockIdx.x == 0) { *out = 1; }
 }
 
+RAFT_KERNEL copy_restricted_kernel(int const* __restrict__ in, int* out)
+{
+  if (threadIdx.x == 0 && blockIdx.x == 0) { *out = *in; }
+}
+
+void launch_write_one_with_restricted_pointer(raft::resources const& res, int* __restrict__ out)
+{
+  raft::launch_kernel(res, 1, 32, write_one_kernel, out);
+}
+
 RAFT_KERNEL smem_kernel(int* out)
 {
   extern __shared__ int shared[];  // NOLINT(modernize-avoid-c-arrays)
@@ -74,6 +84,37 @@ TEST(KernelLaunch, SuccessfulLaunch)
   RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res)));
 
   raft::launch_kernel(res, 1, 32, write_one_kernel, out.data());
+  resource::sync_stream(res);
+
+  int host_out = 0;
+  RAFT_CUDA_TRY(cudaMemcpy(&host_out, out.data(), sizeof(int), cudaMemcpyDeviceToHost));
+  EXPECT_EQ(host_out, 1);
+}
+
+TEST(KernelLaunch, RestrictedPointerArgument)
+{
+  raft::resources res;
+  rmm::device_uvector<int> out(1, resource::get_cuda_stream(res));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res)));
+
+  launch_write_one_with_restricted_pointer(res, out.data());
+  resource::sync_stream(res);
+
+  int host_out = 0;
+  RAFT_CUDA_TRY(cudaMemcpy(&host_out, out.data(), sizeof(int), cudaMemcpyDeviceToHost));
+  EXPECT_EQ(host_out, 1);
+}
+
+TEST(KernelLaunch, ConvertedRestrictedPointerArgument)
+{
+  raft::resources res;
+  auto stream = resource::get_cuda_stream(res);
+  rmm::device_uvector<int> in(1, stream);
+  rmm::device_uvector<int> out(1, stream);
+  int host_in = 1;
+  RAFT_CUDA_TRY(cudaMemcpyAsync(in.data(), &host_in, sizeof(int), cudaMemcpyHostToDevice, stream));
+
+  raft::launch_kernel(res, 1, 32, copy_restricted_kernel, in.data(), out.data());
   resource::sync_stream(res);
 
   int host_out = 0;

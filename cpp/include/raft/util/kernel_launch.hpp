@@ -191,7 +191,10 @@ void launch_kernel(launch_on where,
 {
   where.config.gridDim  = grid;
   where.config.blockDim = block;
-  detail::dispatch<std::remove_cvref_t<Args>...>(
+  // Let dispatch deduce its by-value parameter types instead of explicitly forwarding Args.
+  // In particular, this drops outermost extended qualifiers such as __restrict__ before dispatch
+  // takes the address of each parameter copy for cudaLaunchKernelExC.
+  detail::dispatch(
     where.config, reinterpret_cast<void*>(kernel), where.location, std::forward<Args>(args)...);
 }
 
@@ -222,8 +225,12 @@ requires(sizeof...(Params) == sizeof...(Args) &&
 
   where.config.gridDim  = grid;
   where.config.blockDim = block;
-  detail::dispatch<Params...>(
-    where.config, reinterpret_cast<void*>(kernel), where.location, std::forward<Args>(args)...);
+  // Convert to the kernel parameter types before dispatch, then let dispatch deduce its by-value
+  // parameters so outermost extended qualifiers such as __restrict__ are not preserved.
+  detail::dispatch(where.config,
+                   reinterpret_cast<void*>(kernel),
+                   where.location,
+                   static_cast<Params>(std::forward<Args>(args))...);
 }
 
 /** @} */  // end group kernel_launch
