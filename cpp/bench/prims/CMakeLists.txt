@@ -1,6 +1,6 @@
 # =============================================================================
 # cmake-format: off
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 # cmake-format: on
 # =============================================================================
@@ -69,7 +69,7 @@ endfunction()
 if(BUILD_PRIMS_BENCH)
   ConfigureBench(NAME CORE_BENCH PATH core/bitset.cu core/copy.cu core/memory_tracking.cu main.cpp)
 
-  ConfigureBench(NAME UTIL_BENCH PATH util/popc.cu main.cpp)
+  ConfigureBench(NAME UTIL_BENCH PATH util/fast_int_div.cu util/popc.cu main.cpp)
 
   ConfigureBench(
     NAME
@@ -101,7 +101,7 @@ if(BUILD_PRIMS_BENCH)
 
   ConfigureBench(
     NAME SPARSE_BENCH PATH sparse/bitmap_to_csr.cu sparse/convert_csr.cu sparse/select_k_csr.cu
-    main.cpp
+    sparse/svds.cu main.cpp
   )
 
 endif()

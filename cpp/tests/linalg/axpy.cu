@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "../test_utils.cuh"
@@ -8,6 +8,7 @@
 #include <raft/linalg/axpy.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 
@@ -79,8 +80,16 @@ class AxpyTest : public ::testing::TestWithParam<AxpyInputs<T>> {
     int threads = 64;
     int blocks  = raft::ceildiv<int>(params.len, threads);
 
-    naiveAxpy<T><<<blocks, threads, 0, stream>>>(
-      params.len, params.alpha, x.data(), refy.data(), params.incx, params.incy);
+    raft::launch_kernel(handle,
+                        blocks,
+                        threads,
+                        naiveAxpy<T>,
+                        params.len,
+                        params.alpha,
+                        x.data(),
+                        refy.data(),
+                        params.incx,
+                        params.incy);
 
     auto host_alpha_view = make_host_scalar_view<const T>(&params.alpha);
 

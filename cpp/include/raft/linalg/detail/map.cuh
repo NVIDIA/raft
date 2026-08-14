@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/input_validation.hpp>
 #include <raft/util/integer_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/pow2_utils.cuh>
 #include <raft/util/vectorized.cuh>
 #include <raft/util/vectorized_kvp.cuh>
@@ -97,7 +98,8 @@ void map_call(rmm::cuda_stream_view stream, OutT* out_ptr, IdxT len, Func f, con
   const int threads =
     std::max<int>(WarpSize, std::min<IdxT>(raft::bound_by_power_of_two<IdxT>(len_vectorized), 256));
   const IdxT blocks = raft::div_rounding_up_unsafe<IdxT>(len_vectorized, threads);
-  map_kernel<R, PassOffset><<<blocks, threads, 0, stream>>>(out_ptr, len, f, in_ptrs...);
+  raft::launch_kernel(
+    stream, blocks, threads, map_kernel<R, PassOffset>, out_ptr, len, f, in_ptrs...);
 }
 
 constexpr int kCoalescedVectorSize = 16;

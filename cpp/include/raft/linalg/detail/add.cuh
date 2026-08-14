@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/linalg/binary_op.cuh>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 namespace raft {
 namespace linalg {
@@ -44,8 +45,8 @@ void addDevScalar(
   // TODO: block dimension has not been tuned
   dim3 block(256);
   dim3 grid(raft::ceildiv(len, (IdxType)block.x));
-  add_dev_scalar_kernel<<<grid, block, 0, stream>>>(outDev, inDev, singleScalarDev, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, grid, block, add_dev_scalar_kernel, outDev, inDev, singleScalarDev, len);
 }
 
 }  // namespace detail

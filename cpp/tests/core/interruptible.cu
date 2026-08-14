@@ -1,11 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/interruptible.hpp>
 #include <raft/core/nvtx.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/cuda_stream.hpp>
 
@@ -108,14 +109,14 @@ TEST(Raft, InterruptibleOpenMP)
     auto i = omp_get_thread_num();
     common::nvtx::range omp_scope("interruptible::thread-%d", i);
     rmm::cuda_stream stream;
-    gpu_wait<<<1, 1, 0, stream.value()>>>(1);
+    raft::launch_kernel(stream.value(), 1, 1, gpu_wait, 1);
     interruptible::synchronize(stream);
     thread_tokens[i] = interruptible::get_token();
 
 #pragma omp barrier
     try {
       common::nvtx::range wait_scope("interruptible::wait-%d", i);
-      gpu_wait<<<1, 1, 0, stream.value()>>>((1 + i) * thread_delay_millis);
+      raft::launch_kernel(stream.value(), 1, 1, gpu_wait, (1 + i) * thread_delay_millis);
       interruptible::synchronize(stream);
       n_finished = 1;
     } catch (interrupted_exception&) {

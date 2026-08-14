@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -16,6 +16,7 @@
 #include <raft/random/rng_state.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/detail/cub_wrappers.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/scatter.cuh>
 
 #include <rmm/device_uvector.hpp>
@@ -235,13 +236,29 @@ class RngImpl {
   {
     switch (state.type) {
       case GenPhilox:
-        fillKernel<OutType, LenType, PhiloxGenerator, ITEMS_PER_CALL>
-          <<<nBlocks, nThreads, 0, stream>>>(
-            state.seed, state.base_subsequence, 0, ptr, len, params);
+        raft::launch_kernel(
+          stream,
+          nBlocks,
+          nThreads,
+          fillKernel<OutType, LenType, PhiloxGenerator, ITEMS_PER_CALL, ParamType>,
+          state.seed,
+          state.base_subsequence,
+          0,
+          ptr,
+          len,
+          params);
         break;
       case GenPC:
-        fillKernel<OutType, LenType, PCGenerator, ITEMS_PER_CALL><<<nBlocks, nThreads, 0, stream>>>(
-          state.seed, state.base_subsequence, 0, ptr, len, params);
+        raft::launch_kernel(stream,
+                            nBlocks,
+                            nThreads,
+                            fillKernel<OutType, LenType, PCGenerator, ITEMS_PER_CALL, ParamType>,
+                            state.seed,
+                            state.base_subsequence,
+                            0,
+                            ptr,
+                            len,
+                            params);
         break;
       default: break;
     }

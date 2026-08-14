@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -66,9 +67,19 @@ void naiveCoalescedReduction(OutType* dots,
 {
   static const IdxType TPB = 64;
   IdxType nblks            = raft::ceildiv(N, TPB);
-  naiveCoalescedReductionKernel<<<nblks, TPB, 0, stream>>>(
-    dots, data, D, N, init, inplace, main_op, reduce_op, fin_op);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      nblks,
+                      TPB,
+                      naiveCoalescedReductionKernel,
+                      dots,
+                      data,
+                      D,
+                      N,
+                      init,
+                      inplace,
+                      main_op,
+                      reduce_op,
+                      fin_op);
 }
 
 template <typename InType,
@@ -120,9 +131,19 @@ void naiveStridedReduction(OutType* dots,
 {
   static const IdxType TPB = 64;
   IdxType nblks            = raft::ceildiv(D, TPB);
-  naiveStridedReductionKernel<<<nblks, TPB, 0, stream>>>(
-    dots, data, D, N, init, inplace, main_op, reduce_op, fin_op);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      nblks,
+                      TPB,
+                      naiveStridedReductionKernel,
+                      dots,
+                      data,
+                      D,
+                      N,
+                      init,
+                      inplace,
+                      main_op,
+                      reduce_op,
+                      fin_op);
 }
 
 template <typename InType,

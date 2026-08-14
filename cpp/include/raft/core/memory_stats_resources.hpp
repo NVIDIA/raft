@@ -4,6 +4,8 @@
  */
 #pragma once
 
+#include <raft/core/logger.hpp>
+#include <raft/core/resource/device_id.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/managed_memory_resource.hpp>
 #include <raft/core/resource/pinned_memory_resource.hpp>
@@ -20,6 +22,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <exception>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -77,7 +80,8 @@ class memory_stats_resources : public resources {
   explicit memory_stats_resources(const resources& existing)
     : resources(existing),
       old_host_(mr::get_default_host_resource()),
-      old_device_(rmm::mr::get_current_device_resource_ref())
+      old_device_(
+        rmm::mr::get_per_device_resource_ref(rmm::cuda_device_id{resource::get_device_id(*this)}))
   {
     init();
   }
@@ -85,7 +89,17 @@ class memory_stats_resources : public resources {
   ~memory_stats_resources() override
   {
     mr::set_default_host_resource(old_host_);
-    rmm::mr::set_current_device_resource(std::move(old_device_));
+    try {
+      rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                       std::move(old_device_));
+    } catch (const std::exception& e) {
+      RAFT_LOG_ERROR("memory_stats_resources failed to restore the per-device memory resource: %s",
+                     e.what());
+    } catch (...) {
+      RAFT_LOG_ERROR(
+        "memory_stats_resources failed to restore the per-device memory resource: unknown "
+        "exception");
+    }
   }
 
   memory_stats_resources(memory_stats_resources const&)            = delete;
@@ -215,7 +229,8 @@ class memory_stats_resources : public resources {
       device_stats_adaptor_t sa{rmm::device_async_resource_ref{old_device_}};
       device_stats_   = sa.get_stats();
       device_adaptor_ = std::make_unique<device_stats_adaptor_t>(std::move(sa));
-      rmm::mr::set_current_device_resource(*device_adaptor_);
+      rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
+                                       *device_adaptor_);
     }
     // --- Workspace ---
     {

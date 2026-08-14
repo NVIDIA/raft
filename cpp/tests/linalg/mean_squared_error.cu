@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "../test_utils.cuh"
@@ -8,6 +8,7 @@
 #include <raft/linalg/mean_squared_error.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 
@@ -75,8 +76,15 @@ class MeanSquaredErrorTest : public ::testing::TestWithParam<MeanSquaredErrorInp
                                             make_device_scalar_view<T>(output.data()),
                                             params.weight);
 
-    naiveMeanSquaredError<<<256, 256, 0, stream>>>(
-      params.len, a.data(), b.data(), params.weight, refoutput.data());
+    raft::launch_kernel(handle,
+                        256,
+                        256,
+                        naiveMeanSquaredError<T>,
+                        params.len,
+                        a.data(),
+                        b.data(),
+                        params.weight,
+                        refoutput.data());
     resource::sync_stream(handle);
   }
 

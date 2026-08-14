@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -45,6 +45,7 @@
 #include <raft/core/interruptible.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -139,8 +140,15 @@ double compute_rand_index(const T* firstClusterArray,
                  raft::ceildiv<int>(size, numThreadsPerBlock.y));
 
   // calling the kernel
-  computeTheNumerator<T, BLOCK_DIM_X, BLOCK_DIM_Y><<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-    firstClusterArray, secondClusterArray, size, arr_buf.data(), arr_buf.data() + 1);
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      numThreadsPerBlock,
+                      computeTheNumerator<T, BLOCK_DIM_X, BLOCK_DIM_Y>,
+                      firstClusterArray,
+                      secondClusterArray,
+                      size,
+                      arr_buf.data(),
+                      arr_buf.data() + 1);
 
   // synchronizing and updating the calculated values of a and b from device to host
   uint64_t ab_host[2] = {0};

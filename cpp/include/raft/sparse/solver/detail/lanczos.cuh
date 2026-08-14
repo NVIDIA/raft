@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -49,6 +49,7 @@
 #include <raft/sparse/solver/lanczos_types.hpp>
 #include <raft/spectral/matrix_wrappers.hpp>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda.h>
 #include <thrust/sort.h>
@@ -157,15 +158,26 @@ void lanczos_solve_ritz(
   //   alpha.data_handle(), triangular_matrix.data_handle(), ncv, ncv, stream);
 
   int blockSize = 256;
-  int numBlocks = (ncv + blockSize - 1) / blockSize;
-  kernel_triangular_populate<ValueTypeT>
-    <<<blockSize, numBlocks, 0, stream>>>(triangular_matrix.data_handle(), beta.data_handle(), ncv);
+  int numBlocks = raft::div_rounding_up_safe(ncv, blockSize);
+  raft::launch_kernel(handle,
+                      numBlocks,
+                      blockSize,
+                      kernel_triangular_populate<ValueTypeT>,
+                      triangular_matrix.data_handle(),
+                      beta.data_handle(),
+                      ncv);
 
   if (beta_k) {
     int threadsPerBlock = 256;
-    int blocksPerGrid   = (k + threadsPerBlock - 1) / threadsPerBlock;
-    kernel_triangular_beta_k<ValueTypeT><<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
-      triangular_matrix.data_handle(), beta_k.value().data_handle(), (int)k, ncv);
+    int blocksPerGrid   = raft::div_rounding_up_safe<int>(k, threadsPerBlock);
+    raft::launch_kernel(handle,
+                        blocksPerGrid,
+                        threadsPerBlock,
+                        kernel_triangular_beta_k<ValueTypeT>,
+                        triangular_matrix.data_handle(),
+                        beta_k.value().data_handle(),
+                        k,
+                        ncv);
   }
 
   auto triangular_matrix_view =
@@ -371,7 +383,12 @@ void lanczos_aux(raft::resources const& handle,
     auto uu_i = raft::make_device_scalar_view(uu.data_handle() + uu.stride(1) * i);  // uu(0, i)
     raft::linalg::add(handle, make_const_mdspan(alpha_i), make_const_mdspan(uu_i), alpha_i);
 
-    kernel_clamp_down<<<1, 1, 0, stream>>>(alpha_i.data_handle(), static_cast<ValueTypeT>(1e-9));
+    raft::launch_kernel(handle,
+                        1,
+                        1,
+                        kernel_clamp_down<ValueTypeT>,
+                        alpha_i.data_handle(),
+                        static_cast<ValueTypeT>(1e-9));
 
     auto output = raft::make_device_vector_view<ValueTypeT, uint32_t>(
       beta.data_handle() + beta.stride(1) * i, 1);
@@ -382,19 +399,37 @@ void lanczos_aux(raft::resources const& handle,
     int blockSize = 256;
     int numBlocks = (n + blockSize - 1) / blockSize;
 
-    kernel_clamp_down_vector<<<numBlocks, blockSize, 0, stream>>>(
-      u.data_handle(), static_cast<ValueTypeT>(1e-7), n);
+    raft::launch_kernel(handle,
+                        numBlocks,
+                        blockSize,
+                        kernel_clamp_down_vector<ValueTypeT>,
+                        u.data_handle(),
+                        static_cast<ValueTypeT>(1e-7),
+                        n);
 
-    kernel_clamp_down<<<1, 1, 0, stream>>>(beta.data_handle() + beta.stride(1) * i,
-                                           static_cast<ValueTypeT>(1e-6));
+    raft::launch_kernel(handle,
+                        1,
+                        1,
+                        kernel_clamp_down<ValueTypeT>,
+                        beta.data_handle() + beta.stride(1) * i,
+                        static_cast<ValueTypeT>(1e-6));
 
     if (i >= end_idx - 1) { break; }
 
     int threadsPerBlock = 256;
     int blocksPerGrid   = (n + threadsPerBlock - 1) / threadsPerBlock;
 
-    kernel_normalize<ValueTypeT><<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
-      u.data_handle(), beta.data_handle(), i, n, v.data_handle(), V.data_handle(), n);
+    raft::launch_kernel(handle,
+                        blocksPerGrid,
+                        threadsPerBlock,
+                        kernel_normalize<ValueTypeT>,
+                        u.data_handle(),
+                        beta.data_handle(),
+                        i,
+                        n,
+                        v.data_handle(),
+                        V.data_handle(),
+                        n);
   }
 }
 

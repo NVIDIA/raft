@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -19,6 +19,7 @@
 #include <raft/random/random_types.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 #include <rmm/resource_ref.hpp>
@@ -221,8 +222,7 @@ class multi_variable_gaussian_impl {
       // upper part (0) being filled with 0.0
       dim3 block(32, 32);
       dim3 grid(raft::ceildiv(dim, (int)block.x), raft::ceildiv(dim, (int)block.y));
-      fill_uplo<T><<<grid, block, 0, cudaStream>>>(dim, UPPER, (T)0.0, P);
-      RAFT_CUDA_TRY(cudaPeekAtLastError());
+      raft::launch_kernel(handle, grid, block, fill_uplo<T>, dim, UPPER, (T)0.0, P);
 
       // P is lower triangular chol decomp mtrx
       raft::linalg::gemm(
@@ -233,8 +233,7 @@ class multi_variable_gaussian_impl {
       dim3 grid(raft::ceildiv(dim, (int)block.x));
       RAFT_CUDA_TRY(cudaMemsetAsync(info, 0, sizeof(int), cudaStream));
       grid.x = raft::ceildiv(dim * dim, (int)block.x);
-      combined_dot_product<T><<<grid, block, 0, cudaStream>>>(dim, dim, eig, P, info);
-      RAFT_CUDA_TRY(cudaPeekAtLastError());
+      raft::launch_kernel(handle, grid, block, combined_dot_product<T>, dim, dim, eig, P, info);
 
       // checking if any eigen vals were negative
       raft::update_host(&info_h, info, 1, cudaStream);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/linalg/reduce.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 namespace raft {
 namespace stats::detail {
@@ -208,12 +209,28 @@ void meanvar(
 
     const uint64_t len = uint64_t(D) * uint64_t(N);
     ASSERT(len <= uint64_t(std::numeric_limits<I>::max()), "N * D does not fit the indexing type");
-    meanvar_kernel_rowmajor<T, I, BlockSize><<<gs, bs, 0, stream>>>(data, mvs, locks, len, D);
-    meanvar_kernel_fill<T, I>
-      <<<raft::ceildiv<I>(D, BlockSize), BlockSize, 0, stream>>>(mean, var, mvs, D, sample);
+    raft::launch_kernel(
+      stream, gs, bs, meanvar_kernel_rowmajor<T, I, BlockSize>, data, mvs, locks, len, D);
+    raft::launch_kernel(stream,
+                        raft::ceildiv<I>(D, BlockSize),
+                        BlockSize,
+                        meanvar_kernel_fill<T, I>,
+                        mean,
+                        var,
+                        mvs,
+                        D,
+                        sample);
   } else {
-    meanvar_kernel_colmajor<T, I, BlockSize>
-      <<<D, BlockSize, 0, stream>>>(mean, var, data, D, N, sample);
+    raft::launch_kernel(stream,
+                        D,
+                        BlockSize,
+                        meanvar_kernel_colmajor<T, I, BlockSize>,
+                        mean,
+                        var,
+                        data,
+                        D,
+                        N,
+                        sample);
   }
   RAFT_CHECK_CUDA(stream);
 }

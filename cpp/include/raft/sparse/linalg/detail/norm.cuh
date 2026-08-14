@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,6 +14,7 @@
 #include <raft/sparse/op/row_op.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda_runtime.h>
 #include <thrust/device_ptr.h>
@@ -92,8 +93,8 @@ void csr_row_normalize_l1(const indT* ia,  // csr row ex_scan (sorted by row)
   dim3 grid(raft::ceildiv(m, TPB_X), 1, 1);
   dim3 blk(TPB_X, 1, 1);
 
-  csr_row_normalize_l1_kernel<TPB_X, T><<<grid, blk, 0, stream>>>(ia, vals, nnz, m, result);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(
+    stream, grid, blk, csr_row_normalize_l1_kernel<TPB_X, T>, ia, vals, nnz, m, result);
 }
 
 template <int TPB_X = 64, typename T>
@@ -159,8 +160,8 @@ void csr_row_normalize_max(const int* ia,  // csr row ind array (sorted by row)
   dim3 grid(raft::ceildiv(m, TPB_X), 1, 1);
   dim3 blk(TPB_X, 1, 1);
 
-  csr_row_normalize_max_kernel<TPB_X, T><<<grid, blk, 0, stream>>>(ia, vals, nnz, m, result);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(
+    stream, grid, blk, csr_row_normalize_max_kernel<TPB_X, T>, ia, vals, nnz, m, result);
 }
 
 template <typename Type,

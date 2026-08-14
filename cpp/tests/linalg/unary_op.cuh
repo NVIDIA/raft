@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 namespace raft {
 namespace linalg {
@@ -32,8 +33,8 @@ void naiveScale(OutType* out, const InType* in, InType scalar, int len, cudaStre
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveScaleKernel<InType, OutType, IdxType><<<nblks, TPB, 0, stream>>>(out, in, scalar, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveScaleKernel<InType, OutType, IdxType>, out, in, scalar, len);
 }
 
 template <typename InType, typename IdxType = int, typename OutType = InType>

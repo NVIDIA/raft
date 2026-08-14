@@ -246,8 +246,17 @@ if(BUILD_TESTS)
   )
 
   ConfigureTest(
-    NAME SOLVERS_TEST PATH linalg/eigen_solvers.cu lap/lap.cu sparse/mst.cu
-    sparse/solver/lanczos.cu sparse/solver/randomized_svds.cu LIB EXPLICIT_INSTANTIATE_ONLY
+    NAME
+    SOLVERS_TEST
+    PATH
+    linalg/eigen_solvers.cu
+    lap/lap.cu
+    sparse/mst.cu
+    sparse/solver/lanczos.cu
+    sparse/solver/lanczos_svds.cu
+    sparse/solver/randomized_svds.cu
+    LIB
+    EXPLICIT_INSTANTIATE_ONLY
   )
 
   ConfigureTest(
@@ -324,6 +333,7 @@ if(BUILD_TESTS)
     util/fast_int_div.cu
     util/integer_utils.cpp
     util/integer_utils.cu
+    util/kernel_launch.cu
     util/memory_type_dispatcher.cu
     util/popc.cu
     util/pow2_utils.cu

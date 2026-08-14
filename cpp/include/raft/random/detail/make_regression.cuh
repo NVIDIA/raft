@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -20,6 +20,7 @@
 #include <raft/random/permute.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -67,9 +68,14 @@ static void _make_low_rank_matrix(raft::resources const& handle,
 
   // Build the singular profile by assembling signal and noise components
   rmm::device_uvector<DataT> singular_vec(n, stream);
-  _singular_profile_kernel<<<raft::ceildiv<IdxT>(n, 256), 256, 0, stream>>>(
-    singular_vec.data(), n, tail_strength, effective_rank);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      raft::ceildiv<IdxT>(n, 256),
+                      256,
+                      _singular_profile_kernel,
+                      singular_vec.data(),
+                      n,
+                      tail_strength,
+                      effective_rank);
   rmm::device_uvector<DataT> singular_mat(n * n, stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(singular_mat.data(), 0, n * n * sizeof(DataT), stream));
 
@@ -250,9 +256,15 @@ void make_regression_caller(raft::resources const& handle,
     raft::random::permute<DataT, IdxT, IdxT>(
       perms_samples.data(), tmp_out.data(), out, n_cols, n_rows, true, stream);
     IdxT nblks_rows = raft::ceildiv<IdxT>(n_rows, Nthreads);
-    _gather2d_kernel<<<nblks_rows, Nthreads, 0, stream>>>(
-      values, _values, perms_samples.data(), n_rows, n_targets);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(stream,
+                        nblks_rows,
+                        Nthreads,
+                        _gather2d_kernel<DataT, IdxT>,
+                        values,
+                        _values,
+                        perms_samples.data(),
+                        n_rows,
+                        n_targets);
 
     // Shuffle the features from tmp_out to out
     raft::random::permute<DataT, IdxT, IdxT>(
@@ -261,9 +273,15 @@ void make_regression_caller(raft::resources const& handle,
     // Shuffle the coefficients accordingly
     if (coef != nullptr) {
       IdxT nblks_cols = raft::ceildiv<IdxT>(n_cols, Nthreads);
-      _gather2d_kernel<<<nblks_cols, Nthreads, 0, stream>>>(
-        coef, _coef, perms_features.data(), n_cols, n_targets);
-      RAFT_CUDA_TRY(cudaPeekAtLastError());
+      raft::launch_kernel(stream,
+                          nblks_cols,
+                          Nthreads,
+                          _gather2d_kernel<DataT, IdxT>,
+                          coef,
+                          _coef,
+                          perms_features.data(),
+                          n_cols,
+                          n_targets);
     }
   }
 }
