@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cstdint>
 #include <optional>
@@ -139,17 +140,15 @@ void svd_sign_correction(
   int m = U ? static_cast<int>(U->extent(0)) : 0;
   int n = Vt ? static_cast<int>(Vt->extent(1)) : 0;
 
-  auto stream = raft::resource::get_cuda_stream(handle);
-
   // threads_per_block must be a power of 2 for the tree reduction in the kernel
   constexpr int threads_per_block = 256;
-  int smem_size                   = threads_per_block * (sizeof(ValueTypeT) + sizeof(int));
+  size_t smem_size                = threads_per_block * (sizeof(ValueTypeT) + sizeof(int));
 
   ValueTypeT* U_ptr  = U ? U->data_handle() : nullptr;
   ValueTypeT* Vt_ptr = Vt ? Vt->data_handle() : nullptr;
 
-  svd_sign_correction_kernel<<<k, threads_per_block, smem_size, stream>>>(U_ptr, Vt_ptr, m, n, k);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    {handle, smem_size}, k, threads_per_block, svd_sign_correction_kernel, U_ptr, Vt_ptr, m, n, k);
 }
 
 }  // namespace raft::sparse::solver::detail

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2023, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,7 @@
 #include <raft/random/rng.cuh>
 #include <raft/util/bitonic_sort.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -85,9 +86,14 @@ struct bitonic_launch {
     const int block_dim  = n_warps * WarpSize;
     const int n_subwarps = block_dim / spec.warp_width;
     const int grid_dim   = ceildiv(spec.n_inputs, n_subwarps);
-    bitonic_kernel<Capacity, T>
-      <<<grid_dim, block_dim, 0, stream>>>(arr, spec.ascending, spec.warp_width, spec.n_inputs);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(stream,
+                        grid_dim,
+                        block_dim,
+                        bitonic_kernel<Capacity, T>,
+                        arr,
+                        spec.ascending,
+                        spec.warp_width,
+                        spec.n_inputs);
   }
 };
 

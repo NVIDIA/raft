@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/core/resources.hpp>
 #include <raft/sparse/convert/detail/adj_to_csr.cuh>
 #include <raft/sparse/convert/detail/bitmap_to_csr.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -64,12 +65,19 @@ void gpu_repeat_csr(raft::resources const& handle,
 {
   if (nnz == 0) return;
 
-  auto stream            = resource::get_cuda_stream(handle);
   index_t repeat_csr_tpb = 256;
   index_t grid           = (nnz + repeat_csr_tpb - 1) / (repeat_csr_tpb);
 
-  repeat_csr_kernel<<<grid, repeat_csr_tpb, 0, stream>>>(
-    d_indptr, d_indices, d_repeated_indptr, d_repeated_indices, nnz, repeat_count);
+  raft::launch_kernel(handle,
+                      grid,
+                      repeat_csr_tpb,
+                      repeat_csr_kernel,
+                      d_indptr,
+                      d_indices,
+                      d_repeated_indptr,
+                      d_repeated_indices,
+                      nnz,
+                      repeat_count);
 }
 
 template <typename bitset_t,

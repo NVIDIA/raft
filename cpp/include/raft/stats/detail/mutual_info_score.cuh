@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 /**
@@ -20,6 +20,7 @@
 #include <raft/stats/contingency_matrix.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -150,8 +151,16 @@ double mutual_info_score(const T* firstClusterArray,
                  raft::ceildiv<int>(numUniqueClasses, numThreadsPerBlock.y));
 
   // calling the kernel
-  mutual_info_kernel<T, BLOCK_DIM_X, BLOCK_DIM_Y><<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-    dContingencyMatrix.data(), a.data(), b.data(), numUniqueClasses, size, d_MI.data());
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      numThreadsPerBlock,
+                      mutual_info_kernel<T, BLOCK_DIM_X, BLOCK_DIM_Y>,
+                      dContingencyMatrix.data(),
+                      a.data(),
+                      b.data(),
+                      numUniqueClasses,
+                      size,
+                      d_MI.data());
 
   // updating in the host memory
   h_MI = d_MI.value(stream);

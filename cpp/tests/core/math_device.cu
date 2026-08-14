@@ -1,11 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "../test_utils.h"
 
 #include <raft/core/math.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/cuda_stream.hpp>
 #include <rmm/device_scalar.hpp>
@@ -31,7 +32,8 @@ auto math_eval(OpT op, Args&&... args)
   using OutT  = cuda::std::invoke_result_t<OpT, Args...>;
   auto stream = rmm::cuda_stream_default;
   rmm::device_scalar<OutT> result(stream);
-  math_eval_kernel<<<1, 1, 0, stream>>>(result.data(), op, std::forward<Args>(args)...);
+  raft::launch_kernel(
+    stream, 1, 1, math_eval_kernel, result.data(), op, std::forward<Args>(args)...);
   return result.value(stream);
 }
 

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cub/block/block_reduce.cuh>
 
@@ -85,8 +86,13 @@ class RngTest : public ::testing::TestWithParam<RngInputs<T>> {
         break;
     };
     static const int threads = 128;
-    meanKernel<T, threads><<<raft::ceildiv(params.len, threads), threads, 0, stream>>>(
-      stats.data(), data.data(), params.len);
+    raft::launch_kernel(stream,
+                        raft::ceildiv(params.len, threads),
+                        threads,
+                        meanKernel<T, threads>,
+                        stats.data(),
+                        data.data(),
+                        params.len);
     update_host<float>(h_stats, stats.data(), 2, stream);
     resource::sync_stream(handle, stream);
     h_stats[0] /= params.len;
@@ -138,8 +144,13 @@ class RngMdspanTest : public ::testing::TestWithParam<RngInputs<T>> {
       case RNG_Uniform: uniformInt(handle, r, data_view, params.start, params.end); break;
     };
     static const int threads = 128;
-    meanKernel<T, threads><<<raft::ceildiv(params.len, threads), threads, 0, stream>>>(
-      stats.data(), data.data(), params.len);
+    raft::launch_kernel(stream,
+                        raft::ceildiv(params.len, threads),
+                        threads,
+                        meanKernel<T, threads>,
+                        stats.data(),
+                        data.data(),
+                        params.len);
     update_host<float>(h_stats, stats.data(), 2, stream);
     resource::sync_stream(handle, stream);
     h_stats[0] /= params.len;

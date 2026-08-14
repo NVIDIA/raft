@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -15,6 +15,7 @@
 #include <raft/matrix/threshold.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -33,8 +34,7 @@ void naivePower(Type* in, Type* out, int len, cudaStream_t stream)
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naivePowerKernel<Type><<<nblks, TPB, 0, stream>>>(in, out, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naivePowerKernel<Type>, in, out, len);
 }
 
 template <typename Type>
@@ -49,8 +49,7 @@ void naiveSqrt(Type* in, Type* out, int len, cudaStream_t stream)
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveSqrtKernel<Type><<<nblks, TPB, 0, stream>>>(in, out, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naiveSqrtKernel<Type>, in, out, len);
 }
 
 template <typename Type>
@@ -86,8 +85,7 @@ RAFT_KERNEL naiveSignFlipKernel(Type* in, Type* out, int rowCount, int colCount)
 template <typename Type>
 void naiveSignFlip(Type* in, Type* out, int rowCount, int colCount, cudaStream_t stream)
 {
-  naiveSignFlipKernel<Type><<<colCount, 1, 0, stream>>>(in, out, rowCount, colCount);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, colCount, 1, naiveSignFlipKernel<Type>, in, out, rowCount, colCount);
 }
 
 template <typename T>

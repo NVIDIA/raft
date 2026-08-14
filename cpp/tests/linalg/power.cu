@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/power.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -27,8 +28,7 @@ void naivePowerElem(Type* out, const Type* in1, const Type* in2, int len, cudaSt
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naivePowerElemKernel<Type><<<nblks, TPB, 0, stream>>>(out, in1, in2, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naivePowerElemKernel<Type>, out, in1, in2, len);
 }
 
 template <typename Type>
@@ -43,8 +43,7 @@ void naivePowerScalar(Type* out, const Type* in1, const Type in2, int len, cudaS
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naivePowerScalarKernel<Type><<<nblks, TPB, 0, stream>>>(out, in1, in2, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naivePowerScalarKernel<Type>, out, in1, in2, len);
 }
 
 template <typename T>

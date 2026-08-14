@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -16,6 +16,7 @@
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/sparse/detail/cusparse_wrappers.h>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -384,8 +385,8 @@ struct laplacian_matrix_t : sparse_matrix_t<index_type, value_type, nnz_type> {
     dim3 gridDim{std::min<unsigned int>((n + BLOCK_SIZE - 1) / BLOCK_SIZE, 65535), 1, 1};
 
     dim3 blockDim{BLOCK_SIZE, 1, 1};
-    diagmv<<<gridDim, blockDim, 0, stream>>>(n, alpha, diagonal_.raw(), x, y);
-    RAFT_CHECK_CUDA(stream);
+    raft::launch_kernel(
+      handle, gridDim, blockDim, diagmv<index_type, value_type>, n, alpha, diagonal_.raw(), x, y);
 
     // Apply adjacency matrix
     //

@@ -163,6 +163,104 @@ TEST(Raft, GemmPointerModeDeviceAlpha) { test_gemm_pointer_mode_device(true, fal
 TEST(Raft, GemmPointerModeDeviceBeta) { test_gemm_pointer_mode_device(false, true); }
 TEST(Raft, GemmPointerModeDeviceDefaults) { test_gemm_pointer_mode_device(false, false); }
 
+TEST(Raft, GemmBatched)
+{
+  raft::resources res;
+  auto stream = raft::resource::get_cuda_stream(res);
+
+  using index_type                 = int64_t;
+  constexpr index_type stride_a    = 8;
+  constexpr index_type stride_b    = 8;
+  constexpr index_type stride_c    = 5;
+  constexpr index_type batch_count = 2;
+
+  // Two column-major A (2 x 3) and B (3 x 2) matrices with padding between batches.
+  std::vector<float> a_host = {1, 4, 2, 5, 3, 6, -1, -1, 2, 1, 0, 3, 1, 4, -1, -1};
+  std::vector<float> b_host = {7, 9, 11, 8, 10, 12, -1, -1, 1, 0, 2, 3, 1, 4, -1, -1};
+  std::vector<float> c_host(stride_c * batch_count, -1);
+
+  auto a_device = raft::make_device_vector<float>(res, a_host.size());
+  auto b_device = raft::make_device_vector<float>(res, b_host.size());
+  auto c_device = raft::make_device_vector<float>(res, c_host.size());
+  raft::copy(a_device.data_handle(), a_host.data(), a_host.size(), stream);
+  raft::copy(b_device.data_handle(), b_host.data(), b_host.size(), stream);
+  raft::copy(c_device.data_handle(), c_host.data(), c_host.size(), stream);
+
+  auto a_extents = raft::extent_3d<index_type>{batch_count, M, K};
+  auto b_extents = raft::extent_3d<index_type>{batch_count, K, N};
+  auto c_extents = raft::extent_3d<index_type>{batch_count, M, N};
+  auto a_layout =
+    raft::make_strided_layout(a_extents, cuda::std::array<index_type, 3>{stride_a, 1, M});
+  auto b_layout =
+    raft::make_strided_layout(b_extents, cuda::std::array<index_type, 3>{stride_b, 1, K});
+  auto c_layout =
+    raft::make_strided_layout(c_extents, cuda::std::array<index_type, 3>{stride_c, 1, M});
+
+  auto a_view = raft::device_mdspan<float, decltype(a_extents), raft::layout_stride>{
+    a_device.data_handle(), a_layout};
+  auto b_view = raft::device_mdspan<float, decltype(b_extents), raft::layout_stride>{
+    b_device.data_handle(), b_layout};
+  auto c_view = raft::device_mdspan<float, decltype(c_extents), raft::layout_stride>{
+    c_device.data_handle(), c_layout};
+
+  std::optional<raft::host_scalar_view<float>> alpha;
+  std::optional<raft::host_scalar_view<float>> beta;
+  raft::linalg::gemm_batched(
+    res, a_view, b_view, c_view, alpha, beta, CUBLAS_COMPUTE_32F_FAST_TF32);
+
+  raft::copy(c_host.data(), c_device.data_handle(), c_host.size(), stream);
+  raft::resource::sync_stream(res);
+
+  const std::vector<float> expected = {58, 139, 64, 154, -1, 4, 9, 10, 22, -1};
+  EXPECT_EQ(c_host, expected);
+
+  c_host.assign(stride_c * batch_count, -1);
+  raft::copy(c_device.data_handle(), c_host.data(), c_host.size(), stream);
+  raft::linalg::gemm_batched(res, a_view, b_view, c_view);
+
+  raft::copy(c_host.data(), c_device.data_handle(), c_host.size(), stream);
+  raft::resource::sync_stream(res);
+  EXPECT_EQ(c_host, expected);
+}
+
+TEST(Raft, GemmBatchedContiguous)
+{
+  raft::resources res;
+  auto stream = raft::resource::get_cuda_stream(res);
+
+  using index_type                 = int64_t;
+  constexpr index_type batch_count = 2;
+
+  std::vector<float> a_host = {1, 2, 3, 4, 5, 6, 2, 0, 1, 1, 3, 4};
+  std::vector<float> b_host = {7, 8, 9, 10, 11, 12, 1, 3, 0, 1, 2, 4};
+  std::vector<float> c_host(batch_count * M * N, -1);
+
+  auto a_device = raft::make_device_vector<float>(res, a_host.size());
+  auto b_device = raft::make_device_vector<float>(res, b_host.size());
+  auto c_device = raft::make_device_vector<float>(res, c_host.size());
+  raft::copy(a_device.data_handle(), a_host.data(), a_host.size(), stream);
+  raft::copy(b_device.data_handle(), b_host.data(), b_host.size(), stream);
+  raft::copy(c_device.data_handle(), c_host.data(), c_host.size(), stream);
+
+  auto a_extents = raft::extent_3d<index_type>{batch_count, M, K};
+  auto b_extents = raft::extent_3d<index_type>{batch_count, K, N};
+  auto c_extents = raft::extent_3d<index_type>{batch_count, M, N};
+  auto a_view    = raft::device_mdspan<float, decltype(a_extents), raft::layout_right>{
+    a_device.data_handle(), a_extents};
+  auto b_view = raft::device_mdspan<float, decltype(b_extents), raft::layout_right>{
+    b_device.data_handle(), b_extents};
+  auto c_view = raft::device_mdspan<float, decltype(c_extents), raft::layout_right>{
+    c_device.data_handle(), c_extents};
+
+  raft::linalg::gemm_batched(res, a_view, b_view, c_view);
+
+  raft::copy(c_host.data(), c_device.data_handle(), c_host.size(), stream);
+  raft::resource::sync_stream(res);
+
+  const std::vector<float> expected = {58, 64, 139, 154, 4, 10, 9, 22};
+  EXPECT_EQ(c_host, expected);
+}
+
 TEST(Raft, GemmCublasLt136WorkaroundPredicate)
 {
   constexpr std::size_t affected_version = 130600;

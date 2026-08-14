@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/core/resources.hpp>
 #include <raft/sparse/convert/detail/adj_to_csr.cuh>
 #include <raft/util/device_loads_stores.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -105,7 +106,6 @@ void calc_nnz_by_rows(raft::resources const& handle,
     sub_nnz_size     = num_rows * ((num_cols + bits_per_sub_col - 1) / bits_per_sub_col);
     return;
   }
-  auto stream        = resource::get_cuda_stream(handle);
   const size_t total = num_rows * num_cols;
   const size_t bitmap_num =
     (total + index_t(sizeof(bitmap_t) * 8) - 1) / index_t(sizeof(bitmap_t) * 8);
@@ -116,9 +116,16 @@ void calc_nnz_by_rows(raft::resources const& handle,
 
   auto block = bitmap_to_csr_tpb;
 
-  calc_nnz_by_rows_kernel<bitmap_t, index_t, nnz_t><<<grid, block, 0, stream>>>(
-    bitmap, num_rows, num_cols, bitmap_num, sub_col_nnz, bits_per_sub_col);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(handle,
+                      grid,
+                      block,
+                      calc_nnz_by_rows_kernel<bitmap_t, index_t, nnz_t>,
+                      bitmap,
+                      num_rows,
+                      num_cols,
+                      bitmap_num,
+                      sub_col_nnz,
+                      bits_per_sub_col);
 }
 
 template <typename bitmap_t, typename index_t, typename nnz_t, bool check_nnz>
@@ -244,16 +251,24 @@ void fill_indices_by_rows(raft::resources const& handle,
                           index_t bits_per_sub_col,
                           size_t sub_nnz_size)
 {
-  auto stream  = resource::get_cuda_stream(handle);
   auto block_x = num_rows;
   auto block_y = sub_nnz_size / num_rows;
   dim3 grid(block_x, block_y, 1);
 
   auto block = bitmap_to_csr_tpb;
 
-  fill_indices_by_rows_kernel<bitmap_t, index_t, nnz_t, check_nnz><<<grid, block, 0, stream>>>(
-    bitmap, indptr, num_rows, num_cols, nnz, indices, sub_col_nnz, bits_per_sub_col);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(handle,
+                      grid,
+                      block,
+                      fill_indices_by_rows_kernel<bitmap_t, index_t, nnz_t, check_nnz>,
+                      bitmap,
+                      indptr,
+                      num_rows,
+                      num_cols,
+                      nnz,
+                      indices,
+                      sub_col_nnz,
+                      bits_per_sub_col);
 }
 
 template <typename bitmap_t,

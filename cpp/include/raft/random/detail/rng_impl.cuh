@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,6 +14,7 @@
 #include <raft/random/rng_state.hpp>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/detail/cub_wrappers.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/scatter.cuh>
 
 #include <rmm/device_scalar.hpp>
@@ -69,7 +70,7 @@ void call_rng_kernel(DeviceState<GenType> const& dev_state,
 {
   auto n_threads = 256;
   auto n_blocks  = 4 * getMultiProcessorCount();
-  rngKernel<ITEMS_PER_CALL><<<n_blocks, n_threads, 0, stream>>>(dev_state, args...);
+  raft::launch_kernel(stream, n_blocks, n_threads, rngKernel<ITEMS_PER_CALL>, dev_state, args...);
   rng_state.advance(uint64_t(n_blocks) * n_threads, 16);
 }
 
@@ -245,8 +246,15 @@ void call_sample_with_replacement_kernel(DeviceState<GenType> const& dev_state,
 {
   IdxType n_threads = 256;
   IdxType n_blocks  = raft::ceildiv(sampledLen, n_threads);
-  sample_with_replacement_kernel<<<n_blocks, n_threads, 0, stream>>>(
-    dev_state, out, weights_csum, sampledLen, len);
+  raft::launch_kernel(stream,
+                      n_blocks,
+                      n_threads,
+                      sample_with_replacement_kernel,
+                      dev_state,
+                      out,
+                      weights_csum,
+                      sampledLen,
+                      len);
   rng_state.advance(uint64_t(n_blocks) * n_threads, 1);
 }
 

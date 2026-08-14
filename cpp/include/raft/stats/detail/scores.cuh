@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,6 +11,7 @@
 #include <raft/linalg/subtract.cuh>
 #include <raft/stats/mean.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -163,9 +164,15 @@ void regression_metrics(const T* predictions,
   rmm::device_uvector<double> tmp_sums(2 * sizeof(double), stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(tmp_sums.data(), 0, 2 * sizeof(double), stream));
 
-  reg_metrics_kernel<T><<<block_cnt, thread_cnt, 0, stream>>>(
-    predictions, ref_predictions, n, abs_diffs_array.data(), tmp_sums.data());
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(stream,
+                      block_cnt,
+                      thread_cnt,
+                      reg_metrics_kernel<T>,
+                      predictions,
+                      ref_predictions,
+                      n,
+                      abs_diffs_array.data(),
+                      tmp_sums.data());
   raft::update_host(&mean_errors[0], tmp_sums.data(), 2, stream);
   raft::interruptible::synchronize(stream);
 

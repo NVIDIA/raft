@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,6 +11,7 @@
 #include <raft/random/make_blobs.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -112,22 +113,29 @@ class MakeBlobsTest : public ::testing::TestWithParam<MakeBlobsInputs<T>> {
 
     bool row_major           = std::is_same<layout, raft::layout_c_contiguous>::value;
     static const int threads = 128;
-    meanKernel<T><<<raft::ceildiv(len, threads), threads, 0, stream>>>(stats.data_handle(),
-                                                                       lens.data_handle(),
-                                                                       data.data_handle(),
-                                                                       labels.data_handle(),
-                                                                       params.rows,
-                                                                       params.cols,
-                                                                       params.n_clusters,
-                                                                       row_major);
+    raft::launch_kernel(stream,
+                        raft::ceildiv(len, threads),
+                        threads,
+                        meanKernel<T>,
+                        stats.data_handle(),
+                        lens.data_handle(),
+                        data.data_handle(),
+                        labels.data_handle(),
+                        params.rows,
+                        params.cols,
+                        params.n_clusters,
+                        row_major);
     int len1 = params.n_clusters * params.cols;
-    compute_mean_var<T>
-      <<<raft::ceildiv(len1, threads), threads, 0, stream>>>(mean_var.data_handle(),
-                                                             stats.data_handle(),
-                                                             lens.data_handle(),
-                                                             params.n_clusters,
-                                                             params.cols,
-                                                             row_major);
+    raft::launch_kernel(stream,
+                        raft::ceildiv(len1, threads),
+                        threads,
+                        compute_mean_var<T>,
+                        mean_var.data_handle(),
+                        stats.data_handle(),
+                        lens.data_handle(),
+                        params.n_clusters,
+                        params.cols,
+                        row_major);
   }
 
   void check()
