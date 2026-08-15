@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,6 +13,7 @@
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/device_atomics.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 #include <rmm/exec_policy.hpp>
@@ -159,8 +160,20 @@ void compute_chunked_a_b(raft::resources const& handle,
   dim3 grid_size(raft::ceildiv(dist_rows, (value_idx)block_size.x),
                  raft::ceildiv(dist_cols, (value_idx)block_size.y));
 
-  detail::compute_chunked_a_b_kernel<<<grid_size, block_size, 0, stream>>>(
-    a, b, row_offset, col_offset, y, n_labels, cluster_counts, distances, dist_rows, dist_cols);
+  raft::launch_kernel(stream,
+                      grid_size,
+                      block_size,
+                      detail::compute_chunked_a_b_kernel,
+                      a,
+                      b,
+                      row_offset,
+                      col_offset,
+                      y,
+                      n_labels,
+                      cluster_counts,
+                      distances,
+                      dist_rows,
+                      dist_cols);
 }
 
 template <typename value_t, typename value_idx, typename label_idx>
@@ -204,8 +217,15 @@ value_t silhouette_score(
   dim3 block_size(std::min(n_rows, 32), std::min(n_labels, 32));
   dim3 grid_size(raft::ceildiv(n_rows, (value_idx)block_size.x),
                  raft::ceildiv(n_labels, (label_idx)block_size.y));
-  detail::fill_b_kernel<<<grid_size, block_size, 0, stream>>>(
-    b_ptr, y, n_rows, n_labels, cluster_counts.data());
+  raft::launch_kernel(handle,
+                      grid_size,
+                      block_size,
+                      detail::fill_b_kernel,
+                      b_ptr,
+                      y,
+                      n_rows,
+                      n_labels,
+                      cluster_counts.data());
 
   resource::wait_stream_pool_on_stream(handle);
 

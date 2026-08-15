@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/sparse/detail/utils.h>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -123,8 +124,15 @@ void csr_to_dense(cusparseHandle_t handle,
   } else {
     int blockdim = block_dim(ncols);
     RAFT_CUDA_TRY(cudaMemsetAsync(out, 0, nrows * ncols * sizeof(value_t), stream));
-    csr_to_dense_warp_per_row_kernel<<<nrows, blockdim, 0, stream>>>(
-      ncols, csr_data, csr_indptr, csr_indices, out);
+    raft::launch_kernel(stream,
+                        nrows,
+                        blockdim,
+                        csr_to_dense_warp_per_row_kernel,
+                        ncols,
+                        csr_data,
+                        csr_indptr,
+                        csr_indices,
+                        out);
   }
 }
 

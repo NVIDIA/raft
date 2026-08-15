@@ -1,11 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/util/kernel_launch.hpp>
 namespace raft {
 namespace sparse {
 
@@ -90,7 +91,7 @@ void iota_fill(value_idx* indices, value_idx nrows, value_idx ncols, cudaStream_
 {
   int blockdim = block_dim(ncols);
 
-  iota_fill_block_kernel<<<nrows, blockdim, 0, stream>>>(indices, ncols);
+  raft::launch_kernel(stream, nrows, blockdim, iota_fill_block_kernel, indices, ncols);
 }
 
 template <typename T, typename indT>

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/sparse/detail/utils.h>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda_runtime.h>
 #include <thrust/device_ptr.h>
@@ -53,9 +54,8 @@ void csr_row_op(const Index_* row_ind, Index_ n_rows, Index_ nnz, Lambda op, cud
 {
   dim3 grid(raft::ceildiv(n_rows, Index_(TPB_X)), 1, 1);
   dim3 blk(TPB_X, 1, 1);
-  csr_row_op_kernel<Index_, TPB_X><<<grid, blk, 0, stream>>>(row_ind, n_rows, nnz, op);
-
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, grid, blk, csr_row_op_kernel<Index_, TPB_X, Lambda>, row_ind, n_rows, nnz, op);
 }
 
 };  // namespace detail

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 
 #include <raft/core/kvp.hpp>
 #include <raft/core/operators.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/cuda_stream.hpp>
 #include <rmm/device_scalar.hpp>
@@ -28,7 +29,8 @@ auto eval_op_on_device(OpT op, Args&&... args)
   typedef decltype(op(args...)) OutT;
   auto stream = rmm::cuda_stream_default;
   rmm::device_scalar<OutT> result(stream);
-  eval_op_on_device_kernel<<<1, 1, 0, stream>>>(result.data(), op, std::forward<Args>(args)...);
+  raft::launch_kernel(
+    stream, 1, 1, eval_op_on_device_kernel, result.data(), op, std::forward<Args>(args)...);
   return result.value(stream);
 }
 

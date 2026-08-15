@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/sqrt.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -27,8 +28,7 @@ void naiveSqrtElem(Type* out, const Type* in1, int len)
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveSqrtElemKernel<Type><<<nblks, TPB>>>(out, in1, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(cudaStream_t{0}, nblks, TPB, naiveSqrtElemKernel<Type>, out, in1, len);
 }
 
 template <typename T>

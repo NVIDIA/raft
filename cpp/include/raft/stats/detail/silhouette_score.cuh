@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -17,6 +17,7 @@
 #include <raft/linalg/reduce.cuh>
 #include <raft/linalg/reduce_cols_by_key.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 
@@ -246,14 +247,17 @@ DataT silhouette_score(
   dim3 numBlocks(raft::ceildiv<int>(nRows, numThreadsPerBlock.x), 1, 1);
 
   // calling the kernel
-  populateAKernel<<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-    sampleToClusterSumOfDistances.data(),
-    binCountArray.data(),
-    d_aArray.data(),
-    labels,
-    nRows,
-    nLabels,
-    std::numeric_limits<DataT>::max());
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      numThreadsPerBlock,
+                      populateAKernel,
+                      sampleToClusterSumOfDistances.data(),
+                      binCountArray.data(),
+                      d_aArray.data(),
+                      labels,
+                      nRows,
+                      nLabels,
+                      std::numeric_limits<DataT>::max());
 
   // elementwise dividing by bincounts
   rmm::device_uvector<DataT> averageDistanceBetweenSampleAndCluster(nRows * nLabels, stream);

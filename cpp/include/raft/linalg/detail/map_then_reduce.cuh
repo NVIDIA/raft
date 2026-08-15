@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/vectorized.cuh>
 
 #include <cub/block/block_reduce.cuh>
@@ -79,9 +80,18 @@ void mapThenReduceImpl(OutType* out,
 {
   raft::update_device(out, &neutral, 1, stream);
   const int nblks = raft::ceildiv(len, IdxType(TPB));
-  mapThenReduceKernel<InType, OutType, IdxType, MapOp, ReduceLambda, TPB, Args...>
-    <<<nblks, TPB, 0, stream>>>(out, len, neutral, map, op, in, args...);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream,
+    nblks,
+    TPB,
+    mapThenReduceKernel<InType, OutType, IdxType, MapOp, ReduceLambda, TPB, Args...>,
+    out,
+    len,
+    neutral,
+    map,
+    op,
+    in,
+    args...);
 }
 
 };  // end namespace detail

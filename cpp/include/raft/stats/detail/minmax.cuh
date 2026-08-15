@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda/std/bit>
 
@@ -186,8 +187,8 @@ void minmax(const T* data,
   using E    = typename encode_traits<T>::E;
   int nblks  = raft::ceildiv(ncols, TPB);
   T init_val = std::numeric_limits<T>::max();
-  minmaxInitKernel<T, E><<<nblks, TPB, 0, stream>>>(ncols, globalmin, globalmax, init_val);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, minmaxInitKernel<T, E>, ncols, globalmin, globalmax, init_val);
   nblks           = raft::ceildiv(nrows * ncols, TPB);
   nblks           = min(nblks, 65536);
   size_t smemSize = sizeof(T) * 2 * ncols;
@@ -199,21 +200,23 @@ void minmax(const T* data,
   int num_batches = raft::ceildiv(ncols, batch_ncols);
   smemSize        = sizeof(T) * 2 * batch_ncols;
 
-  minmaxKernel<T, E><<<nblks, TPB, smemSize, stream>>>(data,
-                                                       rowids,
-                                                       colids,
-                                                       nrows,
-                                                       ncols,
-                                                       row_stride,
-                                                       globalmin,
-                                                       globalmax,
-                                                       sampledcols,
-                                                       init_val,
-                                                       batch_ncols,
-                                                       num_batches);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
-  decodeKernel<T, E><<<nblks, TPB, 0, stream>>>(globalmin, globalmax, ncols);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel({stream, smemSize},
+                      nblks,
+                      TPB,
+                      minmaxKernel<T, E>,
+                      data,
+                      rowids,
+                      colids,
+                      nrows,
+                      ncols,
+                      row_stride,
+                      globalmin,
+                      globalmax,
+                      sampledcols,
+                      init_val,
+                      batch_ncols,
+                      num_batches);
+  raft::launch_kernel(stream, nblks, TPB, decodeKernel<T, E>, globalmin, globalmax, ncols);
 }
 
 };  // end namespace detail

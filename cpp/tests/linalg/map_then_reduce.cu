@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -37,8 +38,8 @@ void naiveMapReduce(OutType* out, const InType* in, size_t len, MapOp map, cudaS
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, (size_t)TPB);
-  naiveMapReduceKernel<InType, OutType, MapOp><<<nblks, TPB, 0, stream>>>(out, in, len, map);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveMapReduceKernel<InType, OutType, MapOp>, out, in, len, map);
 }
 
 template <typename T>

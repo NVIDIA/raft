@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "test_span.hpp"
@@ -7,6 +7,7 @@
 #include <raft/core/device_span.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda/iterator>
 #include <thrust/copy.h>
@@ -73,20 +74,20 @@ TEST(GPUSpan, FromOther)
   // dynamic extent
   {
     device_span<float> span(d_vec.data().get(), d_vec.size());
-    TestFromOtherKernel<<<1, 16>>>(span);
+    raft::launch_kernel(cudaStream_t{0}, 1, 16, TestFromOtherKernel, span);
   }
   {
     device_span<float> span(d_vec.data().get(), d_vec.size());
-    TestFromOtherKernelConst<<<1, 16>>>(span);
+    raft::launch_kernel(cudaStream_t{0}, 1, 16, TestFromOtherKernelConst, span);
   }
   // static extent
   {
     device_span<float, 16> span(d_vec.data().get(), d_vec.data().get() + 16);
-    TestFromOtherKernel<<<1, 16>>>(span);
+    raft::launch_kernel(cudaStream_t{0}, 1, 16, TestFromOtherKernel, span);
   }
   {
     device_span<float, 16> span(d_vec.data().get(), d_vec.data().get() + 16);
-    TestFromOtherKernelConst<<<1, 16>>>(span);
+    raft::launch_kernel(cudaStream_t{0}, 1, 16, TestFromOtherKernelConst, span);
   }
 }
 
@@ -185,7 +186,7 @@ TEST(GPUSpan, Modify)
 
   device_span<float> span(d_vec.data().get(), d_vec.size());
 
-  TestModifyKernel<<<1, 16>>>(span);
+  raft::launch_kernel(cudaStream_t{0}, 1, 16, TestModifyKernel, span);
 
   for (size_t i = 0; i < d_vec.size(); ++i) {
     ASSERT_EQ(d_vec[i], d_vec.size() - i);

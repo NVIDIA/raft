@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/gemm.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -83,8 +84,19 @@ class GemmLayoutTest : public ::testing::TestWithParam<GemmLayoutInputs<T>> {
     dim3 blocks(raft::ceildiv<int>(params.M, 128), raft::ceildiv<int>(params.N, 4), 1);
     dim3 threads(128, 4, 1);
 
-    naiveGemm<<<blocks, threads>>>(
-      refZ, X, Y, params.M, params.N, params.K, params.zLayout, params.xLayout, params.yLayout);
+    raft::launch_kernel(cudaStream_t{0},
+                        blocks,
+                        threads,
+                        naiveGemm,
+                        refZ,
+                        X,
+                        Y,
+                        params.M,
+                        params.N,
+                        params.K,
+                        params.zLayout,
+                        params.xLayout,
+                        params.yLayout);
 
     auto x_view_row_major = raft::make_device_matrix_view(X, params.M, params.K);
     auto y_view_row_major = raft::make_device_matrix_view(Y, params.K, params.N);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __GEMM_H
@@ -281,6 +281,186 @@ void gemm(raft::resources const& res,
       z.data_handle(),
       static_cast<uint64_t>(z.extent(1)));
   }
+}
+
+/**
+ * @brief Batched matrix multiplication with an explicit cublasLt compute type.
+ *
+ * Computes `Z_i = alpha * X_i * Y_i + beta * Z_i`. The first mdspan extent is the batch
+ * dimension. `layout_stride` views encode matrix and batch strides in their mappings; contiguous
+ * batches use `layout_right`, with the matrix size as the batch stride. Use `layout_stride` for
+ * column-major batches because rank-3 `layout_left` interleaves the batch dimension.
+ *
+ * @tparam ValueType element type of the input and output matrices
+ * @tparam IndexType index type
+ * @tparam LayoutPolicyX layout policy of X
+ * @tparam LayoutPolicyY layout policy of Y
+ * @tparam LayoutPolicyZ layout policy of Z
+ * @tparam ScalarIdxType index type of alpha and beta
+ * @tparam ScalarViewType scalar view type of alpha and beta
+ * @param[in] res RAFT resources
+ * @param[in] x input matrices X, with shape `[batch_count, m, k]`
+ * @param[in] y input matrices Y, with shape `[batch_count, k, n]`
+ * @param[inout] z input/output matrices Z, with shape `[batch_count, m, n]`
+ * @param[in] alpha scalar multiplier for X * Y; defaults to one when empty
+ * @param[in] beta scalar multiplier for Z; defaults to zero when empty
+ * @param[in] compute_type_override cublasLt compute type
+ */
+template <typename ValueType,
+          typename IndexType,
+          typename LayoutPolicyX,
+          typename LayoutPolicyY,
+          typename LayoutPolicyZ,
+          typename ScalarIdxType  = std::uint32_t,
+          typename ScalarViewType = raft::host_scalar_view<ValueType, ScalarIdxType>,
+          typename                = std::enable_if_t<std::disjunction_v<
+                           std::is_same<ScalarViewType, raft::host_scalar_view<ValueType, ScalarIdxType>>,
+                           std::is_same<ScalarViewType, raft::device_scalar_view<ValueType, ScalarIdxType>>>>>
+void gemm_batched(raft::resources const& res,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyX> x,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyY> y,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyZ> z,
+                  std::optional<ScalarViewType> alpha,
+                  std::optional<ScalarViewType> beta,
+                  cublasComputeType_t compute_type_override)
+{
+  static_assert(!std::is_same_v<LayoutPolicyX, raft::layout_left> &&
+                  !std::is_same_v<LayoutPolicyY, raft::layout_left> &&
+                  !std::is_same_v<LayoutPolicyZ, raft::layout_left>,
+                "Use layout_stride for column-major batched matrices");
+
+  RAFT_EXPECTS(x.extent(0) == y.extent(0) && x.extent(0) == z.extent(0),
+               "All operands must have the same batch count");
+  RAFT_EXPECTS(x.extent(1) == z.extent(1), "X and Z must have the same number of rows");
+  RAFT_EXPECTS(y.extent(2) == z.extent(2), "Y and Z must have the same number of columns");
+  RAFT_EXPECTS(x.extent(2) == y.extent(1),
+               "The number of columns in X must equal the number of rows in Y");
+
+  const auto is_row_major = [](auto const& view) {
+    return view.stride(2) == 1 && view.stride(1) >= view.extent(2);
+  };
+  const auto is_col_major = [](auto const& view) {
+    return view.stride(1) == 1 && view.stride(2) >= view.extent(1);
+  };
+  const auto batch_stride = [](auto const& view) -> int64_t {
+    using layout_type = typename std::decay_t<decltype(view)>::layout_type;
+    if constexpr (std::is_same_v<layout_type, raft::layout_stride>) {
+      return static_cast<int64_t>(view.stride(0));
+    } else {
+      return static_cast<int64_t>(view.extent(1)) * static_cast<int64_t>(view.extent(2));
+    }
+  };
+  RAFT_EXPECTS(is_row_major(x) || is_col_major(x),
+               "Each matrix in X must be row-major or column-major");
+  RAFT_EXPECTS(is_row_major(y) || is_col_major(y),
+               "Each matrix in Y must be row-major or column-major");
+  RAFT_EXPECTS(is_row_major(z) || is_col_major(z),
+               "Each matrix in Z must be row-major or column-major");
+
+  constexpr auto kDeviceMode =
+    std::is_same_v<ScalarViewType, raft::device_scalar_view<ValueType, ScalarIdxType>>;
+  ValueType* alpha_ptr = nullptr;
+  ValueType* beta_ptr  = nullptr;
+  if (alpha.has_value()) { alpha_ptr = alpha->data_handle(); }
+  if (beta.has_value()) { beta_ptr = beta->data_handle(); }
+
+  const bool x_col_major = is_col_major(x);
+  const bool y_col_major = is_col_major(y);
+  const bool z_col_major = is_col_major(z);
+  const auto x_ld        = x_col_major ? x.stride(2) : x.stride(1);
+  const auto y_ld        = y_col_major ? y.stride(2) : y.stride(1);
+  const auto z_ld        = z_col_major ? z.stride(2) : z.stride(1);
+  const auto batch_count = static_cast<int32_t>(z.extent(0));
+
+  if (z_col_major) {
+    return detail::matmul_strided_batched<kDeviceMode>(res,
+                                                       !x_col_major,
+                                                       !y_col_major,
+                                                       z.extent(1),
+                                                       z.extent(2),
+                                                       x.extent(2),
+                                                       alpha_ptr,
+                                                       x.data_handle(),
+                                                       x_ld,
+                                                       batch_stride(x),
+                                                       y.data_handle(),
+                                                       y_ld,
+                                                       batch_stride(y),
+                                                       beta_ptr,
+                                                       z.data_handle(),
+                                                       z_ld,
+                                                       batch_stride(z),
+                                                       batch_count,
+                                                       compute_type_override);
+  }
+
+  return detail::matmul_strided_batched<kDeviceMode>(res,
+                                                     y_col_major,
+                                                     x_col_major,
+                                                     z.extent(2),
+                                                     z.extent(1),
+                                                     x.extent(2),
+                                                     alpha_ptr,
+                                                     y.data_handle(),
+                                                     y_ld,
+                                                     batch_stride(y),
+                                                     x.data_handle(),
+                                                     x_ld,
+                                                     batch_stride(x),
+                                                     beta_ptr,
+                                                     z.data_handle(),
+                                                     z_ld,
+                                                     batch_stride(z),
+                                                     batch_count,
+                                                     compute_type_override);
+}
+
+/**
+ * @brief Batched matrix multiplication using the default cublasLt compute type.
+ *
+ * Computes `Z_i = alpha * X_i * Y_i + beta * Z_i`. The first mdspan extent is the batch
+ * dimension. `layout_stride` views encode matrix and batch strides in their mappings; contiguous
+ * batches use `layout_right`, with the matrix size as the batch stride. Use `layout_stride` for
+ * column-major batches because rank-3 `layout_left` interleaves the batch dimension.
+ *
+ * @tparam ValueType element type of the input and output matrices
+ * @tparam IndexType index type
+ * @tparam LayoutPolicyX layout policy of X
+ * @tparam LayoutPolicyY layout policy of Y
+ * @tparam LayoutPolicyZ layout policy of Z
+ * @tparam ScalarIdxType index type of alpha and beta
+ * @tparam ScalarViewType scalar view type of alpha and beta
+ * @param[in] res RAFT resources
+ * @param[in] x input matrices X, with shape `[batch_count, m, k]`
+ * @param[in] y input matrices Y, with shape `[batch_count, k, n]`
+ * @param[inout] z input/output matrices Z, with shape `[batch_count, m, n]`
+ * @param[in] alpha scalar multiplier for X * Y; defaults to one when empty
+ * @param[in] beta scalar multiplier for Z; defaults to zero when empty
+ */
+template <typename ValueType,
+          typename IndexType,
+          typename LayoutPolicyX,
+          typename LayoutPolicyY,
+          typename LayoutPolicyZ,
+          typename ScalarIdxType  = std::uint32_t,
+          typename ScalarViewType = raft::host_scalar_view<ValueType, ScalarIdxType>,
+          typename                = std::enable_if_t<std::disjunction_v<
+                           std::is_same<ScalarViewType, raft::host_scalar_view<ValueType, ScalarIdxType>>,
+                           std::is_same<ScalarViewType, raft::device_scalar_view<ValueType, ScalarIdxType>>>>>
+void gemm_batched(raft::resources const& res,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyX> x,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyY> y,
+                  raft::device_mdspan<ValueType, raft::extent_3d<IndexType>, LayoutPolicyZ> z,
+                  std::optional<ScalarViewType> alpha = std::nullopt,
+                  std::optional<ScalarViewType> beta  = std::nullopt)
+{
+  return gemm_batched(res,
+                      x,
+                      y,
+                      z,
+                      alpha,
+                      beta,
+                      detail::get_matmul_type<ValueType, ValueType, ValueType, ValueType>());
 }
 
 /** @} */  // end of gemm
