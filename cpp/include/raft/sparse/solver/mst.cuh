@@ -16,6 +16,22 @@ namespace sparse::solver {
  * the connected components of the given graph.
  * Algorithm based on ECL-MST (Fallin, Gonzalez, Seo, Burtscher, SC'23).
  *
+ * Usage example:
+ * @code{.cpp}
+ * #include <raft/core/resources.hpp>
+ * #include <raft/core/resource/cuda_stream.hpp>
+ * #include <raft/sparse/solver/mst.cuh>
+ *
+ * raft::resources res;
+ * auto stream = raft::resource::get_cuda_stream(res);
+ * // device CSR of a symmetric graph: offsets (size v+1), indices and weights (size e)
+ * rmm::device_uvector<int> colors(v, stream);
+ * auto forest = raft::sparse::solver::mst<int, int, float>(
+ *   res, offsets, indices, weights, v, e, colors.data(), stream);
+ * // forest.src/dst/weights hold forest.n_edges edges (both directions when
+ * // symmetrize_output); colors[i] = component id of vertex i
+ * @endcode
+ *
  * @tparam vertex_t integral type for precision of vertex indexing
  * @tparam edge_t integral type for precision of edge indexing
  * @tparam weight_t type of weights array
