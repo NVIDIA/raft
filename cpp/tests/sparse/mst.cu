@@ -588,8 +588,8 @@ void expect_forest(int v, const std::vector<int>& src, const std::vector<int>& d
   }
 }
 
-// Regression: heavily-tied integer-valued float weights at ~1e7, where the
-// previous solver's alteration rounded away (float ulp there is 1-2) and
+// heavily-tied integer-valued float weights at ~1e7, where the
+// previous solver's alteration rounded away and
 // produced cycles or non-minimal forests past its own guard.
 TEST(MST, FloatMagnitudeTies)
 {
@@ -677,8 +677,8 @@ TEST(MST, DisconnectedColors)
   }
 }
 
-// Regression: an equal-weight path graph chain-joins into an O(v)-deep
-// parent chain; quadratic (minutes at v=1M) without path halving.
+// an equal-weight path graph chain-joins into an O(v)-deep parent chain
+// quadratic (minutes at v=1M) w/o path halving (change from the SC'23 approach)
 TEST(MST, UniformWeightPathGraph)
 {
   raft::resources handle;

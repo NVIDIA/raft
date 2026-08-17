@@ -47,8 +47,8 @@ namespace sparse::solver {
  * @param v number of vertices in graph
  * @param e number of edges in graph
  * @param color array to store resulting colors for MSF; when initialize_colors is false it is
- * also the input seeding and must hold a valid component labeling from a previous solve of the same
- * graph
+ * also the input seeding and must hold a valid component labeling from a previous solve over the
+ * same vertex set (the edge set may differ, e.g. when reconnecting components)
  * @param stream cuda stream for ordering operations
  * @param symmetrize_output should the resulting output edge list be symmetrized?
  * @param initialize_colors should the colors array be initialized inside the MST?

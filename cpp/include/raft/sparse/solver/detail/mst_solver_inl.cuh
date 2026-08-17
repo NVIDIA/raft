@@ -72,7 +72,6 @@ Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
                  "unsigned 32-bit edge counts above INT_MAX are not supported");
   }
 
-  // one worklist entry per undirected edge
   const wl_size_t wl_capacity = static_cast<wl_size_t>(e / 2 + 1);
 
   rmm::device_uvector<vertex_t> parent(v, stream);
@@ -278,7 +277,6 @@ Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
                           thr_key);
     }
     const wl_size_t wl_size = wl_size_d.value(stream);
-    // wl_size < 0 means the admission counter wrapped (malformed input)
     RAFT_EXPECTS(wl_size >= 0 && wl_size <= wl_capacity,
                  "MST worklist overflow: the input CSR must be symmetric (each "
                  "undirected edge stored in both directions).");
@@ -288,7 +286,6 @@ Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
   boruvka(launch_init(true));
 
   if (filtered) {
-    // clear straggler minima before admitting the remaining edges
     RAFT_CUDA_TRY(cudaMemsetAsync(minv_raw.data(), 0xFF, minv_bytes, stream));
     boruvka(launch_init(false));
   }

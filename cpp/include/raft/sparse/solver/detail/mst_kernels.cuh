@@ -25,7 +25,7 @@
 #else
 #define RAFT_MST_MIN_ARCH 0  // unknown toolchain: take the portable path
 #endif
-// RAFT_MST_FORCE_TWOPASS: testing knob, compiles the portable wide path on
+// RAFT_MST_FORCE_TWOPASS: for testing, compiles the portable wide path on
 // any target. Must be defined consistently across all TUs of a binary (ODR).
 #if defined(RAFT_MST_FORCE_TWOPASS)
 #define RAFT_MST_HAS_CAS128 0
@@ -68,7 +68,6 @@ RAFT_DEVICE_INLINE_FUNCTION mst_ull mst_order_key(int64_t w)
   return static_cast<mst_ull>(w) ^ 0x8000000000000000ull;
 }
 
-// Wide worklist entry: 16-byte-aligned {x, y, z, w} of long long.
 // CUDA 13 deprecates longlong4 in favor of longlong4_16a
 #if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
 using mst_entry64 = longlong4_16a;
@@ -86,7 +85,6 @@ struct mst_traits {
   using wl_size_t              = std::conditional_t<sizeof(edge_t) == 4, int, long long>;
 };
 
-// atomics over possibly-signed types; all values here are non-negative
 template <typename T>
 RAFT_DEVICE_INLINE_FUNCTION T mst_atomic_cas(T* addr, T compare, T val)
 {
@@ -139,7 +137,7 @@ RAFT_DEVICE_INLINE_FUNCTION void mst_word_store(T* addr, T val)
   }
 }
 
-// Find with path halving (without it, equal-weight tie chains go quadratic)
+// Find with path halving (without it, equal-weight tie chains go quadratic, see tests for example)
 template <typename vertex_t>
 RAFT_DEVICE_INLINE_FUNCTION vertex_t mst_uf_find(vertex_t curr, vertex_t* const __restrict__ parent)
 {
@@ -205,7 +203,6 @@ RAFT_KERNEL mst_sample_keys_kernel(
   if (i < n_samples) keys[i] = mst_order_key(weights[mst_sample_hash(i) % e]);
 }
 
-// gather flagged CSR edges into COO; optionally emit both directions
 template <typename vertex_t, typename edge_t, typename weight_t>
 RAFT_KERNEL mst_extract_coo_kernel(const vertex_t v,
                                    const edge_t e,
@@ -221,7 +218,6 @@ RAFT_KERNEL mst_extract_coo_kernel(const vertex_t v,
 {
   const long long j = mst_grid_idx();
   if (j < e && in_mst[j]) {
-    // row of edge j by binary search over the offsets
     vertex_t lo = 0, hi = v;
     while (lo + 1 < hi) {
       const vertex_t mid = lo + (hi - lo) / 2;
@@ -259,7 +255,6 @@ RAFT_KERNEL mst_init_worklist_kernel(
   const long long j = mst_grid_idx();
   if (j < e) {
     const vertex_t n = indices[j];
-    // row of edge j by binary search over the offsets
     vertex_t lo = 0, hi = v;
     while (lo + 1 < hi) {
       const vertex_t mid = lo + (hi - lo) / 2;
@@ -298,7 +293,6 @@ RAFT_KERNEL mst_init_worklist_kernel(
   }
 }
 
-// ---- narrow path (4-byte weight_t + edge_t): packed 64-bit (key, index) ----
 template <typename vertex_t>
 RAFT_KERNEL mst_filter_min_kernel(const int4* const __restrict__ wl1,
                                   const int wl1_size,
@@ -347,7 +341,7 @@ RAFT_KERNEL mst_select_join_kernel(const int4* const __restrict__ wl,
 }
 
 #if RAFT_MST_HAS_CAS128
-// ---- wide path, sm_90+: single-pass packed 128-bit (key, edge index) -------
+// sm_90+: single-pass
 RAFT_DEVICE_INLINE_FUNCTION void mst_atomic_min_u128(mst_u128* const addr, const mst_u128 val)
 {
   mst_u128 old = atomicCAS(addr, val, val);
@@ -408,8 +402,7 @@ RAFT_KERNEL mst_select_join_kernel(const mst_entry64* const __restrict__ wl,
 }
 
 #else
-// ---- wide path, portable: two-pass min (weight key, then edge index) -------
-
+// lower than sm_90 portable two-pass
 template <typename vertex_t, typename wl_size_t>
 RAFT_KERNEL mst_filter_min_kernel(const mst_entry64* const __restrict__ wl1,
                                   const wl_size_t wl1_size,
@@ -440,7 +433,6 @@ RAFT_KERNEL mst_filter_min_kernel(const mst_entry64* const __restrict__ wl1,
   }
 }
 
-// pass 2: min edge index among key-tied edges
 template <typename wl_size_t, typename entry_t = mst_entry64>
 RAFT_KERNEL mst_min_index_kernel(const entry_t* const __restrict__ wl,
                                  const wl_size_t wl_size,

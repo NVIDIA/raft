@@ -28,16 +28,14 @@ struct Graph_COO {
 };
 
 /**
- * @brief MST solver based on ECL-MST, with deterministic lexicographic
- * (weight, edge index) tie-breaking.
+ * @brief MST solver with deterministic tie-breaking.
  *
  * @tparam vertex_t integral type for vertex indexing (32- or 64-bit)
  * @tparam edge_t integral type for edge indexing (32- or 64-bit, at least as
  * wide as vertex_t)
  * @tparam weight_t type of the weights array
  * @tparam alteration_t unused; retained for source compatibility with
- * existing callers (the solver no longer perturbs ("alters") weights to break
- * ties)
+ * existing callers (the solver no longer alters weights to break ties)
  */
 template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
 class MST_solver {
