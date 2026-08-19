@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/linalg/gemm.cuh>
 #include <raft/random/multi_variable_gaussian.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 #include <rmm/resource_ref.hpp>
@@ -154,16 +155,15 @@ class MVGTest : public ::testing::TestWithParam<MVGInputs<T>> {
     RAFT_CUDA_TRY(cudaMemset(Rand_mean.data(), 0, dim * sizeof(T)));
     dim3 block = (64);
     dim3 grid  = (raft::ceildiv(nPoints * dim, (int)block.x));
-    En_KF_accumulate<<<grid, block, 0, stream>>>(nPoints, dim, X_d.data(), Rand_mean.data());
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(
+      handle, grid, block, En_KF_accumulate<T>, nPoints, dim, X_d.data(), Rand_mean.data());
     grid = (raft::ceildiv(dim, (int)block.x));
-    En_KF_normalize<<<grid, block, 0, stream>>>(nPoints, dim, Rand_mean.data());
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(handle, grid, block, En_KF_normalize, nPoints, dim, Rand_mean.data());
 
     // storing the error wrt random point mean in X_d
     grid = (raft::ceildiv(dim * nPoints, (int)block.x));
-    En_KF_dif<<<grid, block, 0, stream>>>(nPoints, dim, X_d.data(), Rand_mean.data(), X_d.data());
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(
+      handle, grid, block, En_KF_dif<T>, nPoints, dim, X_d.data(), Rand_mean.data(), X_d.data());
 
     // finding the cov matrix, placing in Rand_cov
     T alfa = 1.0 / (nPoints - 1), beta = 0.0;
@@ -285,16 +285,15 @@ class MVGMdspanTest : public ::testing::TestWithParam<MVGInputs<T>> {
     RAFT_CUDA_TRY(cudaMemset(Rand_mean.data(), 0, dim * sizeof(T)));
     dim3 block = (64);
     dim3 grid  = (raft::ceildiv(nPoints * dim, (int)block.x));
-    En_KF_accumulate<<<grid, block, 0, stream>>>(nPoints, dim, X_d.data(), Rand_mean.data());
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(
+      handle, grid, block, En_KF_accumulate<T>, nPoints, dim, X_d.data(), Rand_mean.data());
     grid = (raft::ceildiv(dim, (int)block.x));
-    En_KF_normalize<<<grid, block, 0, stream>>>(nPoints, dim, Rand_mean.data());
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(handle, grid, block, En_KF_normalize, nPoints, dim, Rand_mean.data());
 
     // storing the error wrt random point mean in X_d
     grid = (raft::ceildiv(dim * nPoints, (int)block.x));
-    En_KF_dif<<<grid, block, 0, stream>>>(nPoints, dim, X_d.data(), Rand_mean.data(), X_d.data());
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(
+      handle, grid, block, En_KF_dif<T>, nPoints, dim, X_d.data(), Rand_mean.data(), X_d.data());
 
     // finding the cov matrix, placing in Rand_cov
     T alfa = 1.0 / (nPoints - 1), beta = 0.0;

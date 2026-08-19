@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/sparse/detail/utils.h>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 #include <rmm/exec_policy.hpp>
@@ -180,8 +181,20 @@ size_t csr_add_calc_inds(const int* a_ind,
   rmm::device_uvector<int> row_counts(m + 1, stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(row_counts.data(), 0, (m + 1) * sizeof(int), stream));
 
-  csr_add_calc_row_counts_kernel<T, TPB_X><<<grid, blk, 0, stream>>>(
-    a_ind, a_indptr, a_val, nnz1, b_ind, b_indptr, b_val, nnz2, m, row_counts.data());
+  raft::launch_kernel(stream,
+                      grid,
+                      blk,
+                      csr_add_calc_row_counts_kernel<T, TPB_X>,
+                      a_ind,
+                      a_indptr,
+                      a_val,
+                      nnz1,
+                      b_ind,
+                      b_indptr,
+                      b_val,
+                      nnz2,
+                      m,
+                      row_counts.data());
 
   int cnnz = 0;
   raft::update_host(&cnnz, row_counts.data() + m, 1, stream);
@@ -230,9 +243,22 @@ void csr_add_finalize(const int* a_ind,
   dim3 grid(raft::ceildiv(m, TPB_X), 1, 1);
   dim3 blk(TPB_X, 1, 1);
 
-  csr_add_kernel<T, TPB_X><<<grid, blk, 0, stream>>>(
-    a_ind, a_indptr, a_val, nnz1, b_ind, b_indptr, b_val, nnz2, m, c_ind, c_indptr, c_val);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      grid,
+                      blk,
+                      csr_add_kernel<T, TPB_X>,
+                      a_ind,
+                      a_indptr,
+                      a_val,
+                      nnz1,
+                      b_ind,
+                      b_indptr,
+                      b_val,
+                      nnz2,
+                      m,
+                      c_ind,
+                      c_indptr,
+                      c_val);
 }
 
 };  // end NAMESPACE detail

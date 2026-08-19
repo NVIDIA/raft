@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,6 +11,7 @@
 #include <raft/sparse/convert/csr.cuh>
 #include <raft/sparse/coo.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -101,8 +102,8 @@ void init_adj(bool* adj, index_t num_rows, index_t num_cols, index_t divisor, cu
   dim3 block(32, 32);
   const index_t max_y_grid_dim = 65535;
   dim3 grid(num_cols / 32 + 1, (int)min(num_rows / 32 + 1, max_y_grid_dim));
-  init_adj_kernel<index_t><<<grid, block, 0, stream>>>(adj, num_rows, num_cols, divisor);
-  RAFT_CHECK_CUDA(stream);
+  raft::launch_kernel(
+    stream, grid, block, init_adj_kernel<index_t>, adj, num_rows, num_cols, divisor);
 }
 
 template <typename index_t>

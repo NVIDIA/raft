@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,6 +13,7 @@
 #include <raft/linalg/matrix_vector_op.cuh>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -327,13 +328,13 @@ template <typename RedOp, typename math_t, typename out_t, typename idx_t>
 inline void argReduce(const math_t* in, idx_t D, idx_t N, out_t* out, cudaStream_t stream)
 {
   if (D <= 32) {
-    argReduceKernel<RedOp, 32><<<N, 32, 0, stream>>>(in, D, N, out);
+    raft::launch_kernel(stream, N, 32, argReduceKernel<RedOp, 32>, in, D, N, out);
   } else if (D <= 64) {
-    argReduceKernel<RedOp, 64><<<N, 64, 0, stream>>>(in, D, N, out);
+    raft::launch_kernel(stream, N, 64, argReduceKernel<RedOp, 64>, in, D, N, out);
   } else if (D <= 128) {
-    argReduceKernel<RedOp, 128><<<N, 128, 0, stream>>>(in, D, N, out);
+    raft::launch_kernel(stream, N, 128, argReduceKernel<RedOp, 128>, in, D, N, out);
   } else {
-    argReduceKernel<RedOp, 256><<<N, 256, 0, stream>>>(in, D, N, out);
+    raft::launch_kernel(stream, N, 256, argReduceKernel<RedOp, 256>, in, D, N, out);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }
@@ -389,13 +390,13 @@ void signFlip(math_t* inout, int n_rows, int n_cols, cudaStream_t stream)
   int N     = n_cols;
   auto data = inout;
   if (D <= 32) {
-    signFlipKernel<math_t, 32><<<N, 32, 0, stream>>>(data, D, N);
+    raft::launch_kernel(stream, N, 32, signFlipKernel<math_t, 32>, data, D, N);
   } else if (D <= 64) {
-    signFlipKernel<math_t, 64><<<N, 64, 0, stream>>>(data, D, N);
+    raft::launch_kernel(stream, N, 64, signFlipKernel<math_t, 64>, data, D, N);
   } else if (D <= 128) {
-    signFlipKernel<math_t, 128><<<N, 128, 0, stream>>>(data, D, N);
+    raft::launch_kernel(stream, N, 128, signFlipKernel<math_t, 128>, data, D, N);
   } else {
-    signFlipKernel<math_t, 256><<<N, 256, 0, stream>>>(data, D, N);
+    raft::launch_kernel(stream, N, 256, signFlipKernel<math_t, 256>, data, D, N);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }

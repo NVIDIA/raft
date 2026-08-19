@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/stats/histogram.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -41,8 +42,7 @@ void naiveHist(int* bins, int nbins, int* in, int nrows, int ncols, cudaStream_t
   const int TPB = 128;
   int nblksx    = raft::ceildiv(nrows, TPB);
   dim3 blks(nblksx, ncols);
-  naiveHistKernel<<<blks, TPB, 0, stream>>>(bins, nbins, in, nrows);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(stream, blks, TPB, naiveHistKernel, bins, nbins, in, nrows);
 }
 
 struct HistInputs {

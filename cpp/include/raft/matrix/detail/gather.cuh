@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -17,6 +17,7 @@
 #include <raft/util/cuda_dev_essentials.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/integer_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <omp.h>
 
@@ -148,18 +149,51 @@ void gatherImpl(const InputIteratorT in,
   if (len < static_cast<IndexT>(32 * TPB * n_sm)) {
     using Policy    = gather_policy<TPB, 1>;
     IndexT n_blocks = raft::ceildiv(map_length * D, static_cast<IndexT>(Policy::stride));
-    gather_kernel<Policy><<<n_blocks, Policy::n_threads, 0, stream>>>(
-      in, ld, D, len, map, stencil, out, pred_op, transform_op);
+    raft::launch_kernel(stream,
+                        n_blocks,
+                        Policy::n_threads,
+                        gather_kernel<Policy>,
+                        in,
+                        ld,
+                        D,
+                        len,
+                        map,
+                        stencil,
+                        out,
+                        pred_op,
+                        transform_op);
   } else if (len < static_cast<IndexT>(32 * 4 * TPB * n_sm)) {
     using Policy    = gather_policy<TPB, 4>;
     IndexT n_blocks = raft::ceildiv(map_length * D, static_cast<IndexT>(Policy::stride));
-    gather_kernel<Policy><<<n_blocks, Policy::n_threads, 0, stream>>>(
-      in, ld, D, len, map, stencil, out, pred_op, transform_op);
+    raft::launch_kernel(stream,
+                        n_blocks,
+                        Policy::n_threads,
+                        gather_kernel<Policy>,
+                        in,
+                        ld,
+                        D,
+                        len,
+                        map,
+                        stencil,
+                        out,
+                        pred_op,
+                        transform_op);
   } else {
     using Policy    = gather_policy<TPB, 8>;
     IndexT n_blocks = raft::ceildiv(map_length * D, static_cast<IndexT>(Policy::stride));
-    gather_kernel<Policy><<<n_blocks, Policy::n_threads, 0, stream>>>(
-      in, ld, D, len, map, stencil, out, pred_op, transform_op);
+    raft::launch_kernel(stream,
+                        n_blocks,
+                        Policy::n_threads,
+                        gather_kernel<Policy>,
+                        in,
+                        ld,
+                        D,
+                        len,
+                        map,
+                        stencil,
+                        out,
+                        pred_op,
+                        transform_op);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }

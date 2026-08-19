@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2023, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 
 #include <raft/linalg/add.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 namespace raft {
 namespace linalg {
@@ -23,8 +24,7 @@ void naiveAddElem(OutT* out, const InT* in1, const InT* in2, int len, cudaStream
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveAddElemKernel<InT, OutT><<<nblks, TPB, 0, stream>>>(out, in1, in2, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naiveAddElemKernel<InT, OutT>, out, in1, in2, len);
 }
 
 template <typename InT, typename OutT = InT>

@@ -167,6 +167,23 @@ struct cublastlt_matrix_layout {
     return cublastlt_matrix_layout{
       get_cuda_data_type<T>(), col_major ? rows : cols, col_major ? cols : rows, ld};
   }
+
+  template <typename T>
+  static inline auto for_strided_batched_matmul(bool col_major,
+                                                uint64_t rows,
+                                                uint64_t cols,
+                                                uint64_t ld,
+                                                int32_t batch_count,
+                                                int64_t batch_stride) -> cublastlt_matrix_layout
+  {
+    RAFT_EXPECTS(batch_count > 0, "cuBLASLt batch count must be positive");
+    auto layout = for_matmul<T>(col_major, rows, cols, ld);
+    RAFT_CUBLAS_TRY(cublasLtMatrixLayoutSetAttribute(
+      layout, CUBLASLT_MATRIX_LAYOUT_BATCH_COUNT, &batch_count, sizeof(batch_count)));
+    RAFT_CUBLAS_TRY(cublasLtMatrixLayoutSetAttribute(
+      layout, CUBLASLT_MATRIX_LAYOUT_STRIDED_BATCH_OFFSET, &batch_stride, sizeof(batch_stride)));
+    return layout;
+  }
 };
 
 /** Descriptor for a cublasLt matmul function. */
@@ -197,9 +214,12 @@ struct cublastlt_matmul_desc {
   inline operator cublasLtMatmulDesc_t() const noexcept { return res; }
 
   template <typename S, typename A, typename B, typename C, bool DevicePointerMode = false>
-  static inline auto for_matmul(bool transpose_a, bool transpose_b) -> cublastlt_matmul_desc
+  static inline auto for_matmul(bool transpose_a,
+                                bool transpose_b,
+                                cublasComputeType_t compute_type = get_matmul_type<S, A, B, C>())
+    -> cublastlt_matmul_desc
   {
-    auto desc = cublastlt_matmul_desc{get_matmul_type<S, A, B, C>(), get_cuda_data_type<S>()};
+    auto desc = cublastlt_matmul_desc{compute_type, get_cuda_data_type<S>()};
     if constexpr (DevicePointerMode) {
       const cublasPointerMode_t mode = CUBLAS_POINTER_MODE_DEVICE;
       RAFT_CUBLAS_TRY(cublasLtMatmulDescSetAttribute(
@@ -347,6 +367,70 @@ struct coef_wrapper<true, S> {
     if (store != nullptr) { RAFT_CUDA_TRY_NO_THROW(cudaFreeAsync(store, stream)); }
   }
 };
+
+/**
+ * Run a strided-batched cublasLt matmul without an algorithm or workspace preference.
+ *
+ * The matrix dimensions and leading dimensions follow the same column-major convention as
+ * `matmul`. Batch strides are measured in elements.
+ */
+template <bool DevicePointerMode = false, typename S, typename A, typename B, typename C>
+void matmul_strided_batched(raft::resources const& res,
+                            bool trans_a,
+                            bool trans_b,
+                            uint64_t m,
+                            uint64_t n,
+                            uint64_t k,
+                            const S* alpha,
+                            const A* a_ptr,
+                            uint64_t lda,
+                            int64_t stride_a,
+                            const B* b_ptr,
+                            uint64_t ldb,
+                            int64_t stride_b,
+                            const S* beta,
+                            C* c_ptr,
+                            uint64_t ldc,
+                            int64_t stride_c,
+                            int32_t batch_count,
+                            cublasComputeType_t compute_type)
+{
+  common::nvtx::range<common::nvtx::domain::raft> batch_scope(
+    "linalg::detail::matmul_strided_batched(m = %d, n = %d, k = %d, batch_count = %d)",
+    m,
+    n,
+    k,
+    batch_count);
+
+  auto operation = cublastlt_matmul_desc::for_matmul<S, A, B, C, DevicePointerMode>(
+    trans_a, trans_b, compute_type);
+
+  auto a_layout = cublastlt_matrix_layout::for_strided_batched_matmul<A>(
+    !trans_a, m, k, lda, batch_count, stride_a);
+  auto b_layout = cublastlt_matrix_layout::for_strided_batched_matmul<B>(
+    !trans_b, k, n, ldb, batch_count, stride_b);
+  auto c_layout =
+    cublastlt_matrix_layout::for_strided_batched_matmul<C>(true, m, n, ldc, batch_count, stride_c);
+
+  auto stream = resource::get_cuda_stream(res);
+  coef_wrapper<DevicePointerMode, S> coefficients(alpha, beta, stream);
+  RAFT_CUBLAS_TRY(cublasLtMatmul(resource::get_cublaslt_handle(res),
+                                 operation,
+                                 coefficients.alpha,
+                                 a_ptr,
+                                 a_layout,
+                                 b_ptr,
+                                 b_layout,
+                                 coefficients.beta,
+                                 c_ptr,
+                                 c_layout,
+                                 c_ptr,
+                                 c_layout,
+                                 nullptr,
+                                 nullptr,
+                                 0,
+                                 stream));
+}
 
 /**
  * Compatibility version of the cublasLt matmul wrapper: It takes the cudaStream_t argument

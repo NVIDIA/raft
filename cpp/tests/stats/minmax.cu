@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/stats/minmax.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 #include <stdio.h>
@@ -67,11 +68,11 @@ void naiveMinMax(
   const int TPB = 128;
   int nblks     = raft::ceildiv(ncols, TPB);
   T init_val    = std::numeric_limits<T>::max();
-  naiveMinMaxInitKernel<<<nblks, TPB, 0, stream>>>(ncols, globalmin, globalmax, init_val);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveMinMaxInitKernel, ncols, globalmin, globalmax, init_val);
   nblks = raft::ceildiv(nrows * ncols, TPB);
-  naiveMinMaxKernel<<<nblks, TPB, 0, stream>>>(data, nrows, ncols, globalmin, globalmax);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveMinMaxKernel, data, nrows, ncols, globalmin, globalmax);
 }
 
 template <typename T>
@@ -107,9 +108,14 @@ class MinMaxTest : public ::testing::TestWithParam<MinMaxInputs<T>> {
     T nan_prob = 0.01;
     bernoulli(handle, r, mask.data(), len, nan_prob);
     const int TPB = 256;
-    nanKernel<<<raft::ceildiv(len, TPB), TPB, 0, stream>>>(
-      data.data(), mask.data(), len, std::numeric_limits<T>::quiet_NaN());
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(handle,
+                        raft::ceildiv(len, TPB),
+                        TPB,
+                        nanKernel<T>,
+                        data.data(),
+                        mask.data(),
+                        len,
+                        std::numeric_limits<T>::quiet_NaN());
     naiveMinMax(data.data(),
                 params.rows,
                 params.cols,

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/stats/stats_types.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/seive.hpp>
 #include <raft/util/vectorized.cuh>
 
@@ -94,8 +95,15 @@ void gmemHist(int* bins,
 {
   auto blks = computeGridDim<IdxT, VecLen>(
     nrows, ncols, (const void*)gmemHistKernel<DataT, BinnerOp, IdxT, VecLen>);
-  gmemHistKernel<DataT, BinnerOp, IdxT, VecLen>
-    <<<blks, ThreadsPerBlock, 0, stream>>>(bins, data, nrows, nbins, binner);
+  raft::launch_kernel(stream,
+                      blks,
+                      ThreadsPerBlock,
+                      gmemHistKernel<DataT, BinnerOp, IdxT, VecLen>,
+                      bins,
+                      data,
+                      nrows,
+                      nbins,
+                      binner);
 }
 
 template <typename DataT, typename BinnerOp, typename IdxT, int VecLen, bool UseMatchAny>
@@ -145,8 +153,15 @@ void smemHist(int* bins,
   auto blks = computeGridDim<IdxT, VecLen>(
     nrows, ncols, (const void*)smemHistKernel<DataT, BinnerOp, IdxT, VecLen, UseMatchAny>);
   size_t smemSize = nbins * sizeof(unsigned);
-  smemHistKernel<DataT, BinnerOp, IdxT, VecLen, UseMatchAny>
-    <<<blks, ThreadsPerBlock, smemSize, stream>>>(bins, data, nrows, nbins, binner);
+  raft::launch_kernel({stream, smemSize},
+                      blks,
+                      ThreadsPerBlock,
+                      smemHistKernel<DataT, BinnerOp, IdxT, VecLen, UseMatchAny>,
+                      bins,
+                      data,
+                      nrows,
+                      nbins,
+                      binner);
 }
 
 template <unsigned _BIN_BITS>
@@ -231,8 +246,15 @@ void smemBitsHist(int* bins,
   auto blks = computeGridDim<IdxT, VecLen>(
     nrows, ncols, (const void*)smemBitsHistKernel<DataT, BinnerOp, IdxT, Bits::BIN_BITS, VecLen>);
   size_t smemSize = raft::ceildiv<size_t>(nbins, Bits::WORD_BITS / Bits::BIN_BITS) * sizeof(int);
-  smemBitsHistKernel<DataT, BinnerOp, IdxT, Bits::BIN_BITS, VecLen>
-    <<<blks, ThreadsPerBlock, smemSize, stream>>>(bins, data, nrows, nbins, binner);
+  raft::launch_kernel({stream, smemSize},
+                      blks,
+                      ThreadsPerBlock,
+                      smemBitsHistKernel<DataT, BinnerOp, IdxT, Bits::BIN_BITS, VecLen>,
+                      bins,
+                      data,
+                      nrows,
+                      nbins,
+                      binner);
 }
 
 #define INVALID_KEY -1
@@ -349,8 +371,17 @@ void smemHashHist(int* bins,
     nrows, ncols, (const void*)smemHashHistKernel<DataT, BinnerOp, IdxT, 1>);
   int hashSize    = computeHashTableSize();
   size_t smemSize = hashSize * sizeof(int2) + sizeof(int);
-  smemHashHistKernel<DataT, BinnerOp, IdxT, 1><<<blks, ThreadsPerBlock, smemSize, stream>>>(
-    bins, data, nrows, nbins, binner, hashSize, flushThreshold);
+  raft::launch_kernel({stream, smemSize},
+                      blks,
+                      ThreadsPerBlock,
+                      smemHashHistKernel<DataT, BinnerOp, IdxT, 1>,
+                      bins,
+                      data,
+                      nrows,
+                      nbins,
+                      binner,
+                      hashSize,
+                      flushThreshold);
 }
 
 template <typename DataT, typename BinnerOp, typename IdxT, int VecLen>

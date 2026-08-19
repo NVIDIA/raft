@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,6 +14,7 @@
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cub/block/block_reduce.cuh>
 #include <cuda/atomic>
@@ -99,8 +100,17 @@ void neighborhood_recall(
   auto constexpr kThreadsPerBlock = 32;
   auto const num_blocks           = indices.extent(0);
 
-  neighborhood_recall<<<num_blocks, kThreadsPerBlock, 0, raft::resource::get_cuda_stream(res)>>>(
-    indices, ref_indices, distances, ref_distances, recall_score, eps);
+  raft::launch_kernel(
+    res,
+    num_blocks,
+    kThreadsPerBlock,
+    neighborhood_recall<IndicesValueType, DistanceValueType, IndexType, ScalarType>,
+    indices,
+    ref_indices,
+    distances,
+    ref_distances,
+    recall_score,
+    eps);
 }
 
 }  // namespace stats::detail

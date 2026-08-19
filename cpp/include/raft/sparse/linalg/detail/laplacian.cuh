@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -11,6 +11,7 @@
 #include <raft/core/resources.hpp>
 #include <raft/sparse/matrix/diagonal.cuh>
 #include <raft/sparse/op/sort.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda/iterator>
 #include <thrust/reduce.h>
@@ -104,15 +105,19 @@ auto compute_graph_laplacian(
   auto result_structure                         = result.structure_view();
   auto static constexpr const threads_per_block = 256;
   auto blocks = std::min(int((dim + threads_per_block - 1) / threads_per_block), 65535);
-  auto stream = resource::get_cuda_stream(res);
-  detail::compute_graph_laplacian_kernel<<<blocks, threads_per_block, 0, stream>>>(
-    result.get_elements().data(),
-    result_structure.get_indices().data(),
-    result_structure.get_indptr().data(),
-    dim,
-    input.get_elements().data(),
-    input_structure.get_indices().data(),
-    input_structure.get_indptr().data());
+  raft::launch_kernel(res,
+                      blocks,
+                      threads_per_block,
+                      detail::compute_graph_laplacian_kernel<std::remove_const_t<ElementType>,
+                                                             std::remove_const_t<IndptrType>,
+                                                             std::remove_const_t<IndicesType>>,
+                      result.get_elements().data(),
+                      result_structure.get_indices().data(),
+                      result_structure.get_indptr().data(),
+                      dim,
+                      input.get_elements().data(),
+                      input_structure.get_indices().data(),
+                      input_structure.get_indptr().data());
   return result;
 }
 

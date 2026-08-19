@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/util/cache_util.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/exec_policy.hpp>
 
@@ -40,9 +41,15 @@ void copyRows(const m_t* in,
 {
   if (rowMajor) {
     const idx_t TPB = 256;
-    cache::get_vecs<<<raft::ceildiv(n_rows_indices * n_cols, TPB), TPB, 0, stream>>>(
-      in, n_cols, indices, n_rows_indices, out);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(stream,
+                        raft::ceildiv(n_rows_indices * n_cols, TPB),
+                        TPB,
+                        cache::get_vecs,
+                        in,
+                        n_cols,
+                        indices,
+                        n_rows_indices,
+                        out);
     return;
   }
 
@@ -187,9 +194,9 @@ void sliceMatrix(const m_t* in,
   dim3 block(64);
   dim3 grid(((x2 - x1) * (y2 - y1) + block.x - 1) / block.x);
   if (row_major)
-    slice<<<grid, block, 0, stream>>>(in, lda, out, y1, x1, y2, x2);
+    raft::launch_kernel(stream, grid, block, slice, in, lda, out, y1, x1, y2, x2);
   else
-    slice<<<grid, block, 0, stream>>>(in, lda, out, x1, y1, x2, y2);
+    raft::launch_kernel(stream, grid, block, slice, in, lda, out, x1, y1, x2, y2);
 }
 
 /**
@@ -218,7 +225,7 @@ void copyUpperTriangular(const m_t* src, m_t* dst, idx_t n_rows, idx_t n_cols, c
   idx_t k = std::min(m, n);
   dim3 block(64);
   dim3 grid((m * n + block.x - 1) / block.x);
-  getUpperTriangular<<<grid, block, 0, stream>>>(src, dst, m, n, k);
+  raft::launch_kernel(stream, grid, block, getUpperTriangular, src, dst, m, n, k);
 }
 
 /**
@@ -259,7 +266,7 @@ void initializeDiagonalMatrix(
   idx_t lda = row_major ? n_cols : n_rows;
   dim3 block(64);
   dim3 grid((k + block.x - 1) / block.x);
-  copyVectorToMatrixDiagonal<<<grid, block, 0, stream>>>(vec, matrix, lda, k);
+  raft::launch_kernel(stream, grid, block, copyVectorToMatrixDiagonal, vec, matrix, lda, k);
 }
 
 template <typename m_t, typename idx_t = int>
@@ -270,7 +277,7 @@ void getDiagonalMatrix(
   idx_t lda = row_major ? n_cols : n_rows;
   dim3 block(64);
   dim3 grid((k + block.x - 1) / block.x);
-  copyVectorFromMatrixDiagonal<<<grid, block, 0, stream>>>(vec, matrix, lda, k);
+  raft::launch_kernel(stream, grid, block, copyVectorFromMatrixDiagonal, vec, matrix, lda, k);
 }
 
 /**
@@ -291,7 +298,7 @@ void getDiagonalInverseMatrix(m_t* in, idx_t len, cudaStream_t stream)
 {
   dim3 block(64);
   dim3 grid((len + block.x - 1) / block.x);
-  matrixDiagonalInverse<m_t><<<grid, block, 0, stream>>>(in, len);
+  raft::launch_kernel(stream, grid, block, matrixDiagonalInverse<m_t>, in, len);
 }
 
 template <typename m_t, typename idx_t = int>

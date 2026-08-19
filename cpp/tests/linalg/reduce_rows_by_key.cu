@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/reduce_rows_by_key.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -55,8 +56,19 @@ void naiveReduceRowsByKey(const Type* d_A,
 {
   cudaMemset(d_sums, 0, sizeof(Type) * nkeys * ncols);
 
-  naiveReduceRowsByKeyKernel<<<dim3((ncols + 31) / 32, nkeys), dim3(32, 1), 0, stream>>>(
-    d_A, lda, d_keys, d_weight, d_char_keys, nrows, ncols, nkeys, d_sums);
+  raft::launch_kernel(stream,
+                      dim3((ncols + 31) / 32, nkeys),
+                      dim3(32, 1),
+                      naiveReduceRowsByKeyKernel,
+                      d_A,
+                      lda,
+                      d_keys,
+                      d_weight,
+                      d_char_keys,
+                      nrows,
+                      ncols,
+                      nkeys,
+                      d_sums);
 }
 
 template <typename T>

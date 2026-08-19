@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cub/block/block_load.cuh>
 #include <cub/block/block_radix_sort.cuh>
@@ -18,9 +19,17 @@
 #include <limits>
 #include <map>
 
-#define INST_BLOCK_SORT(keyIn, keyOut, valueInOut, rows, columns, blockSize, elemPT, stream)     \
-  devKeyValSortColumnPerRow<InType, OutType, blockSize, elemPT><<<rows, blockSize, 0, stream>>>( \
-    keyIn, keyOut, valueInOut, rows, columns, std::numeric_limits<InType>::max())
+#define INST_BLOCK_SORT(keyIn, keyOut, valueInOut, rows, columns, blockSize, elemPT, stream) \
+  raft::launch_kernel(stream,                                                                \
+                      rows,                                                                  \
+                      blockSize,                                                             \
+                      devKeyValSortColumnPerRow<InType, OutType, blockSize, elemPT>,         \
+                      keyIn,                                                                 \
+                      keyOut,                                                                \
+                      valueInOut,                                                            \
+                      rows,                                                                  \
+                      columns,                                                               \
+                      std::numeric_limits<InType>::max())
 
 namespace raft {
 namespace matrix {
@@ -136,7 +145,7 @@ cudaError_t layoutIdx(OutType* in, int n_rows, int n_columns, cudaStream_t strea
   int totalElements = n_rows * n_columns;
   dim3 block(256);
   dim3 grid((totalElements + block.x - 1) / block.x);
-  devLayoutIdx<OutType><<<grid, block, 0, stream>>>(in, n_columns, totalElements);
+  raft::launch_kernel(stream, grid, block, devLayoutIdx<OutType>, in, n_columns, totalElements);
   return cudaGetLastError();
 }
 
@@ -146,7 +155,7 @@ cudaError_t layoutSortOffset(T* in, T value, int n_times, cudaStream_t stream)
 {
   dim3 block(128);
   dim3 grid((n_times + block.x - 1) / block.x);
-  devOffsetKernel<T><<<grid, block, 0, stream>>>(in, value, n_times);
+  raft::launch_kernel(stream, grid, block, devOffsetKernel<T>, in, value, n_times);
   return cudaGetLastError();
 }
 

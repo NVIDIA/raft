@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,6 +11,7 @@
 #include <raft/sparse/detail/utils.h>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda_runtime.h>
 #include <thrust/device_ptr.h>
@@ -58,9 +59,8 @@ void csr_to_coo(
   dim3 grid(raft::ceildiv(m, (value_idx)TPB_X), 1, 1);
   dim3 blk(TPB_X, 1, 1);
 
-  csr_to_coo_kernel<value_idx, TPB_X><<<grid, blk, 0, stream>>>(row_ind, m, coo_rows, nnz);
-
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(
+    stream, grid, blk, csr_to_coo_kernel<value_idx, TPB_X>, row_ind, m, coo_rows, nnz);
 }
 
 };  // end NAMESPACE detail

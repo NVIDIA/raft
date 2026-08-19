@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/gemv.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -98,8 +99,17 @@ class GemvTest : public ::testing::TestWithParam<GemvInputs<T>> {
     dim3 blocks(raft::ceildiv<int>(yElems, 256), 1, 1);
     dim3 threads(256, 1, 1);
 
-    naiveGemv<<<blocks, threads, 0, stream>>>(
-      refy.data(), A.data(), x.data(), params.n_rows, params.n_cols, params.lda, params.trans_a);
+    raft::launch_kernel(handle,
+                        blocks,
+                        threads,
+                        naiveGemv<T>,
+                        refy.data(),
+                        A.data(),
+                        x.data(),
+                        params.n_rows,
+                        params.n_cols,
+                        params.lda,
+                        params.trans_a);
 
     auto A_row_major =
       raft::make_device_matrix_view<const T>(A.data(), params.n_rows, params.n_cols);

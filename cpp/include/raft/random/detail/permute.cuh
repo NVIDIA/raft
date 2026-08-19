@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/vectorized.cuh>
 
 #include <cooperative_groups.h>
@@ -84,9 +85,17 @@ struct permute_impl_t {
     // check if we can execute at this vector length
     if (D % VLen == 0 && raft::is_aligned(vout, sizeof(VType)) &&
         raft::is_aligned(vin, sizeof(VType))) {
-      permuteKernel<VType, IntType, IdxType, TPB, rowMajor>
-        <<<nblks, TPB, 0, stream>>>(perms, vout, vin, a, b, N, D / VLen);
-      RAFT_CUDA_TRY(cudaPeekAtLastError());
+      raft::launch_kernel(stream,
+                          nblks,
+                          TPB,
+                          permuteKernel<VType, IntType, IdxType, TPB, rowMajor>,
+                          perms,
+                          vout,
+                          vin,
+                          a,
+                          b,
+                          N,
+                          D / VLen);
     } else {  // otherwise try the next lower vector length
       permute_impl_t<Type, IntType, IdxType, TPB, rowMajor, VLen / 2>::permuteImpl(
         perms, out, in, N, D, nblks, a, b, stream);
@@ -107,9 +116,17 @@ struct permute_impl_t<Type, IntType, IdxType, TPB, rowMajor, 1> {
                           IdxType b,
                           cudaStream_t stream)
   {
-    permuteKernel<Type, IntType, IdxType, TPB, rowMajor>
-      <<<nblks, TPB, 0, stream>>>(perms, out, in, a, b, N, D);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(stream,
+                        nblks,
+                        TPB,
+                        permuteKernel<Type, IntType, IdxType, TPB, rowMajor>,
+                        perms,
+                        out,
+                        in,
+                        a,
+                        b,
+                        N,
+                        D);
   }
 };
 

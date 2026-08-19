@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/subtract.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -27,8 +28,7 @@ void naiveSubtractElem(Type* out, const Type* in1, const Type* in2, int len, cud
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveSubtractElemKernel<Type><<<nblks, TPB, 0, stream>>>(out, in1, in2, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naiveSubtractElemKernel<Type>, out, in1, in2, len);
 }
 
 template <typename Type>
@@ -43,8 +43,7 @@ void naiveSubtractScalar(Type* out, const Type* in1, const Type in2, int len, cu
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveSubtractScalarKernel<Type><<<nblks, TPB, 0, stream>>>(out, in1, in2, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naiveSubtractScalarKernel<Type>, out, in1, in2, len);
 }
 
 template <typename T>
