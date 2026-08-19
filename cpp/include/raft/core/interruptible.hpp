@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -18,6 +18,7 @@
 #include <memory>
 #include <mutex>
 #include <optional>
+#include <source_location>
 #include <thread>
 #include <unordered_map>
 
@@ -68,14 +69,17 @@ class interruptible {
    * called on this CPU thread.
    *
    * @param [in] stream a CUDA stream.
+   * @param [in] location the call site to blame for the errors; leave at its default unless
+   * synchronizing on behalf of a caller, in which case forward the caller's location.
    *
    * @throw raft::interrupted_exception if interruptible::cancel() was called on the current CPU
    * thread before the currently captured work has been finished.
    * @throw raft::cuda_error if another CUDA error happens.
    */
-  static inline void synchronize(rmm::cuda_stream_view stream)
+  static inline void synchronize(rmm::cuda_stream_view stream,
+                                 std::source_location location = std::source_location::current())
   {
-    get_token()->synchronize_impl(cudaStreamQuery, stream);
+    get_token()->synchronize_impl(cudaStreamQuery, stream, "cudaStreamQuery", location);
   }
 
   /**
@@ -83,14 +87,17 @@ class interruptible {
    * called on this CPU thread.
    *
    * @param [in] event a CUDA event.
+   * @param [in] location the call site to blame for the errors; leave at its default unless
+   * synchronizing on behalf of a caller, in which case forward the caller's location.
    *
    * @throw raft::interrupted_exception if interruptible::cancel() was called on the current CPU
    * thread before the currently captured work has been finished.
    * @throw raft::cuda_error if another CUDA error happens.
    */
-  static inline void synchronize(cudaEvent_t event)
+  static inline void synchronize(cudaEvent_t event,
+                                 std::source_location location = std::source_location::current())
   {
-    get_token()->synchronize_impl(cudaEventQuery, event);
+    get_token()->synchronize_impl(cudaEventQuery, event, "cudaEventQuery", location);
   }
 
   /**
@@ -104,10 +111,16 @@ class interruptible {
    *
    * Both `yield` and `yield_no_throw` reset the state to non-cancelled after execution.
    *
+   * @param [in] location the call site to blame for the interruption; leave at its default unless
+   * yielding on behalf of a caller, in which case forward the caller's location.
+   *
    * @throw raft::interrupted_exception if interruptible::cancel() was called on the current CPU
    * thread.
    */
-  static inline void yield() { get_token()->yield_impl(); }
+  static inline void yield(std::source_location location = std::source_location::current())
+  {
+    get_token()->yield_impl(location);
+  }
 
   /**
    * @brief Check the thread state, whether the thread can continue execution or is interrupted by
@@ -269,10 +282,11 @@ class interruptible {
 
   interruptible() noexcept { yield_no_throw_impl(); }
 
-  void yield_impl()
+  void yield_impl(std::source_location location)
   {
     if (!yield_no_throw_impl()) {
-      throw interrupted_exception("The work in this thread was cancelled.");
+      throw interrupted_exception(raft::format_error_message(
+        location, "RAFT failure at ", "The work in this thread was cancelled."));
     }
   }
 
@@ -281,17 +295,26 @@ class interruptible {
     return continue_.test_and_set(std::memory_order_relaxed);
   }
 
+  /**
+   * @param [in] query the CUDA API function polling the state of @p object
+   * @param [in] object the stream or the event to wait for
+   * @param [in] call the name of @p query, as it should appear in an error message
+   * @param [in] location the call site to blame for the errors
+   */
   template <typename Query, typename Object>
-  inline void synchronize_impl(Query query, Object object)
+  inline void synchronize_impl(Query query,
+                               Object object,
+                               char const* call,
+                               std::source_location location)
   {
     cudaError_t query_result;
     while (true) {
-      yield_impl();
+      yield_impl(location);
       query_result = query(object);
       if (query_result != cudaErrorNotReady) { break; }
       std::this_thread::yield();
     }
-    RAFT_CUDA_TRY(query_result);
+    raft::check_cuda_error(query_result, call, location);
   }
 };
 

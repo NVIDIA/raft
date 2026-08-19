@@ -14,6 +14,8 @@
 
 #include <cuda_runtime.h>
 
+#include <source_location>
+
 namespace RAFT_EXPORT raft {
 namespace resource {
 class cuda_stream_resource : public resource {
@@ -81,16 +83,28 @@ inline void set_cuda_stream(resources& res, rmm::cuda_stream_view stream_view)
  *
  * @param[in] res the raft resources object
  * @param[in] stream stream to synchronize
+ * @param[in] location the call site to blame for the errors; leave at its default unless
+ * synchronizing on behalf of a caller, in which case forward the caller's location.
  */
-inline void sync_stream(const resources& res, rmm::cuda_stream_view stream)
+inline void sync_stream(const resources& res,
+                        rmm::cuda_stream_view stream,
+                        std::source_location location = std::source_location::current())
 {
-  interruptible::synchronize(stream);
+  interruptible::synchronize(stream, location);
 }
 
 /**
  * @brief synchronize main stream on the resources instance
+ *
+ * @param[in] res the raft resources object
+ * @param[in] location the call site to blame for the errors; leave at its default unless
+ * synchronizing on behalf of a caller, in which case forward the caller's location.
  */
-inline void sync_stream(const resources& res) { sync_stream(res, get_cuda_stream(res)); }
+inline void sync_stream(const resources& res,
+                        std::source_location location = std::source_location::current())
+{
+  sync_stream(res, get_cuda_stream(res), location);
+}
 
 /**
  * @}
