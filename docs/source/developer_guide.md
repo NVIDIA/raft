@@ -227,6 +227,8 @@ Keep in mind that this only applies to files tracked by git that have been modif
 ## Error handling
 Call CUDA APIs via the provided helper macros `RAFT_CUDA_TRY`, `RAFT_CUBLAS_TRY` and `RAFT_CUSOLVER_TRY`. These macros take care of checking the return values of the used API calls and generate an exception when the command is not successful. If you need to avoid an exception, e.g. inside a destructor, use `RAFT_CUDA_TRY_NO_THROW`, `RAFT_CUBLAS_TRY_NO_THROW ` and `RAFT_CUSOLVER_TRY_NO_THROW`. These macros log the error but do not throw an exception.
 
+A function that reports an error on behalf of its caller cannot use these macros, because they would blame its own line rather than the caller's. Such a function should take a `std::source_location` parameter defaulted to `std::source_location::current()` and forward it to `raft::format_error_message` (or to `raft::check_cuda_error`, the function form of `RAFT_CUDA_TRY`), so that the reported location is the caller's; `raft::resource::sync_stream` is an example. The `SET_ERROR_MSG` macro is deprecated in favour of `raft::format_error_message`.
+
 ## Logging
 
 ### Introduction
