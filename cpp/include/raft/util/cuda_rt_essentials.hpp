@@ -64,10 +64,7 @@ inline void check_cuda_error(cudaError_t status,
  * exception detailing the CUDA error that occurred
  *
  */
-#define RAFT_CUDA_TRY(call)                \
-  do {                                     \
-    raft::check_cuda_error((call), #call); \
-  } while (0)
+ #define RAFT_CUDA_TRY(call) raft::check_cuda_error(call, #call)
 
 /**
  * @brief Debug macro to check for CUDA errors
