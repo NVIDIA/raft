@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __DENSE_H
@@ -8,6 +8,8 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdspan.hpp>
+#include <raft/core/resources.hpp>
 #include <raft/sparse/convert/detail/dense.cuh>
 
 namespace raft {
@@ -15,39 +17,28 @@ namespace sparse {
 namespace convert {
 
 /**
- * Convert CSR arrays to a dense matrix in either row-
- * or column-major format. A custom kernel is used when
- * row-major output is desired since cusparse does not
- * output row-major.
- * @tparam value_idx : data type of the CSR index arrays
- * @tparam value_t : data type of the CSR value array
- * @param[in] handle : cusparse handle for conversion
- * @param[in] nrows : number of rows in CSR
- * @param[in] ncols : number of columns in CSR
- * @param[in] nnz : number of nonzeros in CSR
- * @param[in] csr_indptr : CSR row index pointer array
- * @param[in] csr_indices : CSR column indices array
- * @param[in] csr_data : CSR data array
- * @param[in] lda : Leading dimension (used for col-major only)
- * @param[out] out : Dense output array of size nrows * ncols
- * @param[in] stream : Cuda stream for ordering events
- * @param[in] row_major : Is row-major output desired?
+ * Convert a sparse matrix view to a dense matrix view.
+ *
+ * Supports both COO and CSR sparse matrix views and row- or column-major dense output.
+ *
+ * @param[in] handle RAFT resources
+ * @param[in] sparse Sparse COO or CSR matrix view
+ * @param[out] dense Dense matrix view
  */
-template <typename value_idx, typename value_t>
-void csr_to_dense(cusparseHandle_t handle,
-                  value_idx nrows,
-                  value_idx ncols,
-                  value_idx nnz,
-                  const value_idx* csr_indptr,
-                  const value_idx* csr_indices,
-                  const value_t* csr_data,
-                  value_idx lda,
-                  value_t* out,
-                  cudaStream_t stream,
-                  bool row_major = true)
+template <typename SparseMatrixViewType,
+          typename ValueType,
+          typename IndexType,
+          typename LayoutPolicy>
+void sparse_to_dense(raft::resources const& handle,
+                     SparseMatrixViewType sparse,
+                     raft::device_matrix_view<ValueType, IndexType, LayoutPolicy> dense)
 {
-  detail::csr_to_dense<value_idx, value_t>(
-    handle, nrows, ncols, nnz, csr_indptr, csr_indices, csr_data, lda, out, stream, row_major);
+  auto structure = sparse.structure_view();
+  RAFT_EXPECTS(dense.extent(0) == static_cast<IndexType>(structure.get_n_rows()) &&
+                 dense.extent(1) == static_cast<IndexType>(structure.get_n_cols()),
+               "Sparse and dense matrix dimensions must match");
+
+  detail::sparse_to_dense(handle, sparse, dense);
 }
 
 };  // end NAMESPACE convert
