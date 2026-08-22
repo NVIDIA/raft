@@ -18,6 +18,8 @@
 #include <raft/core/mdspan_types.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/cusparse_handle.hpp>
+#include <raft/core/resource/thrust_policy.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/core/types.hpp>
 #include <raft/linalg/add.cuh>
@@ -44,6 +46,7 @@
 #include <raft/matrix/slice.cuh>
 #include <raft/matrix/triangular.cuh>
 #include <raft/random/rng.cuh>
+#include <raft/sparse/convert/dense.cuh>
 #include <raft/sparse/detail/cusparse_wrappers.h>
 #include <raft/sparse/linalg/detail/cusparse_utils.hpp>
 #include <raft/sparse/solver/lanczos_types.hpp>
@@ -129,9 +132,7 @@ RAFT_KERNEL kernel_clamp_down_vector(T* vec, T threshold, int size)
 template <typename IndexTypeT, typename ValueTypeT>
 void lanczos_solve_ritz(
   raft::resources const& handle,
-  raft::device_matrix_view<ValueTypeT, uint32_t, raft::row_major> alpha,
-  raft::device_matrix_view<ValueTypeT, uint32_t, raft::row_major> beta,
-  std::optional<raft::device_vector_view<ValueTypeT, uint32_t>> beta_k,
+  raft::device_matrix_view<const ValueTypeT, uint32_t, raft::col_major> matrix,
   IndexTypeT k,
   LANCZOS_WHICH which,
   int ncv,
@@ -145,46 +146,7 @@ void lanczos_solve_ritz(
 {
   auto stream = resource::get_cuda_stream(handle);
 
-  ValueTypeT zero = 0;
-  auto triangular_matrix =
-    raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, ncv, ncv);
-  raft::matrix::fill(handle, triangular_matrix.view(), zero);
-
-  raft::device_vector_view<const ValueTypeT, uint32_t> alphaVec =
-    raft::make_device_vector_view<const ValueTypeT, uint32_t>(alpha.data_handle(), ncv);
-  raft::matrix::set_diagonal(handle, alphaVec, triangular_matrix.view());
-
-  // raft::matrix::initializeDiagonalMatrix(
-  //   alpha.data_handle(), triangular_matrix.data_handle(), ncv, ncv, stream);
-
-  int blockSize = 256;
-  int numBlocks = raft::div_rounding_up_safe(ncv, blockSize);
-  raft::launch_kernel(handle,
-                      numBlocks,
-                      blockSize,
-                      kernel_triangular_populate<ValueTypeT>,
-                      triangular_matrix.data_handle(),
-                      beta.data_handle(),
-                      ncv);
-
-  if (beta_k) {
-    int threadsPerBlock = 256;
-    int blocksPerGrid   = raft::div_rounding_up_safe<int>(k, threadsPerBlock);
-    raft::launch_kernel(handle,
-                        blocksPerGrid,
-                        threadsPerBlock,
-                        kernel_triangular_beta_k<ValueTypeT>,
-                        triangular_matrix.data_handle(),
-                        beta_k.value().data_handle(),
-                        k,
-                        ncv);
-  }
-
-  auto triangular_matrix_view =
-    raft::make_device_matrix_view<const ValueTypeT, uint32_t, raft::col_major>(
-      triangular_matrix.data_handle(), ncv, ncv);
-
-  raft::linalg::eig_dc(handle, triangular_matrix_view, eigenvectors, eigenvalues);
+  raft::linalg::eig_dc(handle, matrix, eigenvectors, eigenvalues);
 
   IndexTypeT nEigVecs = k;
 
@@ -254,6 +216,76 @@ void lanczos_solve_ritz(
     eigenvectors_k_slice = raft::make_device_matrix_view<ValueTypeT, IndexTypeT, raft::col_major>(
       sm_eigenvectors.data_handle(), ncv, nEigVecs);
   }
+}
+
+template <typename IndexTypeT, typename ValueTypeT>
+void lanczos_solve_ritz(
+  raft::resources const& handle,
+  raft::device_matrix_view<ValueTypeT, uint32_t, raft::row_major> alpha,
+  raft::device_matrix_view<ValueTypeT, uint32_t, raft::row_major> beta,
+  std::optional<raft::device_vector_view<ValueTypeT, uint32_t>> beta_k,
+  IndexTypeT k,
+  LANCZOS_WHICH which,
+  int ncv,
+  raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major> eigenvectors,
+  raft::device_vector_view<ValueTypeT> eigenvalues,
+  raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major>& eigenvectors_k,
+  raft::device_vector_view<ValueTypeT, uint32_t>& eigenvalues_k,
+  raft::device_matrix_view<ValueTypeT, IndexTypeT, raft::col_major>& eigenvectors_k_slice,
+  raft::device_vector_view<ValueTypeT> sm_eigenvalues,
+  raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major> sm_eigenvectors)
+{
+  ValueTypeT zero = 0;
+  auto triangular_matrix =
+    raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, ncv, ncv);
+  raft::matrix::fill(handle, triangular_matrix.view(), zero);
+
+  raft::device_vector_view<const ValueTypeT, uint32_t> alphaVec =
+    raft::make_device_vector_view<const ValueTypeT, uint32_t>(alpha.data_handle(), ncv);
+  raft::matrix::set_diagonal(handle, alphaVec, triangular_matrix.view());
+
+  // raft::matrix::initializeDiagonalMatrix(
+  //   alpha.data_handle(), triangular_matrix.data_handle(), ncv, ncv, stream);
+
+  int blockSize = 256;
+  int numBlocks = raft::div_rounding_up_safe(ncv, blockSize);
+  raft::launch_kernel(handle,
+                      numBlocks,
+                      blockSize,
+                      kernel_triangular_populate<ValueTypeT>,
+                      triangular_matrix.data_handle(),
+                      beta.data_handle(),
+                      ncv);
+
+  if (beta_k) {
+    int threadsPerBlock = 256;
+    int blocksPerGrid   = raft::div_rounding_up_safe<int>(k, threadsPerBlock);
+    raft::launch_kernel(handle,
+                        blocksPerGrid,
+                        threadsPerBlock,
+                        kernel_triangular_beta_k<ValueTypeT>,
+                        triangular_matrix.data_handle(),
+                        beta_k.value().data_handle(),
+                        k,
+                        ncv);
+  }
+
+  auto triangular_matrix_view =
+    raft::make_device_matrix_view<const ValueTypeT, uint32_t, raft::col_major>(
+      triangular_matrix.data_handle(), ncv, ncv);
+
+  lanczos_solve_ritz<IndexTypeT, ValueTypeT>(handle,
+                                             triangular_matrix_view,
+                                             k,
+                                             which,
+                                             ncv,
+                                             eigenvectors,
+                                             eigenvalues,
+                                             eigenvectors_k,
+                                             eigenvalues_k,
+                                             eigenvectors_k_slice,
+                                             sm_eigenvalues,
+                                             sm_eigenvectors);
 }
 
 template <typename IndexTypeT, typename ValueTypeT, typename AType>
@@ -797,6 +829,46 @@ auto lanczos_compute_eigenpairs(
   raft::device_vector_view<ValueTypeT, uint32_t> eigenvalues,
   raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major> eigenvectors) -> int
 {
+  auto stream = resource::get_cuda_stream(handle);
+  auto n      = A.structure_view().get_n_rows();
+  RAFT_EXPECTS(config.n_components > 0 && config.n_components < n,
+               "n_components must satisfy 0 < n_components < n");
+
+  if (n <= 3) {
+    auto k = config.n_components;
+    auto dense_matrix =
+      raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, n, n);
+    auto all_eigenvectors =
+      raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, n, n);
+    auto all_eigenvalues = raft::make_device_vector<ValueTypeT, uint32_t>(handle, n);
+    auto sm_eigenvectors =
+      raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, n, k);
+    auto sm_eigenvalues = raft::make_device_vector<ValueTypeT, uint32_t>(handle, k);
+    raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major> eigenvectors_k;
+    raft::device_vector_view<ValueTypeT, uint32_t> eigenvalues_k;
+    raft::device_matrix_view<ValueTypeT, IndexTypeT, raft::col_major> eigenvectors_k_slice;
+
+    raft::sparse::convert::sparse_to_dense(handle, A, dense_matrix.view());
+    lanczos_solve_ritz<IndexTypeT, ValueTypeT>(handle,
+                                               raft::make_const_mdspan(dense_matrix.view()),
+                                               k,
+                                               config.which,
+                                               n,
+                                               all_eigenvectors.view(),
+                                               all_eigenvalues.view(),
+                                               eigenvectors_k,
+                                               eigenvalues_k,
+                                               eigenvectors_k_slice,
+                                               sm_eigenvalues.view(),
+                                               sm_eigenvectors.view());
+    raft::copy(eigenvalues.data_handle(), eigenvalues_k.data_handle(), k, stream);
+    raft::copy(eigenvectors.data_handle(), eigenvectors_k.data_handle(), n * k, stream);
+    return 0;
+  }
+
+  RAFT_EXPECTS(config.ncv > config.n_components + 1 && config.ncv < n,
+               "ncv must satisfy n_components + 1 < ncv < n");
+
   if (v0.has_value()) {
     return lanczos_smallest<IndexTypeT, ValueTypeT, AType>(handle,
                                                            A,
@@ -811,7 +883,6 @@ auto lanczos_compute_eigenpairs(
                                                            config.seed);
   } else {
     // Handle the optional v0 initial Lanczos vector if nullopt is used
-    auto n        = A.structure_view().get_n_rows();
     auto temp_v0  = raft::make_device_vector<ValueTypeT, uint32_t>(handle, n);
     uint64_t seed = config.seed.value_or(std::random_device{}());
     raft::random::RngState rng_state(seed);

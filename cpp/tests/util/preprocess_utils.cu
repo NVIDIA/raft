@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -135,32 +135,14 @@ void calc_tfidf_bm25(raft::resources& handle,
   cudaStream_t stream = raft::resource::get_cuda_stream(handle);
   int num_rows        = csr_in.structure_view().get_n_rows();
   int num_cols        = csr_in.structure_view().get_n_cols();
-  int rows_size       = csr_in.structure_view().get_indptr().size();
-  int cols_size       = csr_in.structure_view().get_indices().size();
-  int elements_size   = csr_in.get_elements().size();
 
-  auto indptr = raft::make_device_vector_view<T1, int64_t>(
-    csr_in.structure_view().get_indptr().data(), rows_size);
-  auto indices = raft::make_device_vector_view<T1, int64_t>(
-    csr_in.structure_view().get_indices().data(), cols_size);
-  auto values =
-    raft::make_device_vector_view<T2, int64_t>(csr_in.get_elements().data(), elements_size);
   auto dense_values = raft::make_device_vector<T2, int64_t>(handle, num_rows * num_cols);
 
-  cusparseHandle_t cu_handle;
-  RAFT_CUSPARSE_TRY(cusparseCreate(&cu_handle));
-
-  raft::sparse::convert::csr_to_dense(cu_handle,
-                                      num_rows,
-                                      num_cols,
-                                      elements_size,
-                                      indptr.data_handle(),
-                                      indices.data_handle(),
-                                      values.data_handle(),
-                                      num_rows,
-                                      dense_values.data_handle(),
-                                      stream,
-                                      true);
+  raft::sparse::convert::sparse_to_dense(
+    handle,
+    csr_in,
+    raft::make_device_matrix_view<T2, int64_t, raft::row_major>(
+      dense_values.data_handle(), num_rows, num_cols));
 
   RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
   preproc<T1, T2>(handle, dense_values.view(), results, num_rows, num_cols, tf_idf);

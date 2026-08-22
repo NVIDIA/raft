@@ -1,19 +1,18 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "../test_utils.cuh"
 
+#include <raft/core/device_csr_matrix.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/sparse/convert/dense.cuh>
-#include <raft/sparse/detail/cusparse_wrappers.h>
 #include <raft/util/cudart_utils.hpp>
 
 #include <rmm/device_uvector.hpp>
 
-#include <cusparse_v2.h>
 #include <gtest/gtest.h>
 
 namespace raft {
@@ -79,24 +78,17 @@ class CSRToDenseTest : public ::testing::TestWithParam<CSRToDenseInputs<value_id
 
   void SetUp() override
   {
-    RAFT_CUSPARSE_TRY(cusparseCreate(&handle));
-
     make_data();
 
-    convert::csr_to_dense(handle,
-                          params.nrows,
-                          params.ncols,
-                          params.nnz,
-                          indptr.data(),
-                          indices.data(),
-                          data.data(),
-                          params.nrows,
-                          out.data(),
-                          stream,
-                          true);
+    auto structure = raft::make_device_compressed_structure_view<value_idx, value_idx, value_idx>(
+      indptr.data(), indices.data(), params.nrows, params.ncols, params.nnz);
+    auto csr = raft::make_device_csr_matrix_view<value_t, value_idx, value_idx, value_idx>(
+      data.data(), structure);
+    auto dense = raft::make_device_matrix_view<value_t, value_idx, raft::row_major>(
+      out.data(), params.nrows, params.ncols);
+    convert::sparse_to_dense(raft_handle, csr, dense);
 
     RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
-    RAFT_CUSPARSE_TRY(cusparseDestroy(handle));
   }
 
   void compare()
@@ -108,8 +100,6 @@ class CSRToDenseTest : public ::testing::TestWithParam<CSRToDenseInputs<value_id
  protected:
   raft::resources raft_handle;
   cudaStream_t stream;
-
-  cusparseHandle_t handle;
 
   // input data
   rmm::device_uvector<value_idx> indptr, indices;
