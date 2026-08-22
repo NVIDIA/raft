@@ -6,51 +6,329 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
-#include <raft/core/resource/device_properties.hpp>
-#include <raft/core/resource/thrust_policy.hpp>
 #include <raft/sparse/solver/detail/mst_kernels.cuh>
-#include <raft/sparse/solver/detail/mst_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
+#include <rmm/exec_policy.hpp>
 
-#include <cuda/functional>
-#include <cuda/std/tuple>
-#include <thrust/copy.h>
-#include <thrust/device_ptr.h>
-#include <thrust/execution_policy.h>
-#include <thrust/fill.h>
-#include <thrust/host_vector.h>
-#include <thrust/iterator/zip_iterator.h>
-#include <thrust/reduce.h>
 #include <thrust/sequence.h>
-#include <thrust/sort.h>
-#include <thrust/transform.h>
-#include <thrust/transform_reduce.h>
-#include <thrust/unique.h>
 
-#include <curand.h>
-
-#include <iostream>
+#include <algorithm>
+#include <cstdint>
+#include <limits>
+#include <type_traits>
 
 namespace raft {
 namespace sparse::solver {
 
-// curand generator uniform
-inline curandStatus_t curand_generate_uniformX(curandGenerator_t generator,
-                                               float* outputPtr,
-                                               size_t n)
+namespace detail {
+
+/*
+ * MST solver (algorithm: mst_kernels.cuh; user contract: mst.cuh).
+ * Key order (from float): -0.0 < +0.0; NaNs order by bit pattern.
+ * Colors = min vertex id per component.
+ * iterations != 0 disables the edge filter; > 0 bounds the rounds.
+ */
+template <typename vertex_t, typename edge_t, typename weight_t>
+Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
+                                                edge_t const* offsets,
+                                                vertex_t const* indices,
+                                                weight_t const* weights,
+                                                vertex_t const v,
+                                                edge_t const e,
+                                                vertex_t* color,
+                                                cudaStream_t stream,
+                                                bool symmetrize_output,
+                                                bool initialize_colors,
+                                                int iterations)
 {
-  return curandGenerateUniform(generator, outputPtr, n);
+  static_assert((sizeof(vertex_t) == 4 || sizeof(vertex_t) == 8) &&
+                  (sizeof(edge_t) == 4 || sizeof(edge_t) == 8) &&
+                  sizeof(vertex_t) <= sizeof(edge_t),
+                "raft::sparse::solver::mst supports 32- and 64-bit vertex_t/edge_t, with "
+                "edge_t at least as wide as vertex_t (worklist entries store vertex ids in "
+                "fields sized by the edge width)");
+  constexpr bool narrow = mst_traits<weight_t, edge_t>::narrow;
+  using key_t           = typename mst_traits<weight_t, edge_t>::key_t;
+  using entry_t         = typename mst_traits<weight_t, edge_t>::entry_t;
+  using wl_size_t       = typename mst_traits<weight_t, edge_t>::wl_size_t;
+
+  RAFT_EXPECTS(v > 0, "0 vertices");
+  RAFT_EXPECTS(e > 0, "0 edges");
+  RAFT_EXPECTS(offsets != nullptr, "Null offsets.");
+  RAFT_EXPECTS(indices != nullptr, "Null indices.");
+  RAFT_EXPECTS(weights != nullptr, "Null weights.");
+  // narrow packing uses signed 32-bit int4 fields; unsigned 32-bit types
+  // can exceed them (use a 64-bit edge_t for edge counts above INT_MAX)
+  if constexpr (narrow && std::is_unsigned_v<vertex_t>) {
+    RAFT_EXPECTS(v <= static_cast<vertex_t>(std::numeric_limits<int>::max()),
+                 "unsigned 32-bit vertex ids above INT_MAX are not supported");
+  }
+  if constexpr (narrow && std::is_unsigned_v<edge_t>) {
+    RAFT_EXPECTS(e <= static_cast<edge_t>(std::numeric_limits<int>::max()),
+                 "unsigned 32-bit edge counts above INT_MAX are not supported");
+  }
+
+  const wl_size_t wl_capacity = static_cast<wl_size_t>(e / 2 + 1);
+
+  rmm::device_uvector<vertex_t> parent(v, stream);
+  rmm::device_uvector<bool> in_mst(e, stream);
+  rmm::device_uvector<entry_t> wl1(static_cast<size_t>(wl_capacity), stream);
+  rmm::device_uvector<entry_t> wl2(static_cast<size_t>(wl_capacity), stream);
+  rmm::device_scalar<wl_size_t> wl_size_d(stream);
+
+#if RAFT_MST_HAS_CAS128
+  const size_t minv_bytes = narrow ? 2 * static_cast<size_t>(v) * sizeof(mst_ull)
+                                   : 2 * static_cast<size_t>(v) * sizeof(mst_u128);
+#else
+  const size_t minv_bytes = narrow ? 2 * static_cast<size_t>(v) * sizeof(mst_ull)
+                                   : 4 * static_cast<size_t>(v) * sizeof(mst_ull);
+#endif
+  rmm::device_uvector<char> minv_raw(minv_bytes, stream);
+
+  const int vblocks =
+    static_cast<int>((static_cast<size_t>(v) + mst_block_size - 1) / mst_block_size);
+  if (initialize_colors) {
+    thrust::sequence(rmm::exec_policy(stream), parent.begin(), parent.end());
+  } else {
+    raft::launch_kernel(
+      stream, vblocks, mst_block_size, mst_init_parent_kernel<vertex_t>, v, color, parent.data());
+  }
+  RAFT_CUDA_TRY(cudaMemsetAsync(minv_raw.data(), 0xFF, minv_bytes, stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(in_mst.data(), 0, e * sizeof(bool), stream));
+
+  // Two-phase filter: solve a sampled light-edge prefix first, then the
+  // rest find-filtered. Disabled for bounded solves. Constants are empirical.
+  constexpr int filter_min_avg_degree            = 4;
+  constexpr double filter_light_edges_per_vertex = 3.0;
+  constexpr int max_samples                      = 20;
+
+  key_t thr_key = std::numeric_limits<key_t>::max();
+  bool filtered = false;
+  if (iterations == 0 && e / v >= filter_min_avg_degree) {
+    const int ns = static_cast<int>(std::min<edge_t>(e, max_samples));
+    rmm::device_uvector<key_t> keys_d(ns, stream);
+    raft::launch_kernel(
+      stream, 1, 32, mst_sample_keys_kernel<edge_t, weight_t>, ns, e, weights, keys_d.data());
+    key_t keys[max_samples];
+    raft::update_host(keys, keys_d.data(), ns, stream);
+    RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
+    std::sort(keys, keys + ns);
+    thr_key =
+      keys[std::min(max_samples - 1, static_cast<int>(filter_light_edges_per_vertex * v * ns / e))];
+    filtered = true;
+  }
+
+  int round    = 0;
+  auto boruvka = [&](wl_size_t wl_size) {
+    entry_t* d1 = wl1.data();
+    entry_t* d2 = wl2.data();
+    while (wl_size > 0) {
+      if (iterations > 0 && round >= iterations) break;
+      wl_size_d.set_value_to_zero_async(stream);
+      const int wblocks =
+        static_cast<int>((static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
+      if constexpr (narrow) {
+        mst_ull* const base = reinterpret_cast<mst_ull*>(minv_raw.data());
+        mst_ull* const cur  = base + (round % 2) * static_cast<size_t>(v);
+        mst_ull* const prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
+        raft::launch_kernel(stream,
+                            wblocks,
+                            mst_block_size,
+                            mst_filter_min_kernel<vertex_t>,
+                            d1,
+                            wl_size,
+                            d2,
+                            wl_size_d.data(),
+                            parent.data(),
+                            cur,
+                            prev);
+        std::swap(d1, d2);
+        wl_size = wl_size_d.value(stream);
+        if (wl_size > 0) {
+          const int nblocks = static_cast<int>(
+            (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
+          raft::launch_kernel(stream,
+                              nblocks,
+                              mst_block_size,
+                              mst_select_join_kernel<vertex_t>,
+                              d1,
+                              wl_size,
+                              parent.data(),
+                              cur,
+                              in_mst.data());
+        }
+      } else {
+#if RAFT_MST_HAS_CAS128
+        mst_u128* const base = reinterpret_cast<mst_u128*>(minv_raw.data());
+        mst_u128* const cur  = base + (round % 2) * static_cast<size_t>(v);
+        mst_u128* const prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
+        raft::launch_kernel(stream,
+                            wblocks,
+                            mst_block_size,
+                            mst_filter_min_kernel<vertex_t, wl_size_t>,
+                            d1,
+                            wl_size,
+                            d2,
+                            wl_size_d.data(),
+                            parent.data(),
+                            cur,
+                            prev);
+        std::swap(d1, d2);
+        wl_size = wl_size_d.value(stream);
+        if (wl_size > 0) {
+          const int nblocks = static_cast<int>(
+            (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
+          raft::launch_kernel(stream,
+                              nblocks,
+                              mst_block_size,
+                              mst_select_join_kernel<vertex_t, wl_size_t>,
+                              d1,
+                              wl_size,
+                              parent.data(),
+                              cur,
+                              in_mst.data());
+        }
+#else
+        mst_ull* const base      = reinterpret_cast<mst_ull*>(minv_raw.data());
+        mst_ull* const minw_cur  = base + (round % 2) * static_cast<size_t>(v);
+        mst_ull* const minw_prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
+        mst_ull* const mine_cur =
+          base + 2 * static_cast<size_t>(v) + (round % 2) * static_cast<size_t>(v);
+        mst_ull* const mine_prev =
+          base + 2 * static_cast<size_t>(v) + ((round + 1) % 2) * static_cast<size_t>(v);
+        raft::launch_kernel(stream,
+                            wblocks,
+                            mst_block_size,
+                            mst_filter_min_kernel<vertex_t, wl_size_t>,
+                            d1,
+                            wl_size,
+                            d2,
+                            wl_size_d.data(),
+                            parent.data(),
+                            minw_cur,
+                            minw_prev,
+                            mine_prev);
+        std::swap(d1, d2);
+        wl_size = wl_size_d.value(stream);
+        if (wl_size > 0) {
+          const int nblocks = static_cast<int>(
+            (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
+          raft::launch_kernel(stream,
+                              nblocks,
+                              mst_block_size,
+                              mst_min_index_kernel<wl_size_t>,
+                              d1,
+                              wl_size,
+                              minw_cur,
+                              mine_cur);
+          raft::launch_kernel(stream,
+                              nblocks,
+                              mst_block_size,
+                              mst_select_join_kernel<vertex_t, wl_size_t>,
+                              d1,
+                              wl_size,
+                              parent.data(),
+                              mine_cur,
+                              in_mst.data());
+        }
+#endif
+      }
+      round++;
+    }
+  };
+
+  const int eblocks =
+    static_cast<int>((static_cast<size_t>(e) + mst_block_size - 1) / mst_block_size);
+  auto launch_init = [&](bool first) {
+    wl_size_d.set_value_to_zero_async(stream);
+    if (first) {
+      raft::launch_kernel(stream,
+                          eblocks,
+                          mst_block_size,
+                          mst_init_worklist_kernel<true, vertex_t, edge_t, weight_t>,
+                          wl1.data(),
+                          wl_size_d.data(),
+                          wl_capacity,
+                          v,
+                          e,
+                          offsets,
+                          indices,
+                          weights,
+                          parent.data(),
+                          thr_key);
+    } else {
+      raft::launch_kernel(stream,
+                          eblocks,
+                          mst_block_size,
+                          mst_init_worklist_kernel<false, vertex_t, edge_t, weight_t>,
+                          wl1.data(),
+                          wl_size_d.data(),
+                          wl_capacity,
+                          v,
+                          e,
+                          offsets,
+                          indices,
+                          weights,
+                          parent.data(),
+                          thr_key);
+    }
+    const wl_size_t wl_size = wl_size_d.value(stream);
+    RAFT_EXPECTS(wl_size >= 0 && wl_size <= wl_capacity,
+                 "MST worklist overflow: the input CSR must be symmetric (each "
+                 "undirected edge stored in both directions).");
+    return wl_size;
+  };
+
+  boruvka(launch_init(true));
+
+  if (filtered) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(minv_raw.data(), 0xFF, minv_bytes, stream));
+    boruvka(launch_init(false));
+  }
+
+  raft::launch_kernel(
+    stream, vblocks, mst_block_size, mst_flatten_colors_kernel<vertex_t>, v, parent.data(), color);
+
+  // symmetrized count can exceed 32-bit edge_t/vertex_t for v > 2^30:
+  // fail loudly rather than under-allocate
+  const int64_t max_out_wide =
+    symmetrize_output ? 2 * (static_cast<int64_t>(v) - 1) : (static_cast<int64_t>(v) - 1);
+  RAFT_EXPECTS(max_out_wide <= std::numeric_limits<edge_t>::max() &&
+                 max_out_wide <= std::numeric_limits<vertex_t>::max(),
+               "MST output edge count can exceed edge_t/vertex_t; use fewer vertices or "
+               "symmetrize_output=false");
+  const edge_t max_out = static_cast<edge_t>(max_out_wide);
+  Graph_COO<vertex_t, edge_t, weight_t> mst_result(std::max<edge_t>(max_out, 1), stream);
+  rmm::device_scalar<edge_t> out_count(stream);
+  out_count.set_value_to_zero_async(stream);
+  raft::launch_kernel(stream,
+                      eblocks,
+                      mst_block_size,
+                      mst_extract_coo_kernel<vertex_t, edge_t, weight_t>,
+                      v,
+                      e,
+                      offsets,
+                      indices,
+                      weights,
+                      in_mst.data(),
+                      symmetrize_output,
+                      mst_result.src.data(),
+                      mst_result.dst.data(),
+                      mst_result.weights.data(),
+                      out_count.data());
+  mst_result.n_edges = out_count.value(stream);
+  mst_result.src.resize(mst_result.n_edges, stream);
+  mst_result.dst.resize(mst_result.n_edges, stream);
+  mst_result.weights.resize(mst_result.n_edges, stream);
+
+  return mst_result;
 }
-inline curandStatus_t curand_generate_uniformX(curandGenerator_t generator,
-                                               double* outputPtr,
-                                               size_t n)
-{
-  return curandGenerateUniformDouble(generator, outputPtr, n);
-}
+
+}  // namespace detail
 
 template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
 MST_solver<vertex_t, edge_t, weight_t, alteration_t>::MST_solver(raft::resources const& handle_,
@@ -65,390 +343,34 @@ MST_solver<vertex_t, edge_t, weight_t, alteration_t>::MST_solver(raft::resources
                                                                  bool initialize_colors_,
                                                                  int iterations_)
   : handle(handle_),
-    offsets(offsets_),
-    indices(indices_),
-    weights(weights_),
-    altered_weights(e_, stream_),
-    v(v_),
-    e(e_),
-    color_index(color_),
-    color(v_, stream_),
-    next_color(v_, stream_),
-    min_edge_color(v_, stream_),
-    new_mst_edge(v_, stream_),
-    mst_edge(e_, stream_),
-    temp_src(2 * v_, stream_),
-    temp_dst(2 * v_, stream_),
-    temp_weights(2 * v_, stream_),
-    mst_edge_count(1, stream_),
-    prev_mst_edge_count(1, stream_),
     stream(stream_),
     symmetrize_output(symmetrize_output_),
     initialize_colors(initialize_colors_),
-    iterations(iterations_)
+    iterations(iterations_),
+    offsets(offsets_),
+    indices(indices_),
+    weights(weights_),
+    v(v_),
+    e(e_),
+    color_index(color_)
 {
-  max_blocks  = resource::get_device_properties(handle_).maxGridSize[0];
-  max_threads = resource::get_device_properties(handle_).maxThreadsPerBlock;
-  sm_count    = resource::get_device_properties(handle_).multiProcessorCount;
-
-  mst_edge_count.set_value_to_zero_async(stream);
-  prev_mst_edge_count.set_value_to_zero_async(stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(mst_edge.data(), 0, mst_edge.size() * sizeof(bool), stream));
-
-  // Initially, color holds the vertex id as color
-  auto policy = resource::get_thrust_policy(handle);
-  if (initialize_colors_) {
-    thrust::sequence(policy, color.begin(), color.end(), 0);
-    thrust::sequence(policy, color_index, color_index + v, 0);
-  } else {
-    raft::copy(color.data(), color_index, v, stream);
-  }
-  thrust::sequence(policy, next_color.begin(), next_color.end(), 0);
 }
 
 template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
 Graph_COO<vertex_t, edge_t, weight_t> MST_solver<vertex_t, edge_t, weight_t, alteration_t>::solve()
 {
-  RAFT_EXPECTS(v > 0, "0 vertices");
-  RAFT_EXPECTS(e > 0, "0 edges");
-  RAFT_EXPECTS(offsets != nullptr, "Null offsets.");
-  RAFT_EXPECTS(indices != nullptr, "Null indices.");
-  RAFT_EXPECTS(weights != nullptr, "Null weights.");
-
-  // Alterating the weights
-  // this is done by identifying the lowest cost edge weight gap that is not 0, call this theta.
-  // For each edge, add noise that is less than theta. That is, generate a random number in the
-  // range [0.0, theta) and add it to each edge weight.
-  if (e > 1) alteration();
-
-  auto max_mst_edges = symmetrize_output ? 2 * v - 2 : v - 1;
-
-  Graph_COO<vertex_t, edge_t, weight_t> mst_result(max_mst_edges, stream);
-
-  // Boruvka original formulation says "while more than 1 supervertex remains"
-  // Here we adjust it to support disconnected components (spanning forest)
-  // track completion with mst_edge_found status and v as upper bound
-  auto mst_iterations = iterations > 0 ? iterations : v;
-  for (auto i = 0; i < mst_iterations; i++) {
-    // Finds the minimum edge from each vertex to the lowest color
-    // by working at each vertex of the supervertex
-    min_edge_per_vertex();
-
-    // Finds the minimum edge from each supervertex to the lowest color
-    min_edge_per_supervertex();
-
-    // check if msf/mst done, count new edges added
-    check_termination();
-
-    auto curr_mst_edge_count = mst_edge_count.value(stream);
-    RAFT_EXPECTS(curr_mst_edge_count <= max_mst_edges,
-                 "Number of edges found by MST is invalid. This may be due to "
-                 "loss in precision. Try increasing precision of weights.");
-
-    if (curr_mst_edge_count == prev_mst_edge_count.value(stream)) {
-      // exit here when reaching steady state
-      break;
-    }
-
-    // append the newly found MST edges to the final output
-    append_src_dst_pair(mst_result.src.data(), mst_result.dst.data(), mst_result.weights.data());
-
-    // updates colors of vertices by propagating the lower color to the higher
-    label_prop(mst_result.src.data(), mst_result.dst.data());
-
-    // copy this iteration's results and store
-    prev_mst_edge_count.set_value_async(curr_mst_edge_count, stream);
-  }
-
-  // result packaging
-  mst_result.n_edges = mst_edge_count.value(stream);
-  mst_result.src.resize(mst_result.n_edges, stream);
-  mst_result.dst.resize(mst_result.n_edges, stream);
-  mst_result.weights.resize(mst_result.n_edges, stream);
-
-  return mst_result;
+  return detail::mst_solve(handle,
+                           offsets,
+                           indices,
+                           weights,
+                           v,
+                           e,
+                           color_index,
+                           stream,
+                           symmetrize_output,
+                           initialize_colors,
+                           iterations);
 }
 
-// ||y|-|x||
-template <typename weight_t>
-struct alteration_functor {
-  __host__ __device__ weight_t operator()(const cuda::std::tuple<weight_t, weight_t>& t)
-  {
-    auto x = cuda::std::get<0>(t);
-    auto y = cuda::std::get<1>(t);
-    x      = x < 0 ? -x : x;
-    y      = y < 0 ? -y : y;
-    return x < y ? y - x : x - y;
-  }
-};
-
-// Compute the uper bound for the alteration
-template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
-alteration_t MST_solver<vertex_t, edge_t, weight_t, alteration_t>::alteration_max()
-{
-  auto policy = resource::get_thrust_policy(handle);
-  rmm::device_uvector<weight_t> tmp(e, stream);
-  thrust::device_ptr<const weight_t> weights_ptr(weights);
-  thrust::copy(policy, weights_ptr, weights_ptr + e, tmp.begin());
-  // sort tmp weights
-  thrust::sort(policy, tmp.begin(), tmp.end());
-
-  // remove duplicates
-  auto new_end = thrust::unique(policy, tmp.begin(), tmp.end());
-
-  // min(a[i+1]-a[i])/2
-  auto begin = thrust::make_zip_iterator(cuda::std::make_tuple(tmp.begin(), tmp.begin() + 1));
-  auto end   = thrust::make_zip_iterator(cuda::std::make_tuple(new_end - 1, new_end));
-  auto init  = tmp.element(1, stream) - tmp.element(0, stream);
-  auto max   = thrust::transform_reduce(
-    policy, begin, end, alteration_functor<weight_t>(), init, cuda::minimum<weight_t>());
-  // Enforce distinct weights if initial edge weights are identical by returning
-  // a value of 1
-  return max > 0 ? max / static_cast<alteration_t>(2) : 1;
-}
-
-// Compute the alteration to make all undirected edge weight unique
-// Preserves weights order
-template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
-void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::alteration()
-{
-  auto nthreads = std::min(v, max_threads);
-  auto nblocks  = std::min((v + nthreads - 1) / nthreads, max_blocks);
-
-  // maximum alteration that does not change relative weights order
-  // Note: The relative weights order will be altered if initial edge weights are identical
-  alteration_t max = alteration_max();
-
-  // pool of rand values
-  rmm::device_uvector<alteration_t> rand_values(v, stream);
-
-  // Random number generator
-  curandGenerator_t randGen;
-  curandCreateGenerator(&randGen, CURAND_RNG_PSEUDO_DEFAULT);
-  curandSetPseudoRandomGeneratorSeed(randGen, 1234567);
-
-  // Initialize rand values
-  auto curand_status = curand_generate_uniformX(randGen, rand_values.data(), v);
-  RAFT_EXPECTS(curand_status == CURAND_STATUS_SUCCESS, "MST: CURAND failed");
-  curand_status = curandDestroyGenerator(randGen);
-  RAFT_EXPECTS(curand_status == CURAND_STATUS_SUCCESS, "MST: CURAND cleanup failed");
-
-  // Alterate the weights, make all undirected edge weight unique while keeping Wuv == Wvu
-  raft::launch_kernel(stream,
-                      nblocks,
-                      nthreads,
-                      detail::alteration_kernel,
-                      v,
-                      e,
-                      offsets,
-                      indices,
-                      weights,
-                      max,
-                      rand_values.data(),
-                      altered_weights.data());
-}
-
-// updates colors of vertices by propagating the lower color to the higher
-template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
-void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::label_prop(vertex_t* mst_src,
-                                                                      vertex_t* mst_dst)
-{
-  // update the colors of both ends its until there is no change in colors
-  edge_t curr_mst_edge_count = mst_edge_count.value(stream);
-
-  auto min_pair_nthreads = std::min(v, (vertex_t)max_threads);
-  auto min_pair_nblocks =
-    std::min((v + min_pair_nthreads - 1) / min_pair_nthreads, (vertex_t)max_blocks);
-
-  edge_t* new_mst_edge_ptr = new_mst_edge.data();
-  vertex_t* color_ptr      = color.data();
-  vertex_t* next_color_ptr = next_color.data();
-
-  rmm::device_scalar<bool> done(stream);
-  done.set_value_to_zero_async(stream);
-  bool* done_ptr      = done.data();
-  const bool true_val = true;
-
-  auto i = 0;
-  while (!done.value(stream)) {
-    done.set_value_async(true_val, stream);
-
-    raft::launch_kernel(stream,
-                        min_pair_nblocks,
-                        min_pair_nthreads,
-                        detail::min_pair_colors<vertex_t, edge_t>,
-                        v,
-                        indices,
-                        new_mst_edge_ptr,
-                        color_ptr,
-                        color_index,
-                        next_color_ptr);
-
-    raft::launch_kernel(stream,
-                        min_pair_nblocks,
-                        min_pair_nthreads,
-                        detail::update_colors<vertex_t>,
-                        v,
-                        color_ptr,
-                        color_index,
-                        next_color_ptr,
-                        done_ptr);
-    i++;
-  }
-
-  raft::launch_kernel(stream,
-                      min_pair_nblocks,
-                      min_pair_nthreads,
-                      detail::final_color_indices<vertex_t>,
-                      v,
-                      color_ptr,
-                      color_index);
-}
-
-// Finds the minimum edge from each vertex to the lowest color
-template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
-void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::min_edge_per_vertex()
-{
-  auto policy = resource::get_thrust_policy(handle);
-  thrust::fill(
-    policy, min_edge_color.begin(), min_edge_color.end(), std::numeric_limits<alteration_t>::max());
-  thrust::fill(
-    policy, new_mst_edge.begin(), new_mst_edge.end(), std::numeric_limits<weight_t>::max());
-
-  int n_threads = 32;
-
-  vertex_t* color_ptr               = color.data();
-  edge_t* new_mst_edge_ptr          = new_mst_edge.data();
-  bool* mst_edge_ptr                = mst_edge.data();
-  alteration_t* min_edge_color_ptr  = min_edge_color.data();
-  alteration_t* altered_weights_ptr = altered_weights.data();
-
-  raft::launch_kernel(stream,
-                      v,
-                      n_threads,
-                      detail::kernel_min_edge_per_vertex<vertex_t, edge_t, alteration_t>,
-                      offsets,
-                      indices,
-                      altered_weights_ptr,
-                      color_ptr,
-                      color_index,
-                      new_mst_edge_ptr,
-                      mst_edge_ptr,
-                      min_edge_color_ptr,
-                      v);
-}
-
-// Finds the minimum edge from each supervertex to the lowest color
-template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
-void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::min_edge_per_supervertex()
-{
-  auto nthreads = std::min(v, max_threads);
-  auto nblocks  = std::min((v + nthreads - 1) / nthreads, max_blocks);
-
-  auto policy = resource::get_thrust_policy(handle);
-  thrust::fill(policy, temp_src.begin(), temp_src.end(), std::numeric_limits<vertex_t>::max());
-
-  vertex_t* color_ptr               = color.data();
-  edge_t* new_mst_edge_ptr          = new_mst_edge.data();
-  bool* mst_edge_ptr                = mst_edge.data();
-  alteration_t* min_edge_color_ptr  = min_edge_color.data();
-  alteration_t* altered_weights_ptr = altered_weights.data();
-  vertex_t* temp_src_ptr            = temp_src.data();
-  vertex_t* temp_dst_ptr            = temp_dst.data();
-  weight_t* temp_weights_ptr        = temp_weights.data();
-
-  raft::launch_kernel(stream,
-                      nblocks,
-                      nthreads,
-                      detail::min_edge_per_supervertex<vertex_t, edge_t, weight_t, alteration_t>,
-                      color_ptr,
-                      color_index,
-                      new_mst_edge_ptr,
-                      mst_edge_ptr,
-                      indices,
-                      weights,
-                      altered_weights_ptr,
-                      temp_src_ptr,
-                      temp_dst_ptr,
-                      temp_weights_ptr,
-                      min_edge_color_ptr,
-                      v,
-                      symmetrize_output);
-
-  // the above kernel only adds directed mst edges in the case where
-  // a pair of vertices don't pick the same min edge between them
-  // so, now we add the reverse edge to make it undirected
-  if (symmetrize_output) {
-    raft::launch_kernel(stream,
-                        nblocks,
-                        nthreads,
-                        detail::add_reverse_edge<vertex_t, edge_t, weight_t>,
-                        new_mst_edge_ptr,
-                        indices,
-                        weights,
-                        temp_src_ptr,
-                        temp_dst_ptr,
-                        temp_weights_ptr,
-                        v,
-                        symmetrize_output);
-  }
-}
-
-template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
-void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::check_termination()
-{
-  vertex_t nthreads = std::min(2 * v, (vertex_t)max_threads);
-  vertex_t nblocks  = std::min((2 * v + nthreads - 1) / nthreads, (vertex_t)max_blocks);
-
-  // count number of new mst edges
-  edge_t* mst_edge_count_ptr = mst_edge_count.data();
-  vertex_t* temp_src_ptr     = temp_src.data();
-
-  raft::launch_kernel(stream,
-                      nblocks,
-                      nthreads,
-                      detail::kernel_count_new_mst_edges<vertex_t, edge_t>,
-                      temp_src_ptr,
-                      mst_edge_count_ptr,
-                      2 * v);
-}
-
-template <typename vertex_t, typename weight_t>
-struct new_edges_functor {
-  __host__ __device__ bool operator()(const cuda::std::tuple<vertex_t, vertex_t, weight_t>& t)
-  {
-    auto src = cuda::std::get<0>(t);
-
-    return src != std::numeric_limits<vertex_t>::max() ? true : false;
-  }
-};
-
-template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
-void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::append_src_dst_pair(
-  vertex_t* mst_src, vertex_t* mst_dst, weight_t* mst_weights)
-{
-  auto policy = resource::get_thrust_policy(handle);
-
-  edge_t curr_mst_edge_count = prev_mst_edge_count.value(stream);
-
-  // iterator to end of mst edges added to final output in previous iteration
-  auto src_dst_zip_end =
-    thrust::make_zip_iterator(cuda::std::make_tuple(mst_src + curr_mst_edge_count,
-                                                    mst_dst + curr_mst_edge_count,
-                                                    mst_weights + curr_mst_edge_count));
-
-  // iterator to new mst edges found
-  auto temp_src_dst_zip_begin = thrust::make_zip_iterator(
-    cuda::std::make_tuple(temp_src.begin(), temp_dst.begin(), temp_weights.begin()));
-  auto temp_src_dst_zip_end = thrust::make_zip_iterator(
-    cuda::std::make_tuple(temp_src.end(), temp_dst.end(), temp_weights.end()));
-
-  // copy new mst edges to final output
-  thrust::copy_if(policy,
-                  temp_src_dst_zip_begin,
-                  temp_src_dst_zip_end,
-                  src_dst_zip_end,
-                  new_edges_functor<vertex_t, weight_t>());
-}
 }  // namespace sparse::solver
 }  // namespace raft
