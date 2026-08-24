@@ -18,13 +18,10 @@
 #include <array>
 #include <bitset>
 #include <cstddef>
-#include <cstdio>
 #include <memory>
 #include <source_location>
-#include <string>
 #include <type_traits>
 #include <utility>
-#include <vector>
 
 namespace raft {
 
@@ -46,44 +43,6 @@ inline constexpr launch_flags kSkipExecution{1U << 0};
 inline constexpr launch_flags kBlocking{1U << 1};
 
 /**
- * @brief Format a cuda_error message with an explicit call-site location.
- *
- * Mirrors SET_ERROR_MSG / RAFT_CUDA_TRY formatting but does not use those macros, so the reported
- * location is the caller's rather than this header. The enclosing function is reported too, since
- * it names the template instantiation that the file and line alone cannot.
- */
-inline std::string format_cuda_launch_error(cudaError_t status, std::source_location location)
-{
-  char const* location_prefix = "CUDA error encountered at: ";
-  char const* location_fmt    = "file=%s line=%d function=%s: ";
-  char const* fmt             = "call='%s', Reason=%s:%s";
-  char const* call            = "cudaLaunchKernelExC";
-  char const* file            = location.file_name();
-  auto line                   = static_cast<int>(location.line());
-  char const* function        = location.function_name();
-
-  int size1 = std::snprintf(nullptr, 0, "%s", location_prefix);
-  int size2 = std::snprintf(nullptr, 0, location_fmt, file, line, function);
-  int size3 =
-    std::snprintf(nullptr, 0, fmt, call, cudaGetErrorName(status), cudaGetErrorString(status));
-  if (size1 < 0 || size2 < 0 || size3 < 0) {
-    throw raft::exception("Error in snprintf, cannot handle raft exception.");
-  }
-  auto size = static_cast<std::size_t>(size1 + size2 + size3 + 1);
-  std::vector<char> buf(size);
-  std::snprintf(buf.data(), static_cast<std::size_t>(size1) + 1, "%s", location_prefix);
-  std::snprintf(
-    buf.data() + size1, static_cast<std::size_t>(size2) + 1, location_fmt, file, line, function);
-  std::snprintf(buf.data() + size1 + size2,
-                static_cast<std::size_t>(size3) + 1,
-                fmt,
-                call,
-                cudaGetErrorName(status),
-                cudaGetErrorString(status));
-  return std::string(buf.data(), buf.data() + size - 1);
-}
-
-/**
  * @brief Launch a kernel, copying the launch arguments into parameters first.
  *
  * Taking the address of a copy rather than of the caller's object means passing a constant (e.g. a
@@ -99,12 +58,9 @@ void dispatch(cudaLaunchConfig_t const& config,
   if ((flags & kSkipExecution).any()) { return; }
   std::array<void*, sizeof...(Params)> arg_ptrs{
     {const_cast<void*>(static_cast<void const*>(std::addressof(params)))...}};
-  cudaError_t status = cudaLaunchKernelExC(&config, kernel, arg_ptrs.data());
-  if (status != cudaSuccess) {
-    cudaGetLastError();  // clear sticky error
-    throw raft::cuda_error(format_cuda_launch_error(status, location));
-  }
-  if ((flags & kBlocking).any()) { raft::interruptible::synchronize(config.stream); }
+  raft::check_cuda_error(
+    cudaLaunchKernelExC(&config, kernel, arg_ptrs.data()), "cudaLaunchKernelExC", location);
+  if ((flags & kBlocking).any()) { raft::interruptible::synchronize(config.stream, location); }
 }
 
 }  // namespace detail
@@ -256,11 +212,14 @@ void launch_kernel(launch_on where,
 {
   where.config.gridDim  = grid;
   where.config.blockDim = block;
-  detail::dispatch<std::remove_cvref_t<Args>...>(where.config,
-                                                 reinterpret_cast<void*>(kernel),
-                                                 where.flags,
-                                                 where.location,
-                                                 std::forward<Args>(args)...);
+  // Let dispatch deduce its by-value parameter types instead of explicitly forwarding Args.
+  // In particular, this drops outermost extended qualifiers such as __restrict__ before dispatch
+  // takes the address of each parameter copy for cudaLaunchKernelExC.
+  detail::dispatch(where.config,
+                   reinterpret_cast<void*>(kernel),
+                   where.flags,
+                   where.location,
+                   std::forward<Args>(args)...);
 }
 
 /**
@@ -290,11 +249,13 @@ requires(sizeof...(Params) == sizeof...(Args) &&
 
   where.config.gridDim  = grid;
   where.config.blockDim = block;
-  detail::dispatch<Params...>(where.config,
-                              reinterpret_cast<void*>(kernel),
-                              where.flags,
-                              where.location,
-                              std::forward<Args>(args)...);
+  // Convert to the kernel parameter types before dispatch, then let dispatch deduce its by-value
+  // parameters so outermost extended qualifiers such as __restrict__ are not preserved.
+  detail::dispatch(where.config,
+                   reinterpret_cast<void*>(kernel),
+                   where.flags,
+                   where.location,
+                   static_cast<Params>(std::forward<Args>(args))...);
 }
 
 /** @} */  // end group kernel_launch

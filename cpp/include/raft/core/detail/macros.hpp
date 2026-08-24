@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -130,4 +130,18 @@
 #ifndef RAFT_STRINGIFY
 #define RAFT_STRINGIFY_DETAIL(...) #__VA_ARGS__
 #define RAFT_STRINGIFY(...)        RAFT_STRINGIFY_DETAIL(__VA_ARGS__)
+#endif
+
+// Let the compiler check the arguments of a printf-style function against its format string, the
+// same way it checks calls to printf itself.
+//
+// `fmt_index` is the one-based index of the format string parameter and `first_arg_index` the index
+// of the first variadic argument (for a non-static member function, `this` is parameter one).
+#ifndef RAFT_FORMAT_PRINTF
+#if defined(__GNUC__)
+#define RAFT_FORMAT_PRINTF(fmt_index, first_arg_index) \
+  __attribute__((format(printf, fmt_index, first_arg_index)))
+#else
+#define RAFT_FORMAT_PRINTF(fmt_index, first_arg_index)
+#endif
 #endif
