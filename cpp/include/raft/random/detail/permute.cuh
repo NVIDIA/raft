@@ -175,7 +175,7 @@ struct permute_impl_t {
                           perms,
                           vout,
                           vin,
-                          fp,
+                          shuffled_indices,
                           N,
                           D / VLen);
     } else {  // otherwise try the next lower vector length
@@ -217,7 +217,7 @@ struct permute_impl_t<Type, IntType, IdxType, TPB, rowMajor, 1> {
                         perms,
                         out,
                         in,
-                        fp,
+                        shuffled_indices,
                         N,
                         D);
   }
