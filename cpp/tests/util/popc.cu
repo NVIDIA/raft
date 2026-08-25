@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -93,7 +93,8 @@ class PopcTest : public ::testing::TestWithParam<PopcInputs<index_t>> {
     auto max_len_view = raft::make_host_scalar_view<const index_t, index_t>(&max_len);
 
     index_t nnz_actual_h = 0;
-    rmm::device_scalar<index_t> nnz_actual_d(0, stream);
+    index_t zero         = 0;
+    rmm::device_scalar<index_t> nnz_actual_d(zero, stream);
     auto nnz_actual_view = raft::make_device_scalar_view<index_t>(nnz_actual_d.data());
 
     raft::popc(handle, bits_view, max_len_view, nnz_actual_view);

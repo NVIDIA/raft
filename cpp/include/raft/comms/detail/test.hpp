@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -376,8 +376,9 @@ bool test_pointToPoint_device_send_or_recv(raft::resources const& h, int numTria
       std::cout << "Trial " << i << std::endl;
     }
 
-    bool sender = (rank % 2) == 0 ? true : false;
-    rmm::device_scalar<int> received_data(-1, stream);
+    bool sender             = (rank % 2) == 0 ? true : false;
+    int received_data_value = -1;
+    rmm::device_scalar<int> received_data(received_data_value, stream);
     rmm::device_scalar<int> sent_data(rank, stream);
 
     if (sender) {
@@ -418,7 +419,8 @@ bool test_pointToPoint_device_sendrecv(raft::resources const& h, int numTrials)
       std::cout << "Trial " << i << std::endl;
     }
 
-    rmm::device_scalar<int> received_data(-1, stream);
+    int received_data_value = -1;
+    rmm::device_scalar<int> received_data(received_data_value, stream);
     rmm::device_scalar<int> sent_data(rank, stream);
 
     if (rank % 2 == 0) {
