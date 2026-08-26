@@ -225,6 +225,7 @@ void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::alteration()
   // Random number generator
   curandGenerator_t randGen;
   curandCreateGenerator(&randGen, CURAND_RNG_PSEUDO_DEFAULT);
+  curandSetStream(randGen, stream);
   curandSetPseudoRandomGeneratorSeed(randGen, 1234567);
 
   // Initialize rand values
