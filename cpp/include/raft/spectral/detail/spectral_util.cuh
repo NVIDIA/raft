@@ -20,7 +20,6 @@
 #include <thrust/device_ptr.h>
 #include <thrust/fill.h>
 #include <thrust/for_each.h>
-#include <thrust/iterator/zip_iterator.h>
 #include <thrust/reduce.h>
 #include <thrust/transform.h>
 
@@ -141,10 +140,10 @@ bool construct_indicator(
 
   thrust::for_each(
     thrust_exec_policy,
-    thrust::make_zip_iterator(cuda::std::make_tuple(thrust::device_pointer_cast(clusters),
-                                                    thrust::device_pointer_cast(part_i.raw()))),
-    thrust::make_zip_iterator(cuda::std::make_tuple(thrust::device_pointer_cast(clusters + n),
-                                                    thrust::device_pointer_cast(part_i.raw() + n))),
+    cuda::make_zip_iterator(cuda::std::make_tuple(thrust::device_pointer_cast(clusters),
+                                                  thrust::device_pointer_cast(part_i.raw()))),
+    cuda::make_zip_iterator(cuda::std::make_tuple(thrust::device_pointer_cast(clusters + n),
+                                                  thrust::device_pointer_cast(part_i.raw() + n))),
     equal_to_i_op<vertex_t, weight_t>(index));
   RAFT_CHECK_CUDA(stream);
 
