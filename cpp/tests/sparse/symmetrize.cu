@@ -182,10 +182,15 @@ TEST_P(COOSymmetrizeView, ResultView)
   auto out_matrix =
     raft::make_device_coo_matrix<float, int, int, int>(handle, params.n_rows, params.n_cols);
 
-  linalg::coo_symmetrize(
-    handle, in_view, out_matrix, [] __device__(int row, int col, float val, float trans) {
-      return val + trans;
-    });
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      linalg::coo_symmetrize(
+        h, in_view, out_matrix, [] __device__(int row, int col, float val, float trans) {
+          return val + trans;
+        });
+    },
+    raft::alloc_behavior::DATA_DRIVEN);
 
   RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
 
