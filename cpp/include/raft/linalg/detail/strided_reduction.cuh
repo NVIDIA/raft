@@ -161,8 +161,9 @@ void stridedReduction(OutType* dots,
     constexpr int MinRowsPerThread = 16;
     constexpr int MinRowsPerBlk    = Block.y * MinRowsPerThread;
 
-    const dim3 grid(raft::div_rounding_up_safe(D, (IdxType)ColsPerBlk),
-                    raft::min((IdxType)kMaxBlocksDimY, raft::div_rounding_up_safe(N, (IdxType)MinRowsPerBlk)));
+    const dim3 grid(
+      raft::div_rounding_up_safe(D, (IdxType)ColsPerBlk),
+      raft::min((IdxType)kMaxBlocksDimY, raft::div_rounding_up_safe(N, (IdxType)MinRowsPerBlk)));
     const size_t shmemSize = sizeof(OutType) * Block.x * 2;
 
     raft::launch_kernel({stream, shmemSize},
@@ -180,9 +181,9 @@ void stridedReduction(OutType* dots,
     const dim3 thrds(32, 16);
     IdxType elemsPerThread = raft::div_rounding_up_safe(N, (IdxType)thrds.y);
     elemsPerThread         = (elemsPerThread > 8) ? 8 : elemsPerThread;
-    const dim3 nblks(
-      raft::div_rounding_up_safe(D, (IdxType)thrds.x),
-      raft::min((IdxType)kMaxBlocksDimY, raft::div_rounding_up_safe(N, (IdxType)thrds.y * elemsPerThread)));
+    const dim3 nblks(raft::div_rounding_up_safe(D, (IdxType)thrds.x),
+                     raft::min((IdxType)kMaxBlocksDimY,
+                               raft::div_rounding_up_safe(N, (IdxType)thrds.y * elemsPerThread)));
     const size_t shmemSize = sizeof(OutType) * thrds.x * thrds.y;
 
     raft::launch_kernel({stream, shmemSize},
