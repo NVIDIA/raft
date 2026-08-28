@@ -3,6 +3,8 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
+#include "../test_utils.cuh"
+
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/dry_run_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
@@ -335,15 +337,24 @@ TEST(KernelLaunch, AttributesInDryRunAreSkipped)
   RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
   resource::sync_stream(res);
 
+  auto launch = [&](raft::resources const& h) {
+    raft::launch_kernel({h, 0, {raft::cooperative()}}, 1, 32, write_one_kernel, out.data());
+  };
+
   {
     raft::dry_run_resources dry_res(res);
-    raft::launch_kernel({dry_res, 0, {raft::cooperative()}}, 1, 32, write_one_kernel, out.data());
+    launch(dry_res);
     resource::sync_stream(dry_res);
   }
 
   int host_out = -1;
   RAFT_CUDA_TRY(cudaMemcpy(&host_out, out.data(), sizeof(int), cudaMemcpyDeviceToHost));
   EXPECT_EQ(host_out, 0) << "attributes must not make a dry-run launch execute";
+
+  raft::execute_with_dry_run_check(res, launch, raft::alloc_behavior::NO_ALLOCATIONS);
+
+  RAFT_CUDA_TRY(cudaMemcpy(&host_out, out.data(), sizeof(int), cudaMemcpyDeviceToHost));
+  EXPECT_EQ(host_out, 1) << "the real pass must execute the kernel";
 }
 
 TEST(KernelLaunch, RuntimeKernelLaunch)
@@ -436,15 +447,24 @@ TEST(KernelLaunch, RuntimeKernelDryRunSkipsLaunch)
   resource::sync_stream(res);
 
   auto handle = handle_of(write_one_kernel);
+  auto launch = [&](raft::resources const& h) {
+    raft::launch_kernel(h, 1, 32, raft::kernel_ref<void(int*)>{handle}, out.data());
+  };
+
   {
     raft::dry_run_resources dry_res(res);
-    raft::launch_kernel(dry_res, 1, 32, raft::kernel_ref<void(int*)>{handle}, out.data());
+    launch(dry_res);
     resource::sync_stream(dry_res);
   }
 
   int host_out = -1;
   RAFT_CUDA_TRY(cudaMemcpy(&host_out, out.data(), sizeof(int), cudaMemcpyDeviceToHost));
   EXPECT_EQ(host_out, 0) << "a runtime kernel must not run in dry-run mode";
+
+  raft::execute_with_dry_run_check(res, launch, raft::alloc_behavior::NO_ALLOCATIONS);
+
+  RAFT_CUDA_TRY(cudaMemcpy(&host_out, out.data(), sizeof(int), cudaMemcpyDeviceToHost));
+  EXPECT_EQ(host_out, 1) << "the real pass must execute the kernel";
 }
 
 TEST(KernelLaunch, RuntimeKernelErrorReportsCallSite)
