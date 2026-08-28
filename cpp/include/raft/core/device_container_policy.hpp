@@ -30,6 +30,9 @@
 namespace RAFT_EXPORT raft {
 /**
  * @brief A simplified version of thrust::device_reference with support for CUDA stream.
+ *
+ * @note This proxy performs H2D or D2H transfer and a synchronization on the given
+ *       stream on every access.
  */
 template <typename T>
 class device_reference {
@@ -53,12 +56,14 @@ class device_reference {
     auto* raw = ptr_.get();
     value_type v{};
     update_host(&v, raw, 1, stream_);
+    raft::interruptible::synchronize(stream_);
     return v;
   }
   auto operator=(T const& other) -> device_reference&
   {
     auto* raw = ptr_.get();
     update_device(raw, &other, 1, stream_);
+    raft::interruptible::synchronize(stream_);
     return *this;
   }
 };
