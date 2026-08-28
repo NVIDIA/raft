@@ -18,6 +18,7 @@
 #include <array>
 #include <bitset>
 #include <cstddef>
+#include <initializer_list>
 #include <memory>
 #include <source_location>
 #include <type_traits>
@@ -71,14 +72,44 @@ void dispatch(cudaLaunchConfig_t const& config,
  */
 
 /**
- * @brief Where a kernel is launched: the stream, the dynamic shared memory size, and the call site
- * to blame for launch errors.
+ * @brief Launch attribute: the kernel synchronizes across the whole grid.
+ *
+ * Such a launch fails unless the whole grid is resident on the device at once, so its grid size has
+ * to come from an occupancy query rather than from the problem size.
+ */
+inline auto cooperative() -> cudaLaunchAttribute
+{
+  cudaLaunchAttribute attr{};
+  attr.id              = cudaLaunchAttributeCooperative;
+  attr.val.cooperative = 1;
+  return attr;
+}
+
+/**
+ * @brief Launch attribute: preferred share of the combined L1/shared memory to use as shared
+ * memory, in percent.
+ *
+ * Only a hint; the driver may pick a different split. Unrelated to the cap on dynamic shared
+ * memory, which is a property of the kernel rather than of the launch.
+ */
+inline auto shmem_carveout(unsigned percent) -> cudaLaunchAttribute
+{
+  cudaLaunchAttribute attr{};
+  attr.id                    = cudaLaunchAttributePreferredSharedMemoryCarveout;
+  attr.val.sharedMemCarveout = percent;
+  return attr;
+}
+
+/**
+ * @brief How and where a kernel is launched: the stream, the dynamic shared memory size, the launch
+ * attributes, and the call site to blame for launch errors.
  *
  * Converts implicitly from raft resources or from a stream, so that a launch reads as a single
  * call and the diagnostics of a failed launch point at the launch expression:
  * @code
  *   raft::launch_kernel(res, grid, block, my_kernel, arg0, arg1);
  *   raft::launch_kernel({stream, smem}, grid, block, my_kernel, arg0, arg1);
+ *   raft::launch_kernel({res, smem, {raft::cooperative()}}, grid, block, my_kernel, arg0, arg1);
  * @endcode
  *
  * Launching on raft resources is dry run compliant: the kernel does not run when the handle has the
@@ -87,7 +118,9 @@ void dispatch(cudaLaunchConfig_t const& config,
  *
  * Copy and move are deleted and @c launch_kernel takes this by value, so the parameter can only be
  * initialized from a prvalue: an instance stored in a variable can never be launched, and the
- * captured location is therefore always the one of the launch expression.
+ * captured location is therefore always the one of the launch expression. That is also what makes
+ * it safe for @c config to point at @p attrs, whose backing array lives until the end of that
+ * expression.
  */
 struct launch_on {
  public:
@@ -99,15 +132,18 @@ struct launch_on {
    *
    * @param[in] res raft resources providing the stream to launch on
    * @param[in] smem dynamic shared memory size in bytes
+   * @param[in] attrs launch attributes, e.g. @c raft::cooperative()
    * @param[in] loc call site to blame for launch errors; leave at its default
    */
   launch_on(  // NOLINT(google-explicit-constructor)
     resources const& res,
-    std::size_t smem         = 0,
-    std::source_location loc = std::source_location::current())
+    std::size_t smem                                 = 0,
+    std::initializer_list<cudaLaunchAttribute> attrs = {},
+    std::source_location loc                         = std::source_location::current())
     : launch_on{resource::get_cuda_stream(res).value(),
                 smem,
                 resource::get_dry_run_flag(res) ? detail::kSkipExecution : detail::launch_flags{},
+                attrs,
                 loc}
   {
   }
@@ -122,14 +158,16 @@ struct launch_on {
    * @param[in] stream stream to launch on
    * @param[in] smem dynamic shared memory size in bytes
    * @param[in] kSkipExecution whether to skip the launch, e.g. a dry-run flag plumbed by the caller
+   * @param[in] attrs launch attributes, e.g. @c raft::cooperative()
    * @param[in] loc call site to blame for launch errors; leave at its default
    */
   launch_on(  // NOLINT(google-explicit-constructor)
     rmm::cuda_stream_view stream,
-    std::size_t smem         = 0,
-    bool kSkipExecution      = false,
-    std::source_location loc = std::source_location::current())
-    : launch_on{stream.value(), smem, kSkipExecution, loc}
+    std::size_t smem                                 = 0,
+    bool kSkipExecution                              = false,
+    std::initializer_list<cudaLaunchAttribute> attrs = {},
+    std::source_location loc                         = std::source_location::current())
+    : launch_on{stream.value(), smem, kSkipExecution, attrs, loc}
   {
   }
 
@@ -143,14 +181,17 @@ struct launch_on {
    * @param[in] stream stream to launch on
    * @param[in] smem dynamic shared memory size in bytes
    * @param[in] kSkipExecution whether to skip the launch, e.g. a dry-run flag plumbed by the caller
+   * @param[in] attrs launch attributes, e.g. @c raft::cooperative()
    * @param[in] loc call site to blame for launch errors; leave at its default
    */
   launch_on(  // NOLINT(google-explicit-constructor)
     cudaStream_t stream,
-    std::size_t smem         = 0,
-    bool kSkipExecution      = false,
-    std::source_location loc = std::source_location::current())
-    : launch_on{stream, smem, kSkipExecution ? detail::kSkipExecution : detail::launch_flags{}, loc}
+    std::size_t smem                                 = 0,
+    bool kSkipExecution                              = false,
+    std::initializer_list<cudaLaunchAttribute> attrs = {},
+    std::source_location loc                         = std::source_location::current())
+    : launch_on{
+        stream, smem, kSkipExecution ? detail::kSkipExecution : detail::launch_flags{}, attrs, loc}
   {
   }
 
@@ -170,17 +211,56 @@ struct launch_on {
  private:
   /**
    * The flags are private so that they stay a property of the resources: a call site names a
-   * stream, a shared memory size and at most a dry-run flag, never a launch mode.
+   * stream, a shared memory size, the launch attributes and at most a dry-run flag, never a launch
+   * mode. Attributes differ from flags in exactly that respect: they describe the launch itself, so
+   * they are given at the call site and go straight into @c config.
    */
   launch_on(cudaStream_t stream,
             std::size_t smem,
             detail::launch_flags launch_with,
+            std::initializer_list<cudaLaunchAttribute> attrs,
             std::source_location loc)
     : location{loc}, flags{launch_with}
   {
     config.stream           = stream;
     config.dynamicSmemBytes = smem;
+    config.numAttrs         = static_cast<unsigned>(attrs.size());
+    // cudaLaunchConfig_t::attrs is not const, although cudaLaunchKernelExC takes the configuration
+    // by const pointer and never writes to the list.
+    config.attrs = const_cast<cudaLaunchAttribute*>(attrs.begin());
   }
+};
+
+/**
+ * @brief A kernel that exists only at run time, together with the signature it was compiled with.
+ *
+ * A kernel loaded from a runtime-linked library (@c cudaLibraryGetKernel, e.g. after a JIT LTO
+ * link) has no @c __global__ function pointer for @c launch_kernel to read the parameter types
+ * from, so the signature is named explicitly:
+ * @code
+ *   using scan_kernel_t = void(float const*, std::uint32_t);
+ *   raft::launch_kernel({res, smem}, grid, block,
+ *                       raft::kernel_ref<scan_kernel_t>{handle}, queries, n_queries);
+ * @endcode
+ *
+ * Whether the handle really has that signature is on whoever loaded it. Given the signature, the
+ * launch converts each argument to its parameter type, so a call site does not need casts to make
+ * the argument types match the kernel exactly.
+ *
+ * @tparam Signature the kernel's function type, e.g. @c void(float const*, std::uint32_t)
+ */
+template <typename Signature>
+struct kernel_ref {
+  static_assert(sizeof(Signature) == 0, "kernel_ref needs a function type, e.g. void(float*, int)");
+};
+
+template <typename... Params>
+struct kernel_ref<void(Params...)> {
+  /** @param[in] kernel handle to a loaded kernel whose signature is @c void(Params...) */
+  explicit kernel_ref(cudaKernel_t kernel) : handle{kernel} {}
+
+  /** Handle to the loaded kernel. */
+  cudaKernel_t handle;
 };
 
 /**
@@ -253,6 +333,43 @@ requires(sizeof...(Params) == sizeof...(Args) &&
   // parameters so outermost extended qualifiers such as __restrict__ are not preserved.
   detail::dispatch(where.config,
                    reinterpret_cast<void*>(kernel),
+                   where.flags,
+                   where.location,
+                   static_cast<Params>(std::forward<Args>(args))...);
+}
+
+/**
+ * @brief Launch a kernel named by a runtime handle, converting @p args to its parameter types.
+ *
+ * Behaves like the converting overload above, except that the kernel and its parameter types come
+ * from @p kernel rather than from a @c __global__ function pointer:
+ * @code
+ *   raft::launch_kernel({res, smem}, grid, block,
+ *                       raft::kernel_ref<scan_kernel_t>{launcher->get_kernel()}, queries, n);
+ * @endcode
+ *
+ * Unlike the two function-pointer overloads, this one accepts arguments that already have the
+ * parameter types too, because there is no exactly-matching overload for them to prefer.
+ *
+ * @param[in] where stream to launch on, dynamic shared memory size, attributes, and the call site
+ * @param[in] grid grid dimensions
+ * @param[in] block block dimensions
+ * @param[in] kernel handle to the loaded kernel, with the signature to launch it by
+ * @param[in] args arguments to convert and pass to @p kernel
+ */
+template <typename... Params, typename... Args>
+requires(sizeof...(Params) == sizeof...(Args)) void launch_kernel(
+  launch_on where, dim3 grid, dim3 block, kernel_ref<void(Params...)> kernel, Args&&... args)
+{
+  static_assert((std::is_convertible_v<Args, Params> && ...),
+                "Each launch argument must be convertible to the corresponding kernel parameter");
+
+  where.config.gridDim  = grid;
+  where.config.blockDim = block;
+  // A cudaKernel_t is an object pointer, so it needs no cast to reach dispatch, which launches it
+  // with the same cudaLaunchKernelExC that a __global__ function pointer goes through.
+  detail::dispatch(where.config,
+                   kernel.handle,
                    where.flags,
                    where.location,
                    static_cast<Params>(std::forward<Args>(args))...);
