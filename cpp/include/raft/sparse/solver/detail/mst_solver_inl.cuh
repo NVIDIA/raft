@@ -80,8 +80,8 @@ MST_solver<vertex_t, edge_t, weight_t, alteration_t>::MST_solver(raft::resources
     temp_src(2 * v_, stream_),
     temp_dst(2 * v_, stream_),
     temp_weights(2 * v_, stream_),
-    mst_edge_count(1, stream_),
-    prev_mst_edge_count(1, stream_),
+    mst_edge_count(stream_),
+    prev_mst_edge_count(stream_),
     stream(stream_),
     symmetrize_output(symmetrize_output_),
     initialize_colors(initialize_colors_),
@@ -225,6 +225,7 @@ void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::alteration()
   // Random number generator
   curandGenerator_t randGen;
   curandCreateGenerator(&randGen, CURAND_RNG_PSEUDO_DEFAULT);
+  curandSetStream(randGen, stream);
   curandSetPseudoRandomGeneratorSeed(randGen, 1234567);
 
   // Initialize rand values

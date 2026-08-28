@@ -43,14 +43,15 @@ class MeanSquaredErrorTest : public ::testing::TestWithParam<MeanSquaredErrorInp
   MeanSquaredErrorInputs<T> params;
 
   raft::resources handle;
+  T zero = 0;
   rmm::device_scalar<T> output;
   rmm::device_scalar<T> refoutput;
 
  public:
   MeanSquaredErrorTest()
     : testing::TestWithParam<MeanSquaredErrorInputs<T>>(),
-      output(0, resource::get_cuda_stream(handle)),
-      refoutput(0, resource::get_cuda_stream(handle))
+      output(zero, resource::get_cuda_stream(handle)),
+      refoutput(zero, resource::get_cuda_stream(handle))
   {
     resource::sync_stream(handle);
   }
