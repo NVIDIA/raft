@@ -330,6 +330,8 @@ if(BUILD_TESTS)
     util/bitonic_sort.cu
     util/cudart_utils.cpp
     util/device_atomics.cu
+    util/dry_run_guards.cu
+    util/dry_run_resources.cpp
     util/fast_int_div.cu
     util/integer_utils.cpp
     util/integer_utils.cu
@@ -338,8 +340,6 @@ if(BUILD_TESTS)
     util/popc.cu
     util/pow2_utils.cu
     util/reduction.cu
-    util/dry_run_resources.cpp
-    util/dry_run_guards.cu
   )
 endif()
 
