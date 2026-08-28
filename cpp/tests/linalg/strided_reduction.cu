@@ -29,10 +29,8 @@ struct stridedReductionInputs {
 
 template <typename T>
 void stridedReductionLaunch(
-  T* dots, const T* data, int cols, int rows, bool inplace, cudaStream_t stream)
+  const raft::resources& handle, T* dots, const T* data, int cols, int rows, bool inplace)
 {
-  raft::resources handle;
-  resource::set_cuda_stream(handle, stream);
   auto dots_view = raft::make_device_vector_view(dots, cols);
   auto data_view = raft::make_device_matrix_view(data, rows, cols);
   strided_reduction(handle, data_view, dots_view, (T)0, inplace, raft::sq_op{});
@@ -80,8 +78,13 @@ class stridedReductionTest : public ::testing::TestWithParam<stridedReductionInp
                           raft::sq_op{},
                           raft::add_op{},
                           raft::identity_op{});
-    stridedReductionLaunch(dots_act.data(), data.data(), cols, rows, false, stream);
-    stridedReductionLaunch(dots_act.data(), data.data(), cols, rows, true, stream);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        stridedReductionLaunch(h, dots_act.data(), data.data(), cols, rows, false);
+        stridedReductionLaunch(h, dots_act.data(), data.data(), cols, rows, true);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     resource::sync_stream(handle, stream);
   }
 

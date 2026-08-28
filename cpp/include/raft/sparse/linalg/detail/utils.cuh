@@ -190,8 +190,6 @@ void faster_dot_on_csr(raft::resources const& handle,
                         n_rows,
                         dim);
   }
-
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
 }
 
 }  // namespace detail

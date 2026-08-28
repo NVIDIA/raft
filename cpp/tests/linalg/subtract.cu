@@ -91,11 +91,15 @@ class SubtractTest : public ::testing::TestWithParam<SubtractInputs<T>> {
     const auto scalar   = static_cast<T>(1);
     auto scalar_view    = raft::make_host_scalar_view(&scalar);
 
-    subtract(handle, const_in1_view, const_in2_view, out_view);
-    subtract_scalar(handle, const_out_view, out_view, scalar_view);
-    subtract(handle, const_in1_view, const_in2_view, in1_view);
-    subtract_scalar(handle, const_in1_view, in1_view, scalar_view);
-    resource::sync_stream(handle, stream);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        subtract(h, const_in1_view, const_in2_view, out_view);
+        subtract_scalar(h, const_out_view, out_view, scalar_view);
+        subtract(h, const_in1_view, const_in2_view, in1_view);
+        subtract_scalar(h, const_in1_view, in1_view, scalar_view);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
   }
 
  protected:

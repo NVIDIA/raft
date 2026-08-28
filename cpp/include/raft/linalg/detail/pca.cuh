@@ -5,13 +5,16 @@
 
 #pragma once
 
+#include <raft/core/copy.hpp>
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/linalg/eig.cuh>
 #include <raft/linalg/eltwise.cuh>
 #include <raft/linalg/matrix_vector.cuh>
+#include <raft/linalg/multiply.cuh>
 #include <raft/linalg/pca_types.hpp>
 #include <raft/linalg/transpose.cuh>
 #include <raft/linalg/tsvd.cuh>
@@ -23,6 +26,7 @@
 #include <raft/stats/mean.cuh>
 #include <raft/stats/mean_center.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -45,62 +49,51 @@ void trunc_comp_exp_vars(raft::resources const& handle,
 
   constexpr bool is_row_major = std::is_same_v<LayoutPolicy, raft::row_major>;
 
-  auto stream = resource::get_cuda_stream(handle);
-
   auto n_cols       = in.extent(0);
   auto n_components = components.extent(0);
 
-  auto len = static_cast<std::size_t>(n_cols * n_cols);
-  rmm::device_uvector<math_t> components_all(len, stream);
-  rmm::device_uvector<math_t> explained_var_all(static_cast<std::size_t>(n_cols), stream);
-  rmm::device_uvector<math_t> explained_var_ratio_all(static_cast<std::size_t>(n_cols), stream);
+  auto components_all =
+    raft::make_device_matrix<math_t, idx_t, LayoutPolicy>(handle, n_cols, n_cols);
+  auto explained_var_all       = raft::make_device_vector<math_t, idx_t>(handle, n_cols);
+  auto explained_var_ratio_all = raft::make_device_vector<math_t, idx_t>(handle, n_cols);
 
   detail::cal_eig<math_t, idx_t, LayoutPolicy>(
-    handle,
-    prms,
-    in,
-    raft::make_device_matrix_view<math_t, idx_t, LayoutPolicy>(
-      components_all.data(), n_cols, n_cols),
-    raft::make_device_vector_view<math_t, idx_t>(explained_var_all.data(), n_cols));
+    handle, prms, in, components_all.view(), explained_var_all.view());
   if constexpr (is_row_major) {
-    raft::copy(components.data_handle(),
-               components_all.data(),
-               static_cast<std::size_t>(n_components) * static_cast<std::size_t>(n_cols),
-               stream);
+    raft::copy(handle,
+               components,
+               raft::make_device_matrix_view<const math_t, idx_t, LayoutPolicy>(
+                 components_all.data_handle(), n_components, n_cols));
   } else {
-    raft::matrix::trunc_zero_origin(
-      handle,
-      raft::make_device_matrix_view<const math_t, idx_t, raft::col_major>(
-        components_all.data(), n_cols, n_cols),
-      raft::make_device_matrix_view<math_t, idx_t, raft::col_major>(
-        components.data_handle(), n_components, n_cols));
+    raft::matrix::trunc_zero_origin(handle,
+                                    raft::make_const_mdspan(components_all.view()),
+                                    raft::make_device_matrix_view<math_t, idx_t, raft::col_major>(
+                                      components.data_handle(), n_components, n_cols));
   }
-  raft::matrix::ratio(handle,
-                      raft::make_device_matrix_view<const math_t, idx_t, raft::col_major>(
-                        explained_var_all.data(), n_cols, idx_t(1)),
-                      raft::make_device_matrix_view<math_t, idx_t, raft::col_major>(
-                        explained_var_ratio_all.data(), n_cols, idx_t(1)));
+  raft::matrix::ratio(
+    handle, raft::make_const_mdspan(explained_var_all.view()), explained_var_ratio_all.view());
   raft::matrix::trunc_zero_origin(
     handle,
     raft::make_device_matrix_view<const math_t, idx_t, raft::col_major>(
-      explained_var_all.data(), n_cols, idx_t(1)),
+      explained_var_all.data_handle(), n_cols, idx_t(1)),
     raft::make_device_matrix_view<math_t, idx_t, raft::col_major>(
       explained_var.data_handle(), n_components, idx_t(1)));
   raft::matrix::trunc_zero_origin(
     handle,
     raft::make_device_matrix_view<const math_t, idx_t, raft::col_major>(
-      explained_var_ratio_all.data(), n_cols, idx_t(1)),
+      explained_var_ratio_all.data_handle(), n_cols, idx_t(1)),
     raft::make_device_matrix_view<math_t, idx_t, raft::col_major>(
       explained_var_ratio.data_handle(), n_components, idx_t(1)));
 
   if (static_cast<std::size_t>(n_components) < static_cast<std::size_t>(n_cols) &&
       static_cast<std::size_t>(n_components) < n_rows) {
-    raft::stats::mean<true>(noise_vars.data_handle(),
-                            explained_var_all.data() + static_cast<std::size_t>(n_components),
-                            std::size_t{1},
-                            static_cast<std::size_t>(n_cols - n_components),
-                            false,
-                            stream);
+    raft::stats::mean(
+      handle,
+      raft::make_device_matrix_view<const math_t, idx_t, raft::row_major>(
+        explained_var_all.data_handle() + static_cast<std::size_t>(n_components),
+        static_cast<idx_t>(n_cols - n_components),
+        idx_t(1)),
+      raft::make_device_vector_view<math_t, idx_t>(noise_vars.data_handle(), idx_t(1)));
   } else {
     raft::matrix::fill(
       handle,
@@ -140,10 +133,8 @@ void pca_fit(raft::resources const& handle,
   static_assert(
     std::is_same_v<LayoutPolicy, raft::row_major> || std::is_same_v<LayoutPolicy, raft::col_major>,
     "pca_fit: input layout must be raft::row_major or raft::col_major");
-  constexpr bool input_row_major = std::is_same_v<LayoutPolicy, raft::row_major>;
 
-  auto stream        = resource::get_cuda_stream(handle);
-  auto cublas_handle = raft::resource::get_cublas_handle(handle);
+  auto stream = resource::get_cuda_stream(handle);
 
   auto n_rows = input.extent(0);
   auto n_cols = input.extent(1);
@@ -155,14 +146,18 @@ void pca_fit(raft::resources const& handle,
   ASSERT(n_components > 0, "Parameter n_components: number of components cannot be less than one");
   ASSERT(n_components <= n_cols, "n_components cannot exceed n_cols");
 
-  raft::stats::mean<input_row_major>(
-    mu.data_handle(), input.data_handle(), n_cols, n_rows, false, stream);
+  raft::stats::mean(handle, raft::make_const_mdspan(input), mu);
 
   auto len = static_cast<std::size_t>(n_cols * n_cols);
   rmm::device_uvector<math_t> cov(len, stream);
 
-  raft::stats::cov<input_row_major>(
-    handle, cov.data(), input.data_handle(), mu.data_handle(), n_cols, n_rows, true, true, stream);
+  raft::stats::cov(
+    handle,
+    input,
+    raft::make_const_mdspan(mu),
+    raft::make_device_matrix_view<math_t, idx_t, LayoutPolicy>(cov.data(), n_cols, n_cols),
+    true,
+    true);
 
   detail::trunc_comp_exp_vars<math_t, idx_t, LayoutPolicy>(
     handle,
@@ -183,8 +178,8 @@ void pca_fit(raft::resources const& handle,
                               raft::make_host_scalar_view(&scalar),
                               true);
 
-  raft::stats::meanAdd<input_row_major, true>(
-    input.data_handle(), input.data_handle(), mu.data_handle(), n_cols, n_rows, stream);
+  raft::stats::mean_add<raft::Apply::ALONG_ROWS>(
+    handle, raft::make_const_mdspan(input), raft::make_const_mdspan(mu), input);
 
   detail::sign_flip_components(handle, input, components, true, flip_signs_based_on_U);
 }
@@ -214,7 +209,6 @@ void pca_transform(raft::resources const& handle,
   static_assert(
     std::is_same_v<LayoutPolicy, raft::row_major> || std::is_same_v<LayoutPolicy, raft::col_major>,
     "pca_transform: layout must be raft::row_major or raft::col_major");
-  constexpr bool input_row_major = std::is_same_v<LayoutPolicy, raft::row_major>;
 
   auto stream = resource::get_cuda_stream(handle);
 
@@ -228,12 +222,19 @@ void pca_transform(raft::resources const& handle,
 
   auto components_len = static_cast<std::size_t>(n_cols * n_components);
   rmm::device_uvector<math_t> components_copy{components_len, stream};
-  raft::copy(components_copy.data(), components.data_handle(), components_len, stream);
+  raft::copy(handle,
+             raft::make_device_matrix_view<math_t, idx_t, LayoutPolicy>(
+               components_copy.data(), n_components, n_cols),
+             components);
 
   if (prms.whiten) {
     math_t scalar = math_t(sqrt(n_rows - 1));
-    raft::linalg::scalarMultiply(
-      components_copy.data(), components_copy.data(), scalar, components_len, stream);
+    raft::linalg::multiply_scalar(handle,
+                                  raft::make_device_vector_view<const math_t, idx_t>(
+                                    components_copy.data(), static_cast<idx_t>(components_len)),
+                                  raft::make_device_vector_view<math_t, idx_t>(
+                                    components_copy.data(), static_cast<idx_t>(components_len)),
+                                  raft::make_host_scalar_view<const math_t>(&scalar));
     raft::linalg::binary_div_skip_zero<raft::Apply::ALONG_COLUMNS>(
       handle,
       raft::make_device_matrix_view<math_t, idx_t, LayoutPolicy>(
@@ -242,8 +243,8 @@ void pca_transform(raft::resources const& handle,
                                                          n_components));
   }
 
-  raft::stats::meanCenter<input_row_major, true>(
-    input.data_handle(), input.data_handle(), mu.data_handle(), n_cols, n_rows, stream);
+  raft::stats::mean_center<raft::Apply::ALONG_ROWS>(
+    handle, raft::make_const_mdspan(input), raft::make_const_mdspan(mu), input);
 
   detail::tsvd_transform<math_t, idx_t, LayoutPolicy>(
     handle,
@@ -253,8 +254,8 @@ void pca_transform(raft::resources const& handle,
       components_copy.data(), n_components, n_cols),
     trans_input);
 
-  raft::stats::meanAdd<input_row_major, true>(
-    input.data_handle(), input.data_handle(), mu.data_handle(), n_cols, n_rows, stream);
+  raft::stats::mean_add<raft::Apply::ALONG_ROWS>(
+    handle, raft::make_const_mdspan(input), raft::make_const_mdspan(mu), input);
 }
 
 /**
@@ -282,7 +283,6 @@ void pca_inverse_transform(raft::resources const& handle,
   static_assert(
     std::is_same_v<LayoutPolicy, raft::row_major> || std::is_same_v<LayoutPolicy, raft::col_major>,
     "pca_inverse_transform: layout must be raft::row_major or raft::col_major");
-  constexpr bool input_row_major = std::is_same_v<LayoutPolicy, raft::row_major>;
 
   auto stream = resource::get_cuda_stream(handle);
 
@@ -296,13 +296,20 @@ void pca_inverse_transform(raft::resources const& handle,
 
   auto components_len = static_cast<std::size_t>(n_cols * n_components);
   rmm::device_uvector<math_t> components_copy{components_len, stream};
-  raft::copy(components_copy.data(), components.data_handle(), components_len, stream);
+  raft::copy(handle,
+             raft::make_device_matrix_view<math_t, idx_t, LayoutPolicy>(
+               components_copy.data(), n_components, n_cols),
+             components);
 
   if (prms.whiten) {
     math_t sqrt_n_samples = sqrt(n_rows - 1);
     math_t scalar         = n_rows - 1 > 0 ? math_t(1 / sqrt_n_samples) : 0;
-    raft::linalg::scalarMultiply(
-      components_copy.data(), components_copy.data(), scalar, components_len, stream);
+    raft::linalg::multiply_scalar(handle,
+                                  raft::make_device_vector_view<const math_t, idx_t>(
+                                    components_copy.data(), static_cast<idx_t>(components_len)),
+                                  raft::make_device_vector_view<math_t, idx_t>(
+                                    components_copy.data(), static_cast<idx_t>(components_len)),
+                                  raft::make_host_scalar_view<const math_t>(&scalar));
     raft::linalg::binary_mult_skip_zero<raft::Apply::ALONG_COLUMNS>(
       handle,
       raft::make_device_matrix_view<math_t, idx_t, LayoutPolicy>(
@@ -319,8 +326,8 @@ void pca_inverse_transform(raft::resources const& handle,
       components_copy.data(), n_components, n_cols),
     output);
 
-  raft::stats::meanAdd<input_row_major, true>(
-    output.data_handle(), output.data_handle(), mu.data_handle(), n_cols, n_rows, stream);
+  raft::stats::mean_add<raft::Apply::ALONG_ROWS>(
+    handle, raft::make_const_mdspan(output), raft::make_const_mdspan(mu), output);
 }
 
 /**

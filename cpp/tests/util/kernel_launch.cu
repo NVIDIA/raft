@@ -4,6 +4,7 @@
  */
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/dry_run_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_rt_essentials.hpp>
@@ -178,6 +179,51 @@ TEST(KernelLaunch, ErrorReportsCallSite)
   re_exp += R"( function=.*ErrorReportsCallSite.*: call='cudaLaunchKernelExC', Reason=.*)";
   EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
     << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
+}
+
+TEST(KernelLaunch, DryRunSkipsLaunch)
+{
+  raft::resources res;
+  auto stream = resource::get_cuda_stream(res);
+  // Allocate and zero with the real resources: dry-run memory must never be written to.
+  rmm::device_uvector<int> out(1, stream);
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+  resource::sync_stream(res);
+
+  {
+    raft::dry_run_resources dry_res(res);
+    raft::launch_kernel(dry_res, 1, 32, write_one_kernel, out.data());
+    resource::sync_stream(dry_res);
+  }
+
+  int host_out = -1;
+  RAFT_CUDA_TRY(cudaMemcpy(&host_out, out.data(), sizeof(int), cudaMemcpyDeviceToHost));
+  EXPECT_EQ(host_out, 0) << "the kernel must not run in dry-run mode";
+}
+
+TEST(KernelLaunch, DryRunIgnoresBadConfig)
+{
+  raft::resources res;
+  raft::dry_run_resources dry_res(res);
+
+  // A skipped launch is not validated by CUDA, so even a bad configuration does not throw.
+  constexpr int k_bad_block = 2048;
+  EXPECT_NO_THROW(raft::launch_kernel(dry_res, 1, k_bad_block, noop_kernel));
+}
+
+TEST(KernelLaunch, SkipExecutionOnStream)
+{
+  raft::resources res;
+  auto stream = resource::get_cuda_stream(res);
+  rmm::device_uvector<int> out(1, stream);
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+
+  raft::launch_kernel({stream, 0, true}, 1, 32, write_one_kernel, out.data());
+  resource::sync_stream(res);
+
+  int host_out = -1;
+  RAFT_CUDA_TRY(cudaMemcpy(&host_out, out.data(), sizeof(int), cudaMemcpyDeviceToHost));
+  EXPECT_EQ(host_out, 0) << "skip_execution must suppress the launch";
 }
 
 }  // namespace raft

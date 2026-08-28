@@ -5,7 +5,9 @@
 
 #pragma once
 
+#include <raft/core/interruptible.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_rt_essentials.hpp>
 
@@ -14,6 +16,7 @@
 #include <cuda_runtime.h>
 
 #include <array>
+#include <bitset>
 #include <cstddef>
 #include <memory>
 #include <source_location>
@@ -25,6 +28,21 @@ namespace raft {
 namespace detail {
 
 /**
+ * @brief How a kernel is launched, beyond the stream and the shared memory size.
+ *
+ * A default-constructed value launches the kernel normally. The flags are an implementation detail
+ * of `launch_on`: they are derived from the resources rather than passed at the call site, so that
+ * the behavior of a launch can be changed by configuring the handle.
+ */
+using launch_flags = std::bitset<32>;
+
+/** Do not launch the kernel at all; set from the dry-run flag resource. */
+inline constexpr launch_flags kSkipExecution{1U << 0};
+
+/** Synchronize the stream after the launch, blaming the call site for late errors. */
+inline constexpr launch_flags kBlocking{1U << 1};
+
+/**
  * @brief Launch a kernel, copying the launch arguments into parameters first.
  *
  * Taking the address of a copy rather than of the caller's object means passing a constant (e.g. a
@@ -33,13 +51,16 @@ namespace detail {
 template <typename... Params>
 void dispatch(cudaLaunchConfig_t const& config,
               void* kernel,
+              launch_flags flags,
               std::source_location location,
               Params... params)
 {
+  if ((flags & kSkipExecution).any()) { return; }
   std::array<void*, sizeof...(Params)> arg_ptrs{
     {const_cast<void*>(static_cast<void const*>(std::addressof(params)))...}};
   raft::check_cuda_error(
     cudaLaunchKernelExC(&config, kernel, arg_ptrs.data()), "cudaLaunchKernelExC", location);
+  if ((flags & kBlocking).any()) { raft::interruptible::synchronize(config.stream, location); }
 }
 
 }  // namespace detail
@@ -60,6 +81,10 @@ void dispatch(cudaLaunchConfig_t const& config,
  *   raft::launch_kernel({stream, smem}, grid, block, my_kernel, arg0, arg1);
  * @endcode
  *
+ * Launching on raft resources is dry run compliant: the kernel does not run when the handle has the
+ * dry run flag set, so such a launch needs no guard of its own. The stream overloads cannot know
+ * that, hence their @c kSkipExecution argument.
+ *
  * Copy and move are deleted and @c launch_kernel takes this by value, so the parameter can only be
  * initialized from a prvalue: an instance stored in a variable can never be launched, and the
  * captured location is therefore always the one of the launch expression.
@@ -67,6 +92,11 @@ void dispatch(cudaLaunchConfig_t const& config,
 struct launch_on {
  public:
   /**
+   * Launch on the stream owned by the resources.
+   *
+   * The launch is skipped when the handle is in dry run mode; do not add a dry-run guard around it
+   * (see `docs/source/dry_run_protocol.md`).
+   *
    * @param[in] res raft resources providing the stream to launch on
    * @param[in] smem dynamic shared memory size in bytes
    * @param[in] loc call site to blame for launch errors; leave at its default
@@ -75,36 +105,53 @@ struct launch_on {
     resources const& res,
     std::size_t smem         = 0,
     std::source_location loc = std::source_location::current())
-    : launch_on{resource::get_cuda_stream(res), smem, loc}
+    : launch_on{resource::get_cuda_stream(res).value(),
+                smem,
+                resource::get_dry_run_flag(res) ? detail::kSkipExecution : detail::launch_flags{},
+                loc}
   {
   }
 
   /**
+   * Launch on an explicit stream, which carries no dry-run state of its own.
+   *
+   * In code reachable from an API taking `raft::resources`, either launch on the resources instead
+   * or pass @p kSkipExecution, otherwise the kernel runs in dry-run mode, which must not execute
+   * any CUDA work.
+   *
    * @param[in] stream stream to launch on
    * @param[in] smem dynamic shared memory size in bytes
+   * @param[in] kSkipExecution whether to skip the launch, e.g. a dry-run flag plumbed by the caller
    * @param[in] loc call site to blame for launch errors; leave at its default
    */
   launch_on(  // NOLINT(google-explicit-constructor)
     rmm::cuda_stream_view stream,
     std::size_t smem         = 0,
+    bool kSkipExecution      = false,
     std::source_location loc = std::source_location::current())
-    : launch_on{stream.value(), smem, loc}
+    : launch_on{stream.value(), smem, kSkipExecution, loc}
   {
   }
 
   /**
+   * Launch on an explicit stream, which carries no dry-run state of its own.
+   *
+   * In code reachable from an API taking `raft::resources`, either launch on the resources instead
+   * or pass @p kSkipExecution, otherwise the kernel runs in dry-run mode, which must not execute
+   * any CUDA work.
+   *
    * @param[in] stream stream to launch on
    * @param[in] smem dynamic shared memory size in bytes
+   * @param[in] kSkipExecution whether to skip the launch, e.g. a dry-run flag plumbed by the caller
    * @param[in] loc call site to blame for launch errors; leave at its default
    */
   launch_on(  // NOLINT(google-explicit-constructor)
     cudaStream_t stream,
     std::size_t smem         = 0,
+    bool kSkipExecution      = false,
     std::source_location loc = std::source_location::current())
-    : location{loc}
+    : launch_on{stream, smem, kSkipExecution ? detail::kSkipExecution : detail::launch_flags{}, loc}
   {
-    config.stream           = stream;
-    config.dynamicSmemBytes = smem;
   }
 
   launch_on(launch_on const&)            = delete;
@@ -117,6 +164,23 @@ struct launch_on {
   std::source_location location;
   /** Launch configuration; the grid and block dimensions are filled in by the launch. */
   cudaLaunchConfig_t config{};
+  /** How to launch; derived from the resources rather than given at the call site. */
+  detail::launch_flags flags{};
+
+ private:
+  /**
+   * The flags are private so that they stay a property of the resources: a call site names a
+   * stream, a shared memory size and at most a dry-run flag, never a launch mode.
+   */
+  launch_on(cudaStream_t stream,
+            std::size_t smem,
+            detail::launch_flags launch_with,
+            std::source_location loc)
+    : location{loc}, flags{launch_with}
+  {
+    config.stream           = stream;
+    config.dynamicSmemBytes = smem;
+  }
 };
 
 /**
@@ -151,8 +215,11 @@ void launch_kernel(launch_on where,
   // Let dispatch deduce its by-value parameter types instead of explicitly forwarding Args.
   // In particular, this drops outermost extended qualifiers such as __restrict__ before dispatch
   // takes the address of each parameter copy for cudaLaunchKernelExC.
-  detail::dispatch(
-    where.config, reinterpret_cast<void*>(kernel), where.location, std::forward<Args>(args)...);
+  detail::dispatch(where.config,
+                   reinterpret_cast<void*>(kernel),
+                   where.flags,
+                   where.location,
+                   std::forward<Args>(args)...);
 }
 
 /**
@@ -186,6 +253,7 @@ requires(sizeof...(Params) == sizeof...(Args) &&
   // parameters so outermost extended qualifiers such as __restrict__ are not preserved.
   detail::dispatch(where.config,
                    reinterpret_cast<void*>(kernel),
+                   where.flags,
                    where.location,
                    static_cast<Params>(std::forward<Args>(args))...);
 }

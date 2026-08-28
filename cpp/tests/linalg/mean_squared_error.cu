@@ -71,11 +71,17 @@ class MeanSquaredErrorTest : public ::testing::TestWithParam<MeanSquaredErrorInp
     uniform(handle, r, b.data(), params.len, T(-1.0), T(1.0));
     resource::sync_stream(handle);
 
-    mean_squared_error<T, std::uint32_t, T>(handle,
-                                            make_device_vector_view<const T>(a.data(), params.len),
-                                            make_device_vector_view<const T>(b.data(), params.len),
-                                            make_device_scalar_view<T>(output.data()),
-                                            params.weight);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        mean_squared_error<T, std::uint32_t, T>(
+          h,
+          make_device_vector_view<const T>(a.data(), params.len),
+          make_device_vector_view<const T>(b.data(), params.len),
+          make_device_scalar_view<T>(output.data()),
+          params.weight);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
 
     raft::launch_kernel(handle,
                         256,

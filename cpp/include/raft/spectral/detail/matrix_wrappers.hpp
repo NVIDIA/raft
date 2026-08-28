@@ -11,6 +11,7 @@
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusparse_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
@@ -91,7 +92,8 @@ template <typename value_type>
 class vector_t {
  public:
   vector_t(resources const& raft_handle, size_type sz)
-    : buffer_(sz, resource::get_cuda_stream(raft_handle)),
+    : handle_(raft_handle),
+      buffer_(sz, resource::get_cuda_stream(raft_handle)),
       thrust_policy(resource::get_thrust_policy(raft_handle))
   {
   }
@@ -104,6 +106,14 @@ class vector_t {
 
   value_type nrm1() const
   {
+    // Dry-run: thrust::reduce here operates on `buffer_` (which in dry-run aliases
+    // the shared probe buffer) and internally requests backend-managed temporary
+    // storage that has no size-query API. Running it would read probe memory and
+    // is unsafe, so we skip it and return a placeholder. The consequence is a
+    // small, inevitable under-count of that transient thrust scratch;
+    // the returned value is a non-authoritative
+    // placeholder and must not be used for control flow in dry-run.
+    if (resource::get_dry_run_flag(handle_)) { return value_type{0}; }
     return thrust::reduce(
       thrust_policy,
       buffer_.data(),
@@ -118,6 +128,7 @@ class vector_t {
 
   void fill(value_type value)
   {
+    if (resource::get_dry_run_flag(handle_)) { return; }
     thrust::fill_n(thrust_policy, buffer_.data(), buffer_.size(), value);
   }
 
@@ -125,6 +136,7 @@ class vector_t {
   using thrust_exec_policy_t =
     thrust::detail::execute_with_allocator<rmm::mr::thrust_allocator<char>,
                                            thrust::cuda_cub::execute_on_stream_nosync_base>;
+  raft::resources const& handle_;
   rmm::device_uvector<value_type> buffer_;
   const thrust_exec_policy_t thrust_policy;
 };
@@ -212,6 +224,7 @@ struct sparse_matrix_t {
 
     auto cusparse_h = resource::get_cusparse_handle(handle_);
     auto stream     = resource::get_cuda_stream(handle_);
+    bool is_dry_run = resource::get_dry_run_flag(handle_);
 
     cusparseOperation_t trans = transpose ? CUSPARSE_OPERATION_TRANSPOSE :  // transpose
                                   CUSPARSE_OPERATION_NON_TRANSPOSE;         // non-transpose
@@ -240,7 +253,7 @@ struct sparse_matrix_t {
     RAFT_CUSPARSE_TRY(raft::sparse::detail::cusparsecreatednvec(&vecX, size_x, x));
 
     rmm::device_uvector<value_type> y_tmp(size_y, stream);
-    raft::copy(y_tmp.data(), y, size_y, stream);
+    if (!is_dry_run) { raft::copy(y_tmp.data(), y, size_y, stream); }
 
     cusparseDnVecDescr_t vecY;
     RAFT_CUSPARSE_TRY(raft::sparse::detail::cusparsecreatednvec(&vecY, size_y, y_tmp.data()));
@@ -257,11 +270,21 @@ struct sparse_matrix_t {
 
     // finally perform SpMV:
     //
-    RAFT_CUSPARSE_TRY(raft::sparse::detail::cusparsespmv(
-      cusparse_h, trans, &alpha, matA, vecX, &beta, vecY, spmv_alg, external_buffer.raw(), stream));
+    if (!is_dry_run) {
+      RAFT_CUSPARSE_TRY(raft::sparse::detail::cusparsespmv(cusparse_h,
+                                                           trans,
+                                                           &alpha,
+                                                           matA,
+                                                           vecX,
+                                                           &beta,
+                                                           vecY,
+                                                           spmv_alg,
+                                                           external_buffer.raw(),
+                                                           stream));
 
-    // FIXME: This is a workaround for a cusparse issue being encountered in CUDA 12
-    raft::copy(y, y_tmp.data(), size_y, stream);
+      // FIXME: This is a workaround for a cusparse issue being encountered in CUDA 12
+      raft::copy(y, y_tmp.data(), size_y, stream);
+    }
     // free descriptors:
     //(TODO: maybe wrap them in a RAII struct?)
     //
@@ -269,6 +292,7 @@ struct sparse_matrix_t {
     RAFT_CUSPARSE_TRY(cusparseDestroyDnVec(vecX));
     RAFT_CUSPARSE_TRY(cusparseDestroySpMat(matA));
 #else
+    if (is_dry_run) { return; }
     RAFT_CUSPARSE_TRY(
       raft::sparse::detail::cusparsesetpointermode(cusparse_h, CUSPARSE_POINTER_MODE_HOST, stream));
     cusparseMatDescr_t descr = 0;
@@ -367,17 +391,20 @@ struct laplacian_matrix_t : sparse_matrix_t<index_type, value_type, nnz_type> {
     constexpr int BLOCK_SIZE = 1024;
     auto n                   = sparse_matrix_t<index_type, value_type, nnz_type>::nrows_;
 
-    auto handle   = sparse_matrix_t<index_type, value_type, nnz_type>::get_handle();
-    auto cublas_h = resource::get_cublas_handle(handle);
-    auto stream   = resource::get_cuda_stream(handle);
+    auto handle     = sparse_matrix_t<index_type, value_type, nnz_type>::get_handle();
+    auto cublas_h   = resource::get_cublas_handle(handle);
+    auto stream     = resource::get_cuda_stream(handle);
+    bool is_dry_run = resource::get_dry_run_flag(handle);
 
     // scales y by beta:
     //
-    if (beta == 0) {
-      RAFT_CUDA_TRY(cudaMemsetAsync(y, 0, n * sizeof(value_type), stream));
-    } else if (beta != 1) {
-      // TODO: Call from public API when ready
-      RAFT_CUBLAS_TRY(raft::linalg::detail::cublasscal(cublas_h, n, &beta, y, 1, stream));
+    if (!is_dry_run) {
+      if (beta == 0) {
+        RAFT_CUDA_TRY(cudaMemsetAsync(y, 0, n * sizeof(value_type), stream));
+      } else if (beta != 1) {
+        // TODO: Call from public API when ready
+        RAFT_CUBLAS_TRY(raft::linalg::detail::cublasscal(cublas_h, n, &beta, y, 1, stream));
+      }
     }
 
     // Apply diagonal matrix
@@ -430,9 +457,10 @@ struct modularity_matrix_t : laplacian_matrix_t<index_type, value_type, nnz_type
   {
     auto n = sparse_matrix_t<index_type, value_type, nnz_type>::nrows_;
 
-    auto handle   = sparse_matrix_t<index_type, value_type, nnz_type>::get_handle();
-    auto cublas_h = resource::get_cublas_handle(handle);
-    auto stream   = resource::get_cuda_stream(handle);
+    auto handle     = sparse_matrix_t<index_type, value_type, nnz_type>::get_handle();
+    auto cublas_h   = resource::get_cublas_handle(handle);
+    auto stream     = resource::get_cuda_stream(handle);
+    bool is_dry_run = resource::get_dry_run_flag(handle);
 
     // y = A*x
     //
@@ -444,29 +472,31 @@ struct modularity_matrix_t : laplacian_matrix_t<index_type, value_type, nnz_type
     //
     // Cublas::dot(this->n, D.raw(), 1, x, 1, &dot_res);
     // TODO: Call from public API when ready
-    RAFT_CUBLAS_TRY(raft::linalg::detail::cublasdot(
-      cublas_h,
-      n,
-      laplacian_matrix_t<index_type, value_type, nnz_type>::diagonal_.raw(),
-      1,
-      x,
-      1,
-      &dot_res,
-      stream));
+    if (!is_dry_run) {
+      RAFT_CUBLAS_TRY(raft::linalg::detail::cublasdot(
+        cublas_h,
+        n,
+        laplacian_matrix_t<index_type, value_type, nnz_type>::diagonal_.raw(),
+        1,
+        x,
+        1,
+        &dot_res,
+        stream));
 
-    // y = y -(gamma/edge_sum)*d
-    //
-    value_type gamma_ = -dot_res / edge_sum_;
-    // TODO: Call from public API when ready
-    RAFT_CUBLAS_TRY(raft::linalg::detail::cublasaxpy(
-      cublas_h,
-      n,
-      &gamma_,
-      laplacian_matrix_t<index_type, value_type, nnz_type>::diagonal_.raw(),
-      1,
-      y,
-      1,
-      stream));
+      // y = y -(gamma/edge_sum)*d
+      //
+      value_type gamma_ = -dot_res / edge_sum_;
+      // TODO: Call from public API when ready
+      RAFT_CUBLAS_TRY(raft::linalg::detail::cublasaxpy(
+        cublas_h,
+        n,
+        &gamma_,
+        laplacian_matrix_t<index_type, value_type, nnz_type>::diagonal_.raw(),
+        1,
+        y,
+        1,
+        stream));
+    }
   }
 
   value_type edge_sum_;

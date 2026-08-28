@@ -105,7 +105,12 @@ class LanczosSvdsTest : public ::testing::Test {
     auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
     auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
 
-    sparse_lanczos_svd(handle, config, csr_matrix, S.view(), U.view(), Vt.view());
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        sparse_lanczos_svd(h, config, csr_matrix, S.view(), U.view(), Vt.view());
+      },
+      raft::alloc_behavior::DATA_DRIVEN);
 
     std::vector<ValueType> h_S(k);
     std::vector<ValueType> h_U(static_cast<std::size_t>(m) * k);
@@ -222,7 +227,12 @@ class LanczosClusteredSpectrumTest : public ::testing::Test {
     auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
     auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
 
-    sparse_lanczos_svd(handle, config, csr_matrix, S.view(), U.view(), Vt.view());
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        sparse_lanczos_svd(h, config, csr_matrix, S.view(), U.view(), Vt.view());
+      },
+      raft::alloc_behavior::DATA_DRIVEN);
 
     std::vector<ValueType> h_S(k);
     std::vector<ValueType> h_U(static_cast<std::size_t>(m) * k);
@@ -313,7 +323,12 @@ void run_diagonal_hardening_case(int m,
   auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
   auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
 
-  sparse_lanczos_svd(handle, config, csr_matrix, S.view(), U.view(), Vt.view());
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      sparse_lanczos_svd(h, config, csr_matrix, S.view(), U.view(), Vt.view());
+    },
+    raft::alloc_behavior::DATA_DRIVEN);
 
   std::vector<ValueType> h_S(k);
   std::vector<ValueType> h_U(static_cast<std::size_t>(m) * k);
@@ -519,7 +534,12 @@ void run_rotated_block_hardening_case(bool use_mgs2 = false)
   auto S  = raft::make_device_vector<ValueType, uint32_t>(handle, k);
   auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
   auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
-  sparse_lanczos_svd(handle, config, csr_matrix, S.view(), U.view(), Vt.view());
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      sparse_lanczos_svd(h, config, csr_matrix, S.view(), U.view(), Vt.view());
+    },
+    raft::alloc_behavior::DATA_DRIVEN);
 
   std::vector<ValueType> h_S(k);
   std::vector<ValueType> h_U(static_cast<std::size_t>(m) * k);
@@ -751,7 +771,12 @@ void run_multilock_restart_case(bool use_mgs2 = false)
   auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
 
   sparse_lanczos_svd_stats stats;
-  sparse_lanczos_svd(handle, config, csr_matrix, S.view(), U.view(), Vt.view(), &stats);
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      sparse_lanczos_svd(h, config, csr_matrix, S.view(), U.view(), Vt.view(), &stats);
+    },
+    raft::alloc_behavior::DATA_DRIVEN);
 
   std::vector<ValueType> h_S(k);
   std::vector<ValueType> h_U(static_cast<std::size_t>(m) * k);
@@ -913,7 +938,12 @@ void run_generic_operator_case()
   auto U  = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, m, k);
   auto Vt = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, k, n);
 
-  sparse_lanczos_svd(handle, config, op, S.view(), U.view(), Vt.view());
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      sparse_lanczos_svd(h, config, op, S.view(), U.view(), Vt.view());
+    },
+    raft::alloc_behavior::DATA_DRIVEN);
 
   std::vector<ValueType> h_S(k);
   std::vector<ValueType> h_U(static_cast<std::size_t>(m) * k);
@@ -934,7 +964,12 @@ void run_generic_operator_case()
   // The generic overload also supports skipping U/Vt via std::nullopt; the singular
   // values must match the full computation.
   auto S_only = raft::make_device_vector<ValueType, uint32_t>(handle, k);
-  sparse_lanczos_svd(handle, config, op, S_only.view(), std::nullopt, std::nullopt);
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      sparse_lanczos_svd(h, config, op, S_only.view(), std::nullopt, std::nullopt);
+    },
+    raft::alloc_behavior::DATA_DRIVEN);
 
   std::vector<ValueType> h_S_only(k);
   raft::update_host(h_S_only.data(), S_only.data_handle(), k, stream);

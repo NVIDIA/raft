@@ -5,6 +5,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/core/stream_view.hpp>
 #ifndef RAFT_DISABLE_CUDA
@@ -83,6 +84,7 @@ inline void sync_stream_view(const resources& res,
                              raft::stream_view stream,
                              std::source_location location = std::source_location::current())
 {
+  if (raft::resource::get_dry_run_flag(res)) { return; }
   stream.interruptible_synchronize(location);
 }
 

@@ -11,6 +11,7 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/logger.hpp>
 #include <raft/core/mdspan.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/stream_view.hpp>
 #include <raft/core/resources.hpp>
 
@@ -400,6 +401,11 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
     RAFT_EXPECTS(src.extent(i) == dst.extent(i), "Must copy between mdspans of the same shape");
   }
 
+  // Dry-run: do NOT guard here. The use_intermediate_src/use_intermediate_dst
+  // branches allocate a real device_mdarray that must be tracked (Rule 1), then
+  // recurse into detail::copy, whose leaf branches self-guard the actual data
+  // movement. Only the leaf branches below (which perform CUDA/host copies onto
+  // the shared probe buffer and allocate nothing) are guarded individually.
   if constexpr (config::use_intermediate_src) {
 #ifndef RAFT_DISABLE_CUDA
     // Copy to intermediate source on device, then perform necessary
@@ -433,6 +439,7 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
     throw(raft::non_cuda_build_error("Copying from device in non-CUDA build"));
 #endif
   } else if constexpr (config::can_use_raft_copy) {
+    if (resource::get_dry_run_flag(res)) { return; }
 #ifndef RAFT_DISABLE_CUDA
     raft::copy(dst.data_handle(), src.data_handle(), dst.size(), resource::get_cuda_stream(res));
 #else
@@ -440,6 +447,7 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
     throw(raft::non_cuda_build_error("Copying to from or on device in non-CUDA build"));
 #endif
   } else if constexpr (config::can_use_cublas) {
+    if (resource::get_dry_run_flag(res)) { return; }
 #ifndef RAFT_DISABLE_CUDA
     if constexpr (!((std::is_same_v<typename std::remove_reference_t<DstType>::value_type, half>) &&
                     (std::is_same_v<typename std::remove_reference_t<SrcType>::value_type,
@@ -518,8 +526,10 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
       "raft/core/copy.cuh and include the header in a .cu file");
 #endif
   } else if constexpr (config::can_use_std_copy) {
+    if (resource::get_dry_run_flag(res)) { return; }
     std::copy(src.data_handle(), src.data_handle() + dst.size(), dst.data_handle());
   } else {
+    if (resource::get_dry_run_flag(res)) { return; }
     // TODO(wphicks): Make the following cache-oblivious and add SIMD support
     auto indices = std::array<typename config::index_type, config::dst_rank>{};
     for (auto i = std::size_t{}; i < dst.size(); ++i) {
