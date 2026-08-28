@@ -29,6 +29,7 @@
 #include <rmm/exec_policy.hpp>
 #include <rmm/resource_ref.hpp>
 
+#include <cuda/stream>
 #include <cuda_runtime.h>
 
 #include <cublas_v2.h>
@@ -158,7 +159,7 @@ class device_resources : public resources {
   /**
    * @brief return stream from pool
    */
-  rmm::cuda_stream_view get_stream_from_stream_pool() const
+  cuda::stream_ref get_stream_from_stream_pool() const
   {
     return resource::get_stream_from_stream_pool(*this);
   }
@@ -166,7 +167,7 @@ class device_resources : public resources {
   /**
    * @brief return stream from pool at index
    */
-  rmm::cuda_stream_view get_stream_from_stream_pool(std::size_t stream_idx) const
+  cuda::stream_ref get_stream_from_stream_pool(std::size_t stream_idx) const
   {
     return resource::get_stream_from_stream_pool(*this, stream_idx);
   }
@@ -174,7 +175,7 @@ class device_resources : public resources {
   /**
    * @brief return stream from pool if size > 0, else main stream on current container
    */
-  rmm::cuda_stream_view get_next_usable_stream() const
+  cuda::stream_ref get_next_usable_stream() const
   {
     return resource::get_next_usable_stream(*this);
   }
@@ -184,7 +185,7 @@ class device_resources : public resources {
    *
    * @param[in] stream_idx the required index of the stream in the stream pool if available
    */
-  rmm::cuda_stream_view get_next_usable_stream(std::size_t stream_idx) const
+  cuda::stream_ref get_next_usable_stream(std::size_t stream_idx) const
   {
     return resource::get_next_usable_stream(*this, stream_idx);
   }

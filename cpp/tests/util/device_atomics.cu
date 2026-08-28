@@ -55,7 +55,7 @@ TEST(Raft, AtomicIncWarp)
                                 (const void*)out_device.data(),
                                 num_elts * sizeof(int),
                                 cudaMemcpyDeviceToHost,
-                                s));
+                                s.get()));
 
   // Check that count is correct and that each thread index is contained in the
   // array exactly once.

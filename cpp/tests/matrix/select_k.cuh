@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -40,7 +40,7 @@ auto gen_simple_ids(uint32_t batch_size, uint32_t len) -> std::vector<IdxT>
   rmm::device_uvector<IdxT> out_d(out.size(), s);
   sparse::iota_fill(out_d.data(), IdxT(batch_size), IdxT(len), s);
   update_host(out.data(), out_d.data(), out.size(), s);
-  s.synchronize();
+  s.sync();
   return out;
 }
 
