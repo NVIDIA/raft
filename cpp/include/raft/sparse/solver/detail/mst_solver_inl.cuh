@@ -6,6 +6,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/device_properties.hpp>
 #include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
@@ -174,6 +175,7 @@ Graph_COO<vertex_t, edge_t, weight_t> MST_solver<vertex_t, edge_t, weight_t, alt
 
     // copy this iteration's results and store
     prev_mst_edge_count.set_value_async(curr_mst_edge_count, stream);
+    resource::sync_stream(handle, stream);
   }
 
   // result packaging
