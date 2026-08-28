@@ -150,7 +150,9 @@ auto make_device_scalar(raft::resources const& handle)
 
 /**
  * @brief Create a device scalar from v
- * (async copy in the resource-provided stream).
+ *
+ * @note This function performs a H2D copy and implicitly synchronizes the resource's stream,
+ *       which impacts performance when there's unfinished work in the stream.
  *
  * @tparam ElementType the data type of the scalar element
  * @tparam IndexType the index type of the extents
