@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/device_properties.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/sparse/solver/detail/mst_kernels.cuh>
 #include <raft/sparse/solver/detail/mst_utils.cuh>
@@ -91,6 +92,9 @@ MST_solver<vertex_t, edge_t, weight_t, alteration_t>::MST_solver(raft::resources
   max_threads = resource::get_device_properties(handle_).maxThreadsPerBlock;
   sm_count    = resource::get_device_properties(handle_).multiProcessorCount;
 
+  // All allocations happen in the initializer list above; the rest of the body is device work.
+  if (resource::get_dry_run_flag(handle_)) { return; }
+
   mst_edge_count.set_value_to_zero_async(stream);
   prev_mst_edge_count.set_value_to_zero_async(stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(mst_edge.data(), 0, mst_edge.size() * sizeof(bool), stream));
@@ -124,6 +128,18 @@ Graph_COO<vertex_t, edge_t, weight_t> MST_solver<vertex_t, edge_t, weight_t, alt
   auto max_mst_edges = symmetrize_output ? 2 * v - 2 : v - 1;
 
   Graph_COO<vertex_t, edge_t, weight_t> mst_result(max_mst_edges, stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound on the data-dependent Boruvka loop below: its trip count and its final edge
+    // count are only known from the skipped compute. All the loop allocates is label_prop's flag
+    // and the thrust workspace of the copy_if in append_src_dst_pair; mst_result is already
+    // allocated above at its maximum size, and the resizes that follow the loop only shrink it.
+    rmm::device_scalar<bool> done(stream);
+    rmm::device_uvector<char> thrust_ws(
+      2 * static_cast<size_t>(v) * (2 * sizeof(vertex_t) + sizeof(weight_t)) + 4096, stream);
+    mst_result.n_edges = max_mst_edges;
+    return mst_result;
+  }
 
   // Boruvka original formulation says "while more than 1 supervertex remains"
   // Here we adjust it to support disconnected components (spanning forest)
@@ -188,6 +204,15 @@ alteration_t MST_solver<vertex_t, edge_t, weight_t, alteration_t>::alteration_ma
 {
   auto policy = resource::get_thrust_policy(handle);
   rmm::device_uvector<weight_t> tmp(e, stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound for the thrust workspace of the sort + unique + transform_reduce below, and a
+    // placeholder result: the real one is produced by the skipped compute.
+    rmm::device_uvector<char> thrust_ws(3 * (static_cast<size_t>(e) * sizeof(weight_t) + 4096),
+                                        stream);
+    return 1;
+  }
+
   thrust::device_ptr<const weight_t> weights_ptr(weights);
   thrust::copy(policy, weights_ptr, weights_ptr + e, tmp.begin());
   // sort tmp weights
@@ -221,6 +246,7 @@ void MST_solver<vertex_t, edge_t, weight_t, alteration_t>::alteration()
 
   // pool of rand values
   rmm::device_uvector<alteration_t> rand_values(v, stream);
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   // Random number generator
   curandGenerator_t randGen;
