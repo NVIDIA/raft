@@ -6,9 +6,11 @@
 #include "../test_utils.cuh"
 #include "reduce.cuh"
 
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/linalg/strided_reduction.cuh>
+#include <raft/matrix/init.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
@@ -121,6 +123,45 @@ TEST_P(stridedReductionTestD, Result)
 INSTANTIATE_TEST_CASE_P(stridedReductionTests, stridedReductionTestF, ::testing::ValuesIn(inputsf));
 
 INSTANTIATE_TEST_CASE_P(stridedReductionTests, stridedReductionTestD, ::testing::ValuesIn(inputsd));
+
+/*
+ * The reduced dimension is mapped onto the y dimension of the grid, which CUDA limits to 65535
+ * blocks. That is far fewer blocks than the number of rows a caller may reduce along, so the grid
+ * must be bounded and the kernels must stride over the remaining rows.
+ */
+TEST(stridedReductionTest, LargeReducedDimension)
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+  // More rows than the largest grid the kernels are launched with can cover one row per thread.
+  constexpr int64_t kRows = 8'400'000;
+  constexpr int64_t kCols = 2;
+
+  auto data = raft::make_device_matrix<float, int64_t>(handle, kRows, kCols);
+  raft::matrix::fill(handle, data.view(), 1.0f);
+  auto data_view = raft::make_const_mdspan(data.view());
+
+  // Summing into the input type takes the compensated-summation path.
+  auto sums_same_type = raft::make_device_vector<float, int64_t>(handle, kCols);
+  strided_reduction(handle, data_view, sums_same_type.view(), 0.0f);
+
+  // Summing into a wider type takes the generic path, which handles an arbitrary reduce operation.
+  auto sums_wider_type = raft::make_device_vector<double, int64_t>(handle, kCols);
+  strided_reduction(handle, data_view, sums_wider_type.view(), 0.0, false, raft::cast_op<double>{});
+
+  resource::sync_stream(handle, stream);
+
+  ASSERT_TRUE(devArrMatch(static_cast<float>(kRows),
+                          sums_same_type.data_handle(),
+                          kCols,
+                          raft::CompareApprox<float>(1e-6f),
+                          stream));
+  ASSERT_TRUE(devArrMatch(static_cast<double>(kRows),
+                          sums_wider_type.data_handle(),
+                          kCols,
+                          raft::CompareApprox<double>(1e-12),
+                          stream));
+}
 
 }  // end namespace linalg
 }  // end namespace raft
