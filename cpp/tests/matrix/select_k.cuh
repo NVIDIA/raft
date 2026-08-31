@@ -38,7 +38,7 @@ auto gen_simple_ids(uint32_t batch_size, uint32_t len) -> std::vector<IdxT>
   std::vector<IdxT> out(batch_size * len);
   auto s = rmm::cuda_stream_default;
   rmm::device_uvector<IdxT> out_d(out.size(), s);
-  sparse::iota_fill(out_d.data(), IdxT(batch_size), IdxT(len), s);
+  sparse::iota_fill(out_d.data(), IdxT(batch_size), IdxT(len), s.get());
   update_host(out.data(), out_d.data(), out.size(), s);
   s.sync();
   return out;
