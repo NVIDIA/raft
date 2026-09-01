@@ -243,15 +243,18 @@ HDI void custom_next(GenType& gen,
                      LenType idx    = 0,
                      LenType stride = 0)
 {
-  double res1, res2;
+  // float has enough mantissa for any int type up to 32 bits; only 64-bit outputs need double,
+  // which is 1/64 rate on consumer GPUs.
+  using compute_t = std::conditional_t<(sizeof(IntType) > 4), double, float>;
+  compute_t res1, res2;
   do {
     gen.next(res1);
-  } while (res1 == double(0.0));
+  } while (res1 == compute_t(0.0));
 
   gen.next(res2);
-  double mu    = static_cast<double>(params.mu);
-  double sigma = static_cast<double>(params.sigma);
-  box_muller_transform<double>(res1, res2, sigma, mu);
+  compute_t mu    = static_cast<compute_t>(params.mu);
+  compute_t sigma = static_cast<compute_t>(params.sigma);
+  box_muller_transform<compute_t>(res1, res2, sigma, mu);
   *val       = static_cast<IntType>(res1);
   *(val + 1) = static_cast<IntType>(res2);
 }
