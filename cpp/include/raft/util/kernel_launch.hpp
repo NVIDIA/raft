@@ -11,8 +11,7 @@
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_rt_essentials.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
-
+#include <cuda/stream>
 #include <cuda_runtime.h>
 
 #include <array>
@@ -105,7 +104,7 @@ struct launch_on {
     resources const& res,
     std::size_t smem         = 0,
     std::source_location loc = std::source_location::current())
-    : launch_on{resource::get_cuda_stream(res).value(),
+    : launch_on{resource::get_cuda_stream(res).get(),
                 smem,
                 resource::get_dry_run_flag(res) ? detail::kSkipExecution : detail::launch_flags{},
                 loc}
@@ -125,11 +124,11 @@ struct launch_on {
    * @param[in] loc call site to blame for launch errors; leave at its default
    */
   launch_on(  // NOLINT(google-explicit-constructor)
-    rmm::cuda_stream_view stream,
+    cuda::stream_ref stream,
     std::size_t smem         = 0,
     bool kSkipExecution      = false,
     std::source_location loc = std::source_location::current())
-    : launch_on{stream.value(), smem, kSkipExecution, loc}
+    : launch_on{stream.get(), smem, kSkipExecution, loc}
   {
   }
 

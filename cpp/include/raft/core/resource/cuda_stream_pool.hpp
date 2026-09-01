@@ -128,8 +128,9 @@ inline cuda::stream_ref get_next_usable_stream(const resources& res)
  */
 inline cuda::stream_ref get_next_usable_stream(const resources& res, std::size_t stream_idx)
 {
-  return is_stream_pool_initialized(res) ? get_stream_from_stream_pool(res, stream_idx)
-                                         : static_cast<cuda::stream_ref>(get_cuda_stream(res));
+  return is_stream_pool_initialized(res)
+           ? get_stream_from_stream_pool(res, stream_idx)
+           : static_cast<cuda::stream_ref>(get_cuda_stream(res).get());
 }
 
 /**
@@ -170,7 +171,7 @@ inline void wait_stream_pool_on_stream(const resources& res)
   }
 
   cudaEvent_t event = detail::get_cuda_stream_sync_event(res);
-  RAFT_CUDA_TRY(cudaEventRecord(event, get_cuda_stream(res)));
+  RAFT_CUDA_TRY(cudaEventRecord(event, get_cuda_stream(res).get()));
   for (std::size_t i = 0; i < get_stream_pool_size(res); i++) {
     RAFT_CUDA_TRY(cudaStreamWaitEvent(get_cuda_stream_pool(res).get_stream(i).get(), event, 0));
   }

@@ -154,7 +154,7 @@ class RmatGenTest : public ::testing::TestWithParam<RmatInputs> {
  public:
   RmatGenTest()
     : handle{},
-      stream{resource::get_cuda_stream(handle)},
+      stream{resource::get_cuda_stream(handle).get()},
       params{::testing::TestWithParam<RmatInputs>::GetParam()},
       out{params.n_edges * 2, stream},
       out_src{params.n_edges, stream},
@@ -254,7 +254,7 @@ class RmatGenMdspanTest : public ::testing::TestWithParam<RmatInputs> {
  public:
   RmatGenMdspanTest()
     : handle{},
-      stream{resource::get_cuda_stream(handle)},
+      stream{resource::get_cuda_stream(handle).get()},
       params{::testing::TestWithParam<RmatInputs>::GetParam()},
       out{params.n_edges * 2, stream},
       out_src{params.n_edges, stream},
@@ -404,7 +404,7 @@ class RmatGenForceTest : public ::testing::TestWithParam<RmatForcedOutputs> {
  public:
   RmatGenForceTest()
     : handle{},
-      stream{resource::get_cuda_stream(handle)},
+      stream{resource::get_cuda_stream(handle).get()},
       params{::testing::TestWithParam<RmatForcedOutputs>::GetParam()},
       out{2, stream},
       out_src{1, stream},

@@ -46,7 +46,7 @@ typedef SparseFilterTests<float> COORemoveZeros;
 TEST_P(COORemoveZeros, Result)
 {
   raft::resources h;
-  auto stream = resource::get_cuda_stream(h);
+  auto stream = resource::get_cuda_stream(h).get();
   params      = ::testing::TestWithParam<SparseFilterInputs<float>>::GetParam();
 
   float* in_h_vals = new float[params.nnz];
@@ -110,7 +110,7 @@ typedef SparseFilterTests<float> COORemoveScalarView;
 TEST_P(COORemoveScalarView, ResultView)
 {
   raft::resources h;
-  auto stream = resource::get_cuda_stream(h);
+  auto stream = resource::get_cuda_stream(h).get();
   params      = ::testing::TestWithParam<SparseFilterInputs<float>>::GetParam();
 
   rmm::device_uvector<int> in_rows(params.nnz, stream);

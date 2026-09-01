@@ -67,7 +67,7 @@ class RngTest : public ::testing::TestWithParam<RngInputs<T>> {
  public:
   RngTest()
     : params(::testing::TestWithParam<RngInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(0, stream),
       stats(2, stream)
   {
@@ -126,7 +126,7 @@ class RngMdspanTest : public ::testing::TestWithParam<RngInputs<T>> {
  public:
   RngMdspanTest()
     : params(::testing::TestWithParam<RngInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(0, stream),
       stats(2, stream)
   {

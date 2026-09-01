@@ -76,7 +76,7 @@ class device_resources : public resources {
    * @param[in] allocation_limit the total amount of memory in bytes available to the temporary
    *            workspace resources.
    */
-  device_resources(rmm::cuda_stream_view stream_view                  = rmm::cuda_stream_per_thread,
+  device_resources(cuda::stream_ref stream_view                       = rmm::cuda_stream_per_thread,
                    std::shared_ptr<rmm::cuda_stream_pool> stream_pool = {nullptr},
                    std::optional<raft::mr::device_resource> workspace_resource = std::nullopt,
                    std::optional<std::size_t> allocation_limit                 = std::nullopt)
@@ -119,7 +119,7 @@ class device_resources : public resources {
    * @param[in] stream stream to synchronize
    * @param[in] location the call site to blame for the errors; leave at its default
    */
-  void sync_stream(rmm::cuda_stream_view stream,
+  void sync_stream(cuda::stream_ref stream,
                    std::source_location location = std::source_location::current()) const
   {
     resource::sync_stream(*this, stream, location);
@@ -138,7 +138,7 @@ class device_resources : public resources {
   /**
    * @brief returns main stream on the current container
    */
-  rmm::cuda_stream_view get_stream() const { return resource::get_cuda_stream(*this); }
+  cuda::stream_ref get_stream() const { return resource::get_cuda_stream(*this); }
 
   /**
    * @brief returns whether stream pool was initialized on the current container

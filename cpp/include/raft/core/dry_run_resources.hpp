@@ -16,7 +16,6 @@
 #include <raft/mr/host_device_resource.hpp>
 #include <raft/mr/host_memory_resource.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/resource_ref.hpp>
 

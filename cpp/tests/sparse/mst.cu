@@ -131,13 +131,13 @@ class MSTTest : public ::testing::TestWithParam<MSTTestInput<vertex_t, edge_t, w
     RAFT_CUDA_TRY(cudaMemsetAsync(mst_src.data(),
                                   std::numeric_limits<vertex_t>::max(),
                                   mst_src.size() * sizeof(vertex_t),
-                                  resource::get_cuda_stream(handle)));
+                                  resource::get_cuda_stream(handle).get()));
     RAFT_CUDA_TRY(cudaMemsetAsync(mst_dst.data(),
                                   std::numeric_limits<vertex_t>::max(),
                                   mst_dst.size() * sizeof(vertex_t),
-                                  resource::get_cuda_stream(handle)));
+                                  resource::get_cuda_stream(handle).get()));
     RAFT_CUDA_TRY(cudaMemsetAsync(
-      color.data(), 0, color.size() * sizeof(vertex_t), resource::get_cuda_stream(handle)));
+      color.data(), 0, color.size() * sizeof(vertex_t), resource::get_cuda_stream(handle).get()));
 
     vertex_t* color_ptr = thrust::raw_pointer_cast(color.data());
 
@@ -155,7 +155,7 @@ class MSTTest : public ::testing::TestWithParam<MSTTestInput<vertex_t, edge_t, w
                           v,
                           e,
                           color_ptr,
-                          resource::get_cuda_stream(h),
+                          resource::get_cuda_stream(h).get(),
                           symmetrize,
                           init_colors,
                           iters);

@@ -77,7 +77,7 @@ class rmat_lanczos_tests
  public:
   rmat_lanczos_tests()
     : params(::testing::TestWithParam<rmat_lanczos_inputs<IndexType, ValueType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       rng(params.seed),
       expected_eigenvalues(raft::make_device_vector<ValueType, uint32_t, raft::col_major>(
         handle, params.n_components)),
@@ -283,7 +283,7 @@ class lanczos_tests : public ::testing::TestWithParam<lanczos_inputs<IndexType, 
  public:
   lanczos_tests()
     : params(::testing::TestWithParam<lanczos_inputs<IndexType, ValueType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       n(params.rows.size() - 1),
       nnz(params.vals.size()),
       rng(params.seed),

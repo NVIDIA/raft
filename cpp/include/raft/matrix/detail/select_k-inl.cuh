@@ -86,7 +86,7 @@ void segmented_sort_by_key(raft::resources const& handle,
                            const ValT* offsets,
                            bool asc)
 {
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
   auto mr     = resource::get_workspace_resource_ref(handle);
   auto out_inds =
     raft::make_device_mdarray<ValT, ValT>(handle, mr, raft::make_extents<ValT>(n_elements));

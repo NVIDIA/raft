@@ -34,7 +34,7 @@ class EigSelTest : public ::testing::TestWithParam<EigSelInputs<T>> {
  public:
   EigSelTest()
     : params(::testing::TestWithParam<EigSelInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       cov_matrix(params.len, stream),
       eig_vectors(params.n_eigen_vals * params.n, stream),
       eig_vectors_ref(params.n_eigen_vals * params.n, stream),

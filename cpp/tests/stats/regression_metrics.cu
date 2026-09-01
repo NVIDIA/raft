@@ -69,7 +69,7 @@ void naive_reg_metrics(std::vector<T>& predictions,
 template <typename T>
 class RegressionTest : public ::testing::TestWithParam<RegressionInputs<T>> {
  protected:
-  RegressionTest() : stream(resource::get_cuda_stream(handle)) {}
+  RegressionTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void SetUp() override
   {

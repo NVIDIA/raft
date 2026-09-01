@@ -31,7 +31,7 @@ class InitTest : public ::testing::TestWithParam<InitInputs<T>> {
  public:
   InitTest()
     : params(::testing::TestWithParam<InitInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle))
+      stream(resource::get_cuda_stream(handle).get())
   {
   }
 

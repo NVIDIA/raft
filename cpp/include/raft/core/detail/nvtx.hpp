@@ -8,8 +8,6 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/detail/nvtx_range_stack.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
-
 #ifdef NVTX_ENABLED
 
 #include <nvtx3/nvToolsExt.h>

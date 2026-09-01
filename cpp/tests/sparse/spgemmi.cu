@@ -31,7 +31,7 @@ class SPGemmiTest : public ::testing::TestWithParam<SPGemmiInputs> {
  public:
   SPGemmiTest()
     : params(::testing::TestWithParam<SPGemmiInputs>::GetParam()),
-      stream(resource::get_cuda_stream(handle))
+      stream(resource::get_cuda_stream(handle).get())
   {
   }
 
@@ -104,7 +104,7 @@ class SPGemmiTest : public ::testing::TestWithParam<SPGemmiInputs> {
                                                           &beta,
                                                           dC.data(),
                                                           ldc,
-                                                          resource::get_cuda_stream(handle)));
+                                                          resource::get_cuda_stream(handle).get()));
 
     //--------------------------------------------------------------------------
     // result check

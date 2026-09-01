@@ -11,7 +11,7 @@
 #include <raft/core/resource/resource_types.hpp>
 #include <raft/core/resources.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
+#include <cuda/stream>
 
 #include <cusolverDn.h>
 
@@ -23,10 +23,10 @@ namespace resource {
  */
 class cusolver_dn_resource : public resource {
  public:
-  cusolver_dn_resource(rmm::cuda_stream_view stream)
+  cusolver_dn_resource(cuda::stream_ref stream)
   {
     RAFT_CUSOLVER_TRY_NO_THROW(cusolverDnCreate(&cusolver_res));
-    RAFT_CUSOLVER_TRY_NO_THROW(cusolverDnSetStream(cusolver_res, stream));
+    RAFT_CUSOLVER_TRY_NO_THROW(cusolverDnSetStream(cusolver_res, stream.get()));
   }
 
   void* get_resource() override { return &cusolver_res; }
@@ -49,12 +49,12 @@ class cusolver_dn_resource : public resource {
  */
 class cusolver_dn_resource_factory : public resource_factory {
  public:
-  cusolver_dn_resource_factory(rmm::cuda_stream_view stream) : stream_(stream) {}
+  cusolver_dn_resource_factory(cuda::stream_ref stream) : stream_(stream) {}
   resource_type get_resource_type() override { return resource_type::CUSOLVER_DN_HANDLE; }
   resource* make_resource() override { return new cusolver_dn_resource(stream_); }
 
  private:
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
 };
 
 /**

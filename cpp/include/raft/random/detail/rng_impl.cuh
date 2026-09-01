@@ -402,7 +402,7 @@ auto excess_subsample(raft::resources const& res, RngState& state, IdxT N, IdxT 
   n_excess_samples += std::max<IdxT>(0.1 * n_samples, 100);
 
   bool dry_run = resource::get_dry_run_flag(res);
-  auto stream  = resource::get_cuda_stream(res);
+  auto stream  = resource::get_cuda_stream(res).get();
 
   while (true) {
     // n_excess_sampless will be larger than N around k = 0.64*N. When we reach N, then instead of

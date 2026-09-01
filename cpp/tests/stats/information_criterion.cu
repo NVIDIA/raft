@@ -53,7 +53,7 @@ class BatchedICTest : public ::testing::TestWithParam<BatchedICInputs<T>> {
  public:
   BatchedICTest()
     : params(::testing::TestWithParam<BatchedICInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       res_d(sizeof(T) * params.batch_size, stream)
   {
   }

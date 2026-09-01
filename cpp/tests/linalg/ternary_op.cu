@@ -33,7 +33,7 @@ class ternaryOpTest : public ::testing::TestWithParam<BinaryOpInputs<T>> {
  public:
   ternaryOpTest()
     : params(::testing::TestWithParam<BinaryOpInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       out_add_ref(params.len, stream),
       out_add(params.len, stream),
       out_mul_ref(params.len, stream),

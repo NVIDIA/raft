@@ -12,9 +12,8 @@
 from libcpp.memory cimport shared_ptr, unique_ptr
 from libcpp.vector cimport vector
 
-from cuda.bindings.cyruntime cimport cudaStream_t
-
 from rmm.librmm.cuda_stream_pool cimport cuda_stream_pool
+from rmm.librmm.cuda_stream_ref cimport stream_ref
 
 
 # Keeping `handle_t` around for backwards compatibility at the
@@ -22,20 +21,20 @@ from rmm.librmm.cuda_stream_pool cimport cuda_stream_pool
 cdef extern from "raft/core/handle.hpp" namespace "raft" nogil:
     cdef cppclass handle_t:
         handle_t() except +
-        handle_t(cudaStream_t stream_view) except +
-        handle_t(cudaStream_t stream_view,
+        handle_t(stream_ref stream_view) except +
+        handle_t(stream_ref stream_view,
                  shared_ptr[cuda_stream_pool] stream_pool) except +
-        cudaStream_t get_stream() except +
+        stream_ref get_stream() except +
         void sync_stream() except +
 
 
 cdef extern from "raft/core/device_resources.hpp" namespace "raft" nogil:
     cdef cppclass device_resources:
         device_resources() except +
-        device_resources(cudaStream_t stream_view) except +
-        device_resources(cudaStream_t stream_view,
+        device_resources(stream_ref stream_view) except +
+        device_resources(stream_ref stream_view,
                          shared_ptr[cuda_stream_pool] stream_pool) except +
-        cudaStream_t get_stream() except +
+        stream_ref get_stream() except +
         void sync_stream() except +
 
 cdef class DeviceResources:

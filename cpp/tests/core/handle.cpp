@@ -16,6 +16,7 @@
 #include <rmm/mr/pool_memory_resource.hpp>
 #include <rmm/resource_ref.hpp>
 
+#include <cuda/stream>
 #include <cuda_runtime.h>
 
 #include <gtest/gtest.h>
@@ -169,7 +170,7 @@ class mock_comms : public comms_iface {
 void assert_handles_equal(raft::handle_t& handle_one, raft::handle_t& handle_two)
 {
   // Assert shallow copied state
-  ASSERT_EQ(handle_one.get_stream().value(), handle_two.get_stream().value());
+  ASSERT_EQ(handle_one.get_stream().get(), handle_two.get_stream().get());
   ASSERT_EQ(handle_one.get_stream_pool_size(), handle_two.get_stream_pool_size());
 
   // Sanity check to make sure non-corresponding streams are not equal
@@ -204,7 +205,7 @@ TEST(Raft, Handle)
   // test non default stream handle
   cudaStream_t stream;
   RAFT_CUDA_TRY(cudaStreamCreate(&stream));
-  rmm::cuda_stream_view stream_view(stream);
+  cuda::stream_ref stream_view(stream);
   raft::handle_t handle(stream_view);
   ASSERT_EQ(stream_view, resource::get_cuda_stream(handle));
   resource::sync_stream(handle, stream);
@@ -224,8 +225,8 @@ TEST(Raft, DefaultConstructor)
   auto s2 = resource::get_cuda_stream(handle);
   auto s3 = resource::get_next_usable_stream(handle, 5);
 
-  ASSERT_EQ(s1.get(), s2.value());
-  ASSERT_EQ(s2.value(), s3.get());
+  ASSERT_EQ(s1.get(), s2.get());
+  ASSERT_EQ(s2.get(), s3.get());
   ASSERT_EQ(0, resource::get_stream_pool_size(handle));
 }
 
@@ -238,7 +239,7 @@ TEST(Raft, GetHandleFromPool)
   for (std::size_t i = 0; i < n_streams; i++) {
     auto worker_stream = parent.get_stream_from_stream_pool(i);
     raft::handle_t child(worker_stream);
-    ASSERT_EQ(parent.get_stream_from_stream_pool(i).get(), child.get_stream().value());
+    ASSERT_EQ(parent.get_stream_from_stream_pool(i).get(), child.get_stream().get());
   }
 
   parent.wait_stream_pool_on_stream();
@@ -384,7 +385,7 @@ TEST(Raft, ExplicitSetDoesNotPropagate)
   // Explicit set on a -- creates a new cell
   cudaStream_t raw_stream;
   RAFT_CUDA_TRY(cudaStreamCreate(&raw_stream));
-  rmm::cuda_stream_view new_stream(raw_stream);
+  cuda::stream_ref new_stream(raw_stream);
   resource::set_cuda_stream(a, new_stream);
 
   // a sees the new stream

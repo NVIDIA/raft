@@ -76,7 +76,7 @@ class PowerTest : public ::testing::TestWithParam<PowerInputs<T>> {
     raft::random::RngState r(params.seed);
     int len = params.len;
 
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     in1.resize(len, stream);
     in2.resize(len, stream);

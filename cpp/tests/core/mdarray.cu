@@ -33,6 +33,7 @@
 #include <rmm/resource_ref.hpp>
 
 #include <cuda/iterator>
+#include <cuda/stream>
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
 #include <thrust/for_each.h>
@@ -43,9 +44,9 @@
 #include <memory_resource>
 
 namespace {
-void check_status(int32_t* d_status, rmm::cuda_stream_view stream)
+void check_status(int32_t* d_status, cuda::stream_ref stream)
 {
-  stream.synchronize();
+  stream.sync();
   int32_t h_status{1};
   raft::update_host(&h_status, d_status, 1, stream);
   ASSERT_EQ(h_status, 0);

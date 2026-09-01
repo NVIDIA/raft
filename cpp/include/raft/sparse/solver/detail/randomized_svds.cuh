@@ -87,7 +87,7 @@ void sparse_randomized_svd(
       "Vt must have shape (n_components, n)");
   }
 
-  auto stream = raft::resource::get_cuda_stream(handle);
+  auto stream = raft::resource::get_cuda_stream(handle).get();
 
   int min_dim = std::min(m, n);
   if (k + p > min_dim) {

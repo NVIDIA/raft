@@ -48,7 +48,7 @@ int n_streams = get_stream_pool_size(res);
 #pragma omp parallel for num_threads(n_streams)
 for(int i = 0; i < n; i++) {
     int thread_num    = omp_get_thread_num() % n_streams;
-    auto s            = get_stream_from_stream_pool(res, thread_num);  // rmm::cuda_stream_view
+    auto s            = get_stream_from_stream_pool(res, thread_num);  // cuda::stream_ref
     ... possible light cpu pre-processing ...
     my_kernel1<<<b, tpb, 0, s>>>(...);
     ...
@@ -448,7 +448,7 @@ All RAFT algorithms should be as asynchronous as possible avoiding the use of th
 
 void foo(const raft::resources& res, ...)
 {
-    auto stream = get_cuda_stream(res);  // rmm::cuda_stream_view
+    auto stream = get_cuda_stream(res);  // cuda::stream_ref
 }
 ```
 When multiple streams are needed, e.g. to manage a pipeline, use the internal streams available in `raft::resources` (see [Resource Management](#resource-management)). If multiple streams are used all operations still must be ordered according to `raft::resource::get_cuda_stream()` (from `raft/core/resource/cuda_stream.hpp`). Before any operation in any of the internal CUDA streams is started, all previous work in `raft::resource::get_cuda_stream()` must have completed. Any work enqueued in `raft::resource::get_cuda_stream()` after a RAFT function returns should not start before all work enqueued in the internal streams has completed. E.g. if a RAFT algorithm is called like this:
@@ -520,7 +520,7 @@ void foo(const raft::resources& res, ...)
     cublasHandle_t cublasHandle = get_cublas_handle(res);
     const int num_streams       = get_stream_pool_size(res);
     const int stream_idx        = ...
-    auto stream                 = get_stream_from_stream_pool(res, stream_idx);  // rmm::cuda_stream_view
+    auto stream                 = get_stream_from_stream_pool(res, stream_idx);  // cuda::stream_ref
     ...
 }
 ```

@@ -32,7 +32,7 @@ template <typename T>
 class entropyTest : public ::testing::TestWithParam<entropyParam> {
  protected:
   // the constructor
-  entropyTest() : stream(resource::get_cuda_stream(handle)) {}
+  entropyTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void SetUp() override
   {

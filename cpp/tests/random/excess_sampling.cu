@@ -40,7 +40,7 @@ class ExcessSamplingTest : public ::testing::TestWithParam<inputs> {
  public:
   ExcessSamplingTest()
     : params(::testing::TestWithParam<inputs>::GetParam()),
-      stream(resource::get_cuda_stream(res)),
+      stream(resource::get_cuda_stream(res).get()),
       state{137ULL}
   {
   }

@@ -491,7 +491,7 @@ struct with_ref {
         }
 
         update_host(dists.data(), dists_d.data(), dists_d.size(), s);
-        s.synchronize();
+        s.sync();
       }
 
       return std::make_tuple(spec, algo, io_computed<KeyT, IdxT>(spec, RefAlgo, dists));

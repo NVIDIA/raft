@@ -34,7 +34,7 @@ class CSRRowNormalizeTest : public ::testing::TestWithParam<CSRRowNormalizeInput
  public:
   CSRRowNormalizeTest()
     : params(::testing::TestWithParam<CSRRowNormalizeInputs<Type_f, Index_>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in_vals(params.in_vals.size(), stream),
       verify(params.verify.size(), stream),
       ex_scan(params.ex_scan.size(), stream),

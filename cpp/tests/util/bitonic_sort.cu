@@ -10,6 +10,8 @@
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
 
+#include <cuda/stream>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -68,7 +70,7 @@ RAFT_KERNEL bitonic_kernel(T* arr, bool ascending, int warp_width, int n_inputs)
 template <int Capacity>
 struct bitonic_launch {
   template <typename T>
-  static void run(const test_spec& spec, T* arr, rmm::cuda_stream_view stream)
+  static void run(const test_spec& spec, T* arr, cuda::stream_ref stream)
   {
     ASSERT(spec.capacity <= Capacity, "Invalid input: the requested capacity is too high.");
     ASSERT(spec.warp_width <= WarpSize,
@@ -154,7 +156,7 @@ class BitonicTest : public testing::TestWithParam<test_spec> {  // NOLINT
     update_host(out.data(), arr_d.data(), arr_d.size(), stream);
 
     // make sure the results are available on host
-    stream.synchronize();
+    stream.sync();
 
     // calculate the reference
     std::copy(in.begin(), in.end(), ref.begin());

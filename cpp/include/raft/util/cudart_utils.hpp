@@ -9,8 +9,7 @@
 #include <raft/core/error.hpp>
 #include <raft/util/cuda_rt_essentials.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
-
+#include <cuda/stream>
 #include <cuda_bf16.h>
 #include <cuda_fp16.h>
 #include <cuda_runtime_api.h>
@@ -134,9 +133,9 @@ class grid_1d_block_t {
  * @param stream cuda stream
  */
 template <typename Type>
-void copy(Type* dst, const Type* src, size_t len, rmm::cuda_stream_view stream)
+void copy(Type* dst, const Type* src, size_t len, cuda::stream_ref stream)
 {
-  RAFT_CUDA_TRY(cudaMemcpyAsync(dst, src, len * sizeof(Type), cudaMemcpyDefault, stream));
+  RAFT_CUDA_TRY(cudaMemcpyAsync(dst, src, len * sizeof(Type), cudaMemcpyDefault, stream.get()));
 }
 
 /**
@@ -162,7 +161,7 @@ void copy_matrix(Type* dst,
                  size_t src_pitch,
                  size_t width,
                  size_t height,
-                 rmm::cuda_stream_view stream)
+                 cuda::stream_ref stream)
 {
   constexpr size_t elem_size = sizeof(Type);
   RAFT_CUDA_TRY(cudaMemcpy2DAsync(dst,
@@ -172,7 +171,7 @@ void copy_matrix(Type* dst,
                                   width * elem_size,
                                   height,
                                   cudaMemcpyDefault,
-                                  stream));
+                                  stream.get()));
 }
 
 /**
@@ -183,23 +182,23 @@ void copy_matrix(Type* dst,
  */
 /** performs a host to device copy */
 template <typename Type>
-void update_device(Type* d_ptr, const Type* h_ptr, size_t len, rmm::cuda_stream_view stream)
+void update_device(Type* d_ptr, const Type* h_ptr, size_t len, cuda::stream_ref stream)
 {
   copy(d_ptr, h_ptr, len, stream);
 }
 
 /** performs a device to host copy */
 template <typename Type>
-void update_host(Type* h_ptr, const Type* d_ptr, size_t len, rmm::cuda_stream_view stream)
+void update_host(Type* h_ptr, const Type* d_ptr, size_t len, cuda::stream_ref stream)
 {
   copy(h_ptr, d_ptr, len, stream);
 }
 
 template <typename Type>
-void copy_async(Type* d_ptr1, const Type* d_ptr2, size_t len, rmm::cuda_stream_view stream)
+void copy_async(Type* d_ptr1, const Type* d_ptr2, size_t len, cuda::stream_ref stream)
 {
   RAFT_CUDA_TRY(
-    cudaMemcpyAsync(d_ptr1, d_ptr2, len * sizeof(Type), cudaMemcpyDeviceToDevice, stream));
+    cudaMemcpyAsync(d_ptr1, d_ptr2, len * sizeof(Type), cudaMemcpyDeviceToDevice, stream.get()));
 }
 /** @} */
 

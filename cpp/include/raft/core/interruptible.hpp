@@ -12,7 +12,7 @@
 #include <raft/core/error.hpp>
 #include <raft/util/cudart_utils.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
+#include <cuda/stream>
 
 #include <atomic>
 #include <memory>
@@ -76,10 +76,10 @@ class interruptible {
    * thread before the currently captured work has been finished.
    * @throw raft::cuda_error if another CUDA error happens.
    */
-  static inline void synchronize(rmm::cuda_stream_view stream,
+  static inline void synchronize(cuda::stream_ref stream,
                                  std::source_location location = std::source_location::current())
   {
-    get_token()->synchronize_impl(cudaStreamQuery, stream, "cudaStreamQuery", location);
+    get_token()->synchronize_impl(cudaStreamQuery, stream.get(), "cudaStreamQuery", location);
   }
 
   /**

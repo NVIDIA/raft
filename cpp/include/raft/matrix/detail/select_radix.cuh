@@ -21,7 +21,6 @@
 #include <raft/util/pow2_utils.cuh>
 #include <raft/util/vectorized.cuh>
 
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/device_buffer.hpp>
 #include <rmm/device_uvector.hpp>
 #include <rmm/resource_ref.hpp>
@@ -30,6 +29,7 @@
 #include <cub/block/block_scan.cuh>
 #include <cub/block/block_store.cuh>
 #include <cub/block/radix_rank_sort_operations.cuh>
+#include <cuda/stream>
 
 namespace raft {
 namespace matrix::detail::select::radix {
@@ -892,7 +892,7 @@ void radix_topk(bool dry_run,
                 const IdxT* len_i,
                 unsigned grid_dim,
                 int sm_cnt,
-                rmm::cuda_stream_view stream,
+                cuda::stream_ref stream,
                 rmm::device_async_resource_ref mr)
 {
   // TODO: is it possible to relax this restriction?
@@ -918,9 +918,10 @@ void radix_topk(bool dry_run,
 
   for (size_t offset = 0; offset < static_cast<size_t>(batch_size); offset += max_chunk_size) {
     int chunk_size = std::min(max_chunk_size, batch_size - offset);
+    RAFT_CUDA_TRY(cudaMemsetAsync(
+      counters.data(), 0, counters.size() * sizeof(Counter<T, IdxT>), stream.get()));
     RAFT_CUDA_TRY(
-      cudaMemsetAsync(counters.data(), 0, counters.size() * sizeof(Counter<T, IdxT>), stream));
-    RAFT_CUDA_TRY(cudaMemsetAsync(histograms.data(), 0, histograms.size() * sizeof(IdxT), stream));
+      cudaMemsetAsync(histograms.data(), 0, histograms.size() * sizeof(IdxT), stream.get()));
     auto kernel = radix_kernel<T, IdxT, BitsPerPass, BlockSize, false, RowLayout>;
 
     T* chunk_out            = out + offset * k;
@@ -1173,7 +1174,7 @@ void radix_topk_one_block(bool dry_run,
                           bool select_min,
                           const IdxT* len_i,
                           int sm_cnt,
-                          rmm::cuda_stream_view stream,
+                          cuda::stream_ref stream,
                           rmm::device_async_resource_ref mr)
 {
   static_assert(calc_num_passes<T, BitsPerPass>() > 1);
@@ -1288,7 +1289,7 @@ void select_k(raft::resources const& res,
                "CSR layout requires a non-null indptr array (len_i)!");
 
   bool dry_run = resource::get_dry_run_flag(res);
-  auto stream  = resource::get_cuda_stream(res);
+  auto stream  = resource::get_cuda_stream(res).get();
   auto mr      = resource::get_workspace_resource_ref(res);
   if (k == len && RowLayout::is_uniform) {
     if (dry_run) { return; }

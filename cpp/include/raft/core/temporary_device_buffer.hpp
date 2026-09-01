@@ -12,6 +12,8 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/util/cudart_utils.hpp>
 
+#include <cuda/stream>
+
 #include <variant>
 
 namespace RAFT_EXPORT raft {
@@ -118,7 +120,7 @@ class temporary_device_buffer {
   }
 
  private:
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
   ElementType* original_data_;
   data_store data_;
   Extents extents_;

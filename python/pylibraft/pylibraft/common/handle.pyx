@@ -12,6 +12,7 @@ import functools
 
 from cuda.bindings.cyruntime cimport cudaStream_t
 from libc.stdint cimport uintptr_t
+from rmm.librmm.cuda_stream_ref cimport stream_ref
 
 # cudaStreamPerThread is not exported by cuda.bindings.cyruntime, declare it directly
 cdef extern from "cuda_runtime_api.h" nogil:
@@ -75,24 +76,26 @@ cdef class DeviceResources:
         if stream is None:
             # Use per-thread default stream, which is non-blocking
             if n_streams > 0:
-                self.c_obj.reset(new handle_t(cudaStreamPerThread, self.stream_pool))
+                self.c_obj.reset(
+                    new handle_t(stream_ref(cudaStreamPerThread), self.stream_pool)
+                )
             else:
-                self.c_obj.reset(new handle_t(cudaStreamPerThread))
+                self.c_obj.reset(new handle_t(stream_ref(cudaStreamPerThread)))
         elif hasattr(stream, '__cuda_stream__'):
             # __cuda_stream__ protocol: returns (version, pointer)
             proto = stream.__cuda_stream__()
             c_stream_t = <cudaStream_t><uintptr_t>proto[1]
             if n_streams > 0:
-                self.c_obj.reset(new handle_t(c_stream_t, self.stream_pool))
+                self.c_obj.reset(new handle_t(stream_ref(c_stream_t), self.stream_pool))
             else:
-                self.c_obj.reset(new handle_t(c_stream_t))
+                self.c_obj.reset(new handle_t(stream_ref(c_stream_t)))
         elif isinstance(stream, int):
             # Raw cudaStream_t pointer (e.g., from cupy)
             c_stream_t = <cudaStream_t><uintptr_t>stream
             if n_streams > 0:
-                self.c_obj.reset(new handle_t(c_stream_t, self.stream_pool))
+                self.c_obj.reset(new handle_t(stream_ref(c_stream_t), self.stream_pool))
             else:
-                self.c_obj.reset(new handle_t(c_stream_t))
+                self.c_obj.reset(new handle_t(stream_ref(c_stream_t)))
         else:
             raise TypeError("stream must be a Stream object, int cudaStream_t pointer, "
                             "or an object implementing the __cuda_stream__ protocol")
@@ -118,7 +121,7 @@ cdef class DeviceResources:
         if self.n_streams > 0:
             self.stream_pool.reset(new cuda_stream_pool(self.n_streams))
 
-        self.c_obj.reset(new device_resources(cudaStreamPerThread,
+        self.c_obj.reset(new device_resources(stream_ref(cudaStreamPerThread),
                                               self.stream_pool))
 
 
@@ -179,7 +182,7 @@ cdef class Handle(DeviceResources):
         if self.n_streams > 0:
             self.stream_pool.reset(new cuda_stream_pool(self.n_streams))
 
-        self.c_obj.reset(new handle_t(cudaStreamPerThread,
+        self.c_obj.reset(new handle_t(stream_ref(cudaStreamPerThread),
                                       self.stream_pool))
 
 

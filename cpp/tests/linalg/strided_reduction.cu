@@ -41,7 +41,7 @@ class stridedReductionTest : public ::testing::TestWithParam<stridedReductionInp
  public:
   stridedReductionTest()
     : params(::testing::TestWithParam<stridedReductionInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream),
       dots_exp(params.cols, stream),  // expected dot products (from test)
       dots_act(params.cols, stream)   // actual dot products (from prim)

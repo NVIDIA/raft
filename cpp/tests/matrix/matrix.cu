@@ -42,7 +42,7 @@ class MatrixTest : public ::testing::TestWithParam<MatrixInputs<T>> {
  public:
   MatrixTest()
     : params(::testing::TestWithParam<MatrixInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in1(params.n_row * params.n_col, stream),
       in2(params.n_row * params.n_col, stream),
       in1_revr(params.n_row * params.n_col, stream)
@@ -116,8 +116,8 @@ class MatrixCopyRowsTest : public ::testing::Test {
 
  protected:
   MatrixCopyRowsTest()
-    : stream(resource::get_cuda_stream(handle)),
-      input(n_cols * n_rows, resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
+      input(n_cols * n_rows, resource::get_cuda_stream(handle).get()),
       indices(n_selected, resource::get_cuda_stream(handle)),
       output(n_cols * n_selected, resource::get_cuda_stream(handle))
   {

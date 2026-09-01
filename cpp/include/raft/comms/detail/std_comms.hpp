@@ -16,6 +16,7 @@
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
 
+#include <cuda/stream>
 #include <cuda_runtime.h>
 #include <thrust/iterator/zip_iterator.h>
 
@@ -69,10 +70,10 @@ class std_comms : public comms_iface {
             ucx_objects_t ucx_objects,
             int num_ranks,
             int rank,
-            rmm::cuda_stream_view stream,
+            cuda::stream_ref stream,
             bool subcomms_ucp = true)
     : nccl_comm_(nccl_comm),
-      stream_(stream),
+      stream_(stream.get()),
       status_(stream),
       num_ranks_(num_ranks),
       rank_(rank),
@@ -94,10 +95,10 @@ class std_comms : public comms_iface {
   std_comms(const ncclComm_t nccl_comm,
             int num_ranks,
             int rank,
-            rmm::cuda_stream_view stream,
+            cuda::stream_ref stream,
             bool own_nccl_comm = false)
     : nccl_comm_(nccl_comm),
-      stream_(stream),
+      stream_(stream.get()),
       status_(stream),
       num_ranks_(num_ranks),
       rank_(rank),
