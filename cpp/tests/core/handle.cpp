@@ -187,7 +187,7 @@ TEST(Raft, HandleDefault)
 {
   raft::handle_t h;
   ASSERT_EQ(0, h.get_device());
-  ASSERT_EQ(rmm::cuda_stream_per_thread, resource::get_cuda_stream(h));
+  ASSERT_EQ(cuda::stream_ref{cudaStreamPerThread}, resource::get_cuda_stream(h));
   ASSERT_NE(nullptr, h.get_cublas_handle());
   ASSERT_NE(nullptr, h.get_cusolver_dn_handle());
   ASSERT_NE(nullptr, h.get_cusolver_sp_handle());
@@ -199,7 +199,7 @@ TEST(Raft, Handle)
   // test stream pool creation
   constexpr std::size_t n_streams = 4;
   auto stream_pool                = std::make_shared<rmm::cuda_stream_pool>(n_streams);
-  raft::handle_t h(rmm::cuda_stream_default, stream_pool);
+  raft::handle_t h(cuda::stream_ref{cudaStream_t{cudaStreamDefault}}, stream_pool);
   ASSERT_EQ(n_streams, h.get_stream_pool_size());
 
   // test non default stream handle
@@ -234,7 +234,7 @@ TEST(Raft, GetHandleFromPool)
 {
   constexpr std::size_t n_streams = 4;
   auto stream_pool                = std::make_shared<rmm::cuda_stream_pool>(n_streams);
-  raft::handle_t parent(rmm::cuda_stream_default, stream_pool);
+  raft::handle_t parent(cuda::stream_ref{cudaStream_t{cudaStreamDefault}}, stream_pool);
 
   for (std::size_t i = 0; i < n_streams; i++) {
     auto worker_stream = parent.get_stream_from_stream_pool(i);
@@ -327,7 +327,7 @@ TEST(Raft, HandleCopy)
 {
   auto stream_pool = std::make_shared<rmm::cuda_stream_pool>(10);
 
-  handle_t handle(rmm::cuda_stream_per_thread, stream_pool);
+  handle_t handle(cuda::stream_ref{cudaStreamPerThread}, stream_pool);
   handle_t copied_handle(handle);
 
   assert_handles_equal(handle, copied_handle);
@@ -337,7 +337,7 @@ TEST(Raft, HandleAssign)
 {
   auto stream_pool = std::make_shared<rmm::cuda_stream_pool>(10);
 
-  handle_t handle(rmm::cuda_stream_per_thread, stream_pool);
+  handle_t handle(cuda::stream_ref{cudaStreamPerThread}, stream_pool);
   handle_t copied_handle = handle;
 
   assert_handles_equal(handle, copied_handle);

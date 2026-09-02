@@ -76,8 +76,8 @@ class device_resources : public resources {
    * @param[in] allocation_limit the total amount of memory in bytes available to the temporary
    *            workspace resources.
    */
-  device_resources(cuda::stream_ref stream_view                       = rmm::cuda_stream_per_thread,
-                   std::shared_ptr<rmm::cuda_stream_pool> stream_pool = {nullptr},
+  device_resources(cuda::stream_ref stream_view = cuda::stream_ref{cudaStreamPerThread},
+                   std::shared_ptr<rmm::cuda_stream_pool> stream_pool          = {nullptr},
                    std::optional<raft::mr::device_resource> workspace_resource = std::nullopt,
                    std::optional<std::size_t> allocation_limit                 = std::nullopt)
     : resources{}

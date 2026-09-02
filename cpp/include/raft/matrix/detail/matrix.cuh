@@ -18,6 +18,7 @@
 #include <rmm/exec_policy.hpp>
 
 #include <cuda/iterator>
+#include <cuda/stream>
 #include <cuda_runtime.h>
 #include <thrust/for_each.h>
 
@@ -133,7 +134,7 @@ void print(const m_t* in,
            idx_t n_cols,
            char h_separator    = ' ',
            char v_separator    = '\n',
-           cudaStream_t stream = rmm::cuda_stream_default.get())
+           cudaStream_t stream = cuda::stream_ref{cudaStream_t{cudaStreamDefault}}.get())
 {
   std::vector<m_t> h_matrix = std::vector<m_t>(n_cols * n_rows);
   raft::update_host(h_matrix.data(), in, n_cols * n_rows, stream);

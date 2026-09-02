@@ -157,7 +157,7 @@ class ReductionTest : public testing::TestWithParam<std::vector<int>> {  // NOLI
  public:
   explicit ReductionTest()
     : input(testing::TestWithParam<std::vector<int>>::GetParam()),
-      stream(rmm::cuda_stream_default),
+      stream(cuda::stream_ref{cudaStream_t{cudaStreamDefault}}),
       arr_d(input.size(), stream)
   {
     update_device(arr_d.data(), input.data(), input.size(), stream);

@@ -12,6 +12,8 @@
 #include <rmm/cuda_stream.hpp>
 #include <rmm/device_scalar.hpp>
 
+#include <cuda/stream>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -27,7 +29,7 @@ template <typename OpT, typename... Args>
 auto eval_op_on_device(OpT op, Args&&... args)
 {
   typedef decltype(op(args...)) OutT;
-  auto stream = rmm::cuda_stream_default;
+  auto stream = cuda::stream_ref{cudaStream_t{cudaStreamDefault}};
   rmm::device_scalar<OutT> result(stream);
   raft::launch_kernel(
     stream.get(), 1, 1, eval_op_on_device_kernel, result.data(), op, std::forward<Args>(args)...);

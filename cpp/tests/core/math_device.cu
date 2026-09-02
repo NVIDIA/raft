@@ -12,6 +12,7 @@
 #include <rmm/device_scalar.hpp>
 
 #include <cuda/std/type_traits>
+#include <cuda/stream>
 
 #include <gtest/gtest.h>
 
@@ -30,7 +31,7 @@ template <typename OpT, typename... Args>
 auto math_eval(OpT op, Args&&... args)
 {
   using OutT  = cuda::std::invoke_result_t<OpT, Args...>;
-  auto stream = rmm::cuda_stream_default;
+  auto stream = cuda::stream_ref{cudaStream_t{cudaStreamDefault}};
   rmm::device_scalar<OutT> result(stream);
   raft::launch_kernel(
     stream.get(), 1, 1, math_eval_kernel, result.data(), op, std::forward<Args>(args)...);
@@ -399,7 +400,7 @@ struct sincos_test_op {
 
 TEST(MathDevice, SinCos)
 {
-  auto stream = rmm::cuda_stream_default;
+  auto stream = cuda::stream_ref{cudaStream_t{cudaStreamDefault}};
   float xf    = 12.34f;
   rmm::device_scalar<float> sf(stream);
   rmm::device_scalar<float> cf(stream);

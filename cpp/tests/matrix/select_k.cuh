@@ -15,6 +15,7 @@
 
 #include <rmm/device_uvector.hpp>
 
+#include <cuda/stream>
 #include <cuda_bf16.h>
 
 #include <gtest/gtest.h>
@@ -36,7 +37,7 @@ template <typename IdxT>
 auto gen_simple_ids(uint32_t batch_size, uint32_t len) -> std::vector<IdxT>
 {
   std::vector<IdxT> out(batch_size * len);
-  auto s = rmm::cuda_stream_default;
+  auto s = cuda::stream_ref{cudaStream_t{cudaStreamDefault}};
   rmm::device_uvector<IdxT> out_d(out.size(), s);
   sparse::iota_fill(out_d.data(), IdxT(batch_size), IdxT(len), s.get());
   update_host(out.data(), out_d.data(), out.size(), s);

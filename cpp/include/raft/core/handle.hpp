@@ -43,8 +43,8 @@ class handle_t : public raft::device_resources {
    * @param[in] workspace_resource an optional resource used by some functions for allocating
    *            temporary workspaces.
    */
-  handle_t(cuda::stream_ref stream_view                       = rmm::cuda_stream_per_thread,
-           std::shared_ptr<rmm::cuda_stream_pool> stream_pool = {nullptr},
+  handle_t(cuda::stream_ref stream_view = cuda::stream_ref{cudaStreamPerThread},
+           std::shared_ptr<rmm::cuda_stream_pool> stream_pool          = {nullptr},
            std::optional<raft::mr::device_resource> workspace_resource = std::nullopt)
     : device_resources{stream_view, stream_pool, std::move(workspace_resource)}
   {
