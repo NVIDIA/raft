@@ -9,7 +9,6 @@
 #include <cuda/memory_resource>
 #include <cuda/std/atomic>
 #include <cuda/stream>
-#include <cuda/stream_ref>
 
 #include <cstddef>
 #include <memory>

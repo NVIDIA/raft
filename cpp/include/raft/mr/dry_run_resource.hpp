@@ -6,7 +6,6 @@
 
 #include <cuda/memory_resource>
 #include <cuda/stream>
-#include <cuda/stream_ref>
 #include <cuda_runtime_api.h>
 
 #include <atomic>
