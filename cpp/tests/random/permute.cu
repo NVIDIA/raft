@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/random/detail/permute.cuh>
 #include <raft/random/permute.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
@@ -25,6 +26,13 @@ struct PermInputs {
   unsigned long long int seed;
 };
 
+/**
+ * @brief Print permutation test parameters for GoogleTest diagnostics.
+ *
+ * @param[in,out] os Output stream
+ * @param[in] dims Test parameters
+ * @return The output stream
+ */
 template <typename T>
 ::std::ostream& operator<<(::std::ostream& os, const PermInputs<T>& dims)
 {
@@ -37,6 +45,7 @@ class PermTest : public ::testing::TestWithParam<PermInputs<T>> {
   using test_data_type = T;
 
  protected:
+  /** @brief Construct an empty raw-pointer permutation test fixture. */
   PermTest()
     : in(0, resource::get_cuda_stream(handle)),
       out(0, resource::get_cuda_stream(handle)),
@@ -44,6 +53,7 @@ class PermTest : public ::testing::TestWithParam<PermInputs<T>> {
   {
   }
 
+  /** @brief Allocate test inputs and run the keyed raw-pointer overload. */
   void SetUp() override
   {
     auto stream = resource::get_cuda_stream(handle);
@@ -65,7 +75,7 @@ class PermTest : public ::testing::TestWithParam<PermInputs<T>> {
       out_ptr = out.data();
       uniform(handle, r, in_ptr, len, T(-1.0), T(1.0));
     }
-    permute(outPerms_ptr, out_ptr, in_ptr, D, N, params.rowMajor, stream);
+    permute(outPerms_ptr, out_ptr, in_ptr, D, N, params.rowMajor, stream, params.seed);
     resource::sync_stream(handle);
   }
 
@@ -85,6 +95,7 @@ class PermMdspanTest : public ::testing::TestWithParam<PermInputs<T>> {
   using test_data_type = T;
 
  protected:
+  /** @brief Construct an empty mdspan permutation test fixture. */
   PermMdspanTest()
     : in(0, resource::get_cuda_stream(handle)),
       out(0, resource::get_cuda_stream(handle)),
@@ -102,6 +113,7 @@ class PermMdspanTest : public ::testing::TestWithParam<PermInputs<T>> {
   using vector_view_t = raft::device_vector_view<ElementType, index_type>;
 
  protected:
+  /** @brief Allocate test inputs and run the keyed mdspan overloads. */
   void SetUp() override
   {
     auto stream = resource::get_cuda_stream(handle);
@@ -133,16 +145,16 @@ class PermMdspanTest : public ::testing::TestWithParam<PermInputs<T>> {
       std::optional<vector_view_t<index_type>> outPerms_view;
       if (outPerms_ptr != nullptr) { outPerms_view.emplace(outPerms_ptr, N); }
 
-      permute(handle, in_view, outPerms_view, out_view);
+      permute(handle, in_view, outPerms_view, out_view, params.seed);
 
       // None of these three permute calls should have an effect.
       // The point is to test whether the function can deduce the
       // element type of outPerms if given nullopt.
       std::optional<matrix_view_t<T, layout_type>> out_view_empty;
       std::optional<vector_view_t<index_type>> outPerms_view_empty;
-      permute(handle, in_view, std::nullopt, out_view_empty);
-      permute(handle, in_view, outPerms_view_empty, std::nullopt);
-      permute(handle, in_view, std::nullopt, std::nullopt);
+      permute(handle, in_view, std::nullopt, out_view_empty, params.seed);
+      permute(handle, in_view, outPerms_view_empty, std::nullopt, params.seed);
+      permute(handle, in_view, std::nullopt, std::nullopt, params.seed);
     };
 
     if (params.rowMajor) {
@@ -164,6 +176,17 @@ class PermMdspanTest : public ::testing::TestWithParam<PermInputs<T>> {
   int* outPerms_ptr = nullptr;
 };
 
+/**
+ * @brief Compare a device array with a contiguous range.
+ *
+ * @param[in] actual Device array to compare
+ * @param[in] size Number of elements
+ * @param[in] start First expected value
+ * @param[in] eq_compare Equality comparison function
+ * @param[in] doSort Whether to sort the actual values before comparison
+ * @param[in] stream CUDA stream used for the device-to-host copy
+ * @return GoogleTest assertion result
+ */
 template <typename T, typename L>
 ::testing::AssertionResult devArrMatchRange(
   const T* actual, size_t size, T start, L eq_compare, bool doSort = true, cudaStream_t stream = 0)
@@ -183,6 +206,19 @@ template <typename T, typename L>
   return ::testing::AssertionSuccess();
 }
 
+/**
+ * @brief Verify that output rows match the input rows selected by a permutation.
+ *
+ * @param[in] perms Device permutation indices
+ * @param[in] out Device output matrix
+ * @param[in] in Device input matrix
+ * @param[in] D Number of matrix columns
+ * @param[in] N Number of matrix rows
+ * @param[in] rowMajor Whether the matrices use row-major layout
+ * @param[in] eq_compare Equality comparison function
+ * @param[in] stream CUDA stream used for device-to-host copies
+ * @return GoogleTest assertion result
+ */
 template <typename T, typename L>
 ::testing::AssertionResult devArrMatchShuffle(const int* perms,
                                               const T* out,
@@ -216,6 +252,13 @@ template <typename T, typename L>
 
 const std::vector<PermInputs<float>> inputsf = {
   // only generate permutations
+  // small-N: identity path (N=1), 2-bit minimum domain (N=2), non-power-of-two
+  // cycle-walk cases (N=3, N=7), and sub-warp size (N=15)
+  {1, 8, true, false, true, 1234ULL},
+  {2, 8, true, false, true, 1234ULL},
+  {3, 8, true, false, true, 1234ULL},
+  {7, 8, true, false, true, 1234ULL},
+  {15, 8, true, false, true, 1234ULL},
   {32, 8, true, false, true, 1234ULL},
   {32, 8, true, false, true, 1234567890ULL},
   {1024, 32, true, false, true, 1234ULL},
@@ -228,6 +271,11 @@ const std::vector<PermInputs<float>> inputsf = {
   {100000, 32, true, false, true, 1234567890ULL},
   {100001, 33, true, false, true, 1234567890ULL},
   // permute and shuffle the data row major
+  {1, 8, true, true, true, 1234ULL},
+  {2, 8, true, true, true, 1234ULL},
+  {3, 8, true, true, true, 1234ULL},
+  {7, 8, true, true, true, 1234ULL},
+  {15, 8, true, true, true, 1234ULL},
   {32, 8, true, true, true, 1234ULL},
   {32, 8, true, true, true, 1234567890ULL},
   {1024, 32, true, true, true, 1234ULL},
@@ -240,6 +288,11 @@ const std::vector<PermInputs<float>> inputsf = {
   {100000, 32, true, true, true, 1234567890ULL},
   {100001, 31, true, true, true, 1234567890ULL},
   // permute and shuffle the data column major
+  {1, 8, true, true, false, 1234ULL},
+  {2, 8, true, true, false, 1234ULL},
+  {3, 8, true, true, false, 1234ULL},
+  {7, 8, true, true, false, 1234ULL},
+  {15, 8, true, true, false, 1234ULL},
   {32, 8, true, true, false, 1234ULL},
   {32, 8, true, true, false, 1234567890ULL},
   {1024, 32, true, true, false, 1234ULL},
@@ -269,6 +322,7 @@ const std::vector<PermInputs<float>> inputsf = {
   } while (false)
 
 using PermTestF = PermTest<float>;
+/** @brief Validate raw-pointer permutation output for single-precision inputs. */
 TEST_P(PermTestF, Result)
 {
   using test_data_type = PermTestF::test_data_type;
@@ -277,6 +331,7 @@ TEST_P(PermTestF, Result)
 INSTANTIATE_TEST_CASE_P(PermTests, PermTestF, ::testing::ValuesIn(inputsf));
 
 using PermMdspanTestF = PermMdspanTest<float>;
+/** @brief Validate mdspan permutation output for single-precision inputs. */
 TEST_P(PermMdspanTestF, Result)
 {
   using test_data_type = PermTestF::test_data_type;
@@ -286,6 +341,11 @@ INSTANTIATE_TEST_CASE_P(PermMdspanTests, PermMdspanTestF, ::testing::ValuesIn(in
 
 const std::vector<PermInputs<double>> inputsd = {
   // only generate permutations
+  {1, 8, true, false, true, 1234ULL},
+  {2, 8, true, false, true, 1234ULL},
+  {3, 8, true, false, true, 1234ULL},
+  {7, 8, true, false, true, 1234ULL},
+  {15, 8, true, false, true, 1234ULL},
   {32, 8, true, false, true, 1234ULL},
   {32, 8, true, false, true, 1234567890ULL},
   {1024, 32, true, false, true, 1234ULL},
@@ -298,6 +358,11 @@ const std::vector<PermInputs<double>> inputsd = {
   {100000, 32, true, false, true, 1234567890ULL},
   {100001, 33, true, false, true, 1234567890ULL},
   // permute and shuffle the data row major
+  {1, 8, true, true, true, 1234ULL},
+  {2, 8, true, true, true, 1234ULL},
+  {3, 8, true, true, true, 1234ULL},
+  {7, 8, true, true, true, 1234ULL},
+  {15, 8, true, true, true, 1234ULL},
   {32, 8, true, true, true, 1234ULL},
   {32, 8, true, true, true, 1234567890ULL},
   {1024, 32, true, true, true, 1234ULL},
@@ -310,6 +375,11 @@ const std::vector<PermInputs<double>> inputsd = {
   {100000, 32, true, true, true, 1234567890ULL},
   {100001, 31, true, true, true, 1234567890ULL},
   // permute and shuffle the data column major
+  {1, 8, true, true, false, 1234ULL},
+  {2, 8, true, true, false, 1234ULL},
+  {3, 8, true, true, false, 1234ULL},
+  {7, 8, true, true, false, 1234ULL},
+  {15, 8, true, true, false, 1234ULL},
   {32, 8, true, true, false, 1234ULL},
   {32, 8, true, true, false, 1234567890ULL},
   {1024, 32, true, true, false, 1234ULL},
@@ -323,6 +393,7 @@ const std::vector<PermInputs<double>> inputsd = {
   {100001, 33, true, true, false, 1234567890ULL}};
 
 using PermTestD = PermTest<double>;
+/** @brief Validate raw-pointer permutation output for double-precision inputs. */
 TEST_P(PermTestD, Result)
 {
   using test_data_type = PermTestF::test_data_type;
@@ -331,12 +402,75 @@ TEST_P(PermTestD, Result)
 INSTANTIATE_TEST_CASE_P(PermTests, PermTestD, ::testing::ValuesIn(inputsd));
 
 using PermMdspanTestD = PermMdspanTest<double>;
+/** @brief Validate mdspan permutation output for double-precision inputs. */
 TEST_P(PermMdspanTestD, Result)
 {
   using test_data_type = PermTestF::test_data_type;
   _PERMTEST_BODY(test_data_type);
 }
 INSTANTIATE_TEST_CASE_P(PermMdspanTests, PermMdspanTestD, ::testing::ValuesIn(inputsd));
+
+/**
+ * @brief Count matches between a reference permutation and many keyed permutations.
+ *
+ * Each thread uses `(base_seed + tid + 1)` and records how many generated
+ * indices match either the reference permutation or the original index.
+ *
+ * @param[in] ref_perm Reference permutation generated from `base_seed`
+ * @param[in] N Number of permutation indices
+ * @param[in] base_seed Seed used for the reference permutation
+ * @param[out] match_counts Match count generated by each thread
+ */
+__global__ void seed_diversity_kernel(const uint32_t* ref_perm,
+                                      uint32_t N,
+                                      uint64_t base_seed,
+                                      int* match_counts)
+{
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  cuda::shuffle_iterator shuffled_indices{
+    cuda::random_bijection{N, cuda::std::minstd_rand{base_seed + uint64_t(tid) + 1}}};
+  int count = 0;
+  for (uint32_t i = 0; i < N; i++) {
+    uint32_t val = shuffled_indices[i];
+    if (val == ref_perm[i] || val == i) { count++; }
+  }
+  match_counts[tid] = count;
+}
+
+/** @brief Verify that many consecutive seeds produce diverse permutations. */
+TEST(PermTest, SeedDiversity)
+{
+  constexpr uint32_t N           = 1000;
+  constexpr uint64_t base_seed   = 42ULL;
+  constexpr int TPB              = 256;
+  constexpr int nblocks          = 64;
+  constexpr int total_threads    = nblocks * TPB;
+  constexpr float max_match_frac = 0.05f;
+
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+
+  rmm::device_uvector<uint32_t> d_ref(N, stream);
+  rmm::device_uvector<int> d_matches(total_threads, stream);
+  detail::permute<float, uint32_t, uint32_t>(
+    d_ref.data(), nullptr, nullptr, 0, N, true, stream, base_seed);
+
+  seed_diversity_kernel<<<nblocks, TPB, 0, stream>>>(d_ref.data(), N, base_seed, d_matches.data());
+  RAFT_CUDA_TRY(cudaPeekAtLastError());
+
+  std::vector<int> h_matches(total_threads);
+  raft::update_host(h_matches.data(), d_matches.data(), total_threads, stream);
+  resource::sync_stream(handle);
+
+  int total_matches = 0;
+  for (int count : h_matches) {
+    total_matches += count;
+  }
+
+  int max_allowed = static_cast<int>(max_match_frac * float(N) * float(total_threads));
+  EXPECT_LT(total_matches, max_allowed)
+    << "Too many index matches across seeds: " << total_matches << " >= " << max_allowed;
+}
 
 }  // end namespace random
 }  // end namespace raft

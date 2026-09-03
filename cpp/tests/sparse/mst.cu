@@ -6,6 +6,7 @@
 #include "../test_utils.cuh"
 
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/sparse/solver/mst.cuh>
 #include <raft/util/cudart_utils.hpp>
@@ -24,6 +25,7 @@
 #include <iostream>
 #include <limits>
 #include <numeric>
+#include <optional>
 #include <random>
 #include <set>
 #include <tuple>
@@ -326,67 +328,42 @@ class MSTTest : public ::testing::TestWithParam<MSTTestInput<vertex_t, edge_t, w
 
     vertex_t* color_ptr = thrust::raw_pointer_cast(color.data());
 
-    if (iterations == 0) {
-      raft::sparse::solver::MST_solver<vertex_t, edge_t, weight_t, float> symmetric_solver(
+    auto run_mst = [&](bool symmetrize, bool init_colors, int iters) {
+      using solver_t = raft::sparse::solver::MST_solver<vertex_t, edge_t, weight_t, float>;
+      using COO      = raft::sparse::solver::Graph_COO<vertex_t, edge_t, weight_t>;
+      std::optional<COO> out;
+      raft::execute_with_dry_run_check(
         handle,
-        offsets,
-        indices,
-        weights,
-        v,
-        e,
-        color_ptr,
-        resource::get_cuda_stream(handle),
-        true,
-        true,
-        0);
-      auto symmetric_result = symmetric_solver.solve();
+        [&](raft::resources const& h) {
+          solver_t solver(h,
+                          offsets,
+                          indices,
+                          weights,
+                          v,
+                          e,
+                          color_ptr,
+                          resource::get_cuda_stream(h),
+                          symmetrize,
+                          init_colors,
+                          iters);
+          auto result = solver.solve();
+          if (!resource::get_dry_run_flag(h)) { out.emplace(std::move(result)); }
+        },
+        raft::alloc_behavior::DATA_DRIVEN);
+      return std::move(*out);
+    };
 
-      raft::sparse::solver::MST_solver<vertex_t, edge_t, weight_t, float> non_symmetric_solver(
-        handle,
-        offsets,
-        indices,
-        weights,
-        v,
-        e,
-        color_ptr,
-        resource::get_cuda_stream(handle),
-        false,
-        true,
-        0);
-      auto non_symmetric_result = non_symmetric_solver.solve();
+    if (iterations == 0) {
+      auto symmetric_result     = run_mst(true, true, 0);
+      auto non_symmetric_result = run_mst(false, true, 0);
 
       EXPECT_LE(symmetric_result.n_edges, 2 * v - 2);
       EXPECT_LE(non_symmetric_result.n_edges, v - 1);
 
       return std::make_pair(std::move(symmetric_result), std::move(non_symmetric_result));
     } else {
-      raft::sparse::solver::MST_solver<vertex_t, edge_t, weight_t, float> intermediate_solver(
-        handle,
-        offsets,
-        indices,
-        weights,
-        v,
-        e,
-        color_ptr,
-        resource::get_cuda_stream(handle),
-        true,
-        true,
-        iterations);
-      auto intermediate_result = intermediate_solver.solve();
-
-      raft::sparse::solver::MST_solver<vertex_t, edge_t, weight_t, float> symmetric_solver(
-        handle,
-        offsets,
-        indices,
-        weights,
-        v,
-        e,
-        color_ptr,
-        resource::get_cuda_stream(handle),
-        true,
-        false,
-        0);
-      auto symmetric_result = symmetric_solver.solve();
+      auto intermediate_result = run_mst(true, true, iterations);
+      auto symmetric_result    = run_mst(true, false, 0);
 
       // symmetric_result.n_edges += intermediate_result.n_edges;
       auto total_edge_size = symmetric_result.n_edges + intermediate_result.n_edges;
@@ -408,19 +385,7 @@ class MSTTest : public ::testing::TestWithParam<MSTTestInput<vertex_t, edge_t, w
                  resource::get_cuda_stream(handle));
       symmetric_result.n_edges = total_edge_size;
 
-      raft::sparse::solver::MST_solver<vertex_t, edge_t, weight_t, float> non_symmetric_solver(
-        handle,
-        offsets,
-        indices,
-        weights,
-        v,
-        e,
-        color_ptr,
-        resource::get_cuda_stream(handle),
-        false,
-        true,
-        0);
-      auto non_symmetric_result = non_symmetric_solver.solve();
+      auto non_symmetric_result = run_mst(false, true, 0);
 
       EXPECT_LE(symmetric_result.n_edges, 2 * v - 2);
       EXPECT_LE(non_symmetric_result.n_edges, v - 1);

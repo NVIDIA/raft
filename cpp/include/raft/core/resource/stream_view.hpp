@@ -5,11 +5,14 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/core/stream_view.hpp>
 #ifndef RAFT_DISABLE_CUDA
 #include <raft/core/resource/cuda_stream.hpp>
 #endif
+
+#include <source_location>
 
 namespace RAFT_EXPORT raft {
 namespace resource {
@@ -74,16 +77,29 @@ inline void set_stream_view(resources& res, raft::stream_view view)
  *
  * @param[in] res the raft resources object
  * @param[in] stream stream to synchronize
+ * @param[in] location the call site to blame for the errors; leave at its default unless
+ * synchronizing on behalf of a caller, in which case forward the caller's location.
  */
-inline void sync_stream_view(const resources& res, raft::stream_view stream)
+inline void sync_stream_view(const resources& res,
+                             raft::stream_view stream,
+                             std::source_location location = std::source_location::current())
 {
-  stream.interruptible_synchronize();
+  if (raft::resource::get_dry_run_flag(res)) { return; }
+  stream.interruptible_synchronize(location);
 }
 
 /**
  * @brief synchronize main stream on the resources instance
+ *
+ * @param[in] res the raft resources object
+ * @param[in] location the call site to blame for the errors; leave at its default unless
+ * synchronizing on behalf of a caller, in which case forward the caller's location.
  */
-inline void sync_stream_view(const resources& res) { sync_stream_view(res, get_stream_view(res)); }
+inline void sync_stream_view(const resources& res,
+                             std::source_location location = std::source_location::current())
+{
+  sync_stream_view(res, get_stream_view(res), location);
+}
 
 /**
  * @}

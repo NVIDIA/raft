@@ -18,6 +18,7 @@
 #include <raft/core/mdspan_types.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/core/types.hpp>
 #include <raft/linalg/add.cuh>
@@ -143,7 +144,8 @@ void lanczos_solve_ritz(
   raft::device_vector_view<ValueTypeT> sm_eigenvalues,
   raft::device_matrix_view<ValueTypeT, uint32_t, raft::col_major> sm_eigenvectors)
 {
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream           = resource::get_cuda_stream(handle);
+  bool const is_dry_run = resource::get_dry_run_flag(handle);
 
   ValueTypeT zero = 0;
   auto triangular_matrix =
@@ -153,9 +155,6 @@ void lanczos_solve_ritz(
   raft::device_vector_view<const ValueTypeT, uint32_t> alphaVec =
     raft::make_device_vector_view<const ValueTypeT, uint32_t>(alpha.data_handle(), ncv);
   raft::matrix::set_diagonal(handle, alphaVec, triangular_matrix.view());
-
-  // raft::matrix::initializeDiagonalMatrix(
-  //   alpha.data_handle(), triangular_matrix.data_handle(), ncv, ncv, stream);
 
   int blockSize = 256;
   int numBlocks = raft::div_rounding_up_safe(ncv, blockSize);
@@ -206,32 +205,36 @@ void lanczos_solve_ritz(
     eigenvectors_k_slice = raft::make_device_matrix_view<ValueTypeT, IndexTypeT, raft::col_major>(
       eigenvectors.data_handle() + (ncv - nEigVecs) * ncv, ncv, nEigVecs);
   } else if (which == LANCZOS_WHICH::SM || which == LANCZOS_WHICH::LM) {
-    thrust::sequence(thrust::device, indices.data_handle(), indices.data_handle() + ncv, 0);
+    if (!is_dry_run) {  // TODO: we must be missing some allocations in thrust helpers here
+      thrust::sequence(thrust::device, indices.data_handle(), indices.data_handle() + ncv, 0);
 
-    // Sort indices by absolute eigenvalues (magnitude) using a custom comparator
-    thrust::sort(thrust::device,
-                 indices.data_handle(),
-                 indices.data_handle() + ncv,
-                 [eigenvalues = eigenvalues.data_handle()] __device__(int a, int b) {
-                   return fabsf(eigenvalues[a]) < fabsf(eigenvalues[b]);
-                 });
+      // Sort indices by absolute eigenvalues (magnitude) using a custom comparator
+      thrust::sort(thrust::device,
+                   indices.data_handle(),
+                   indices.data_handle() + ncv,
+                   [eigenvalues = eigenvalues.data_handle()] __device__(int a, int b) {
+                     return fabsf(eigenvalues[a]) < fabsf(eigenvalues[b]);
+                   });
 
-    if (which == LANCZOS_WHICH::SM) {
-      // Take the first nEigVecs indices (smallest magnitude)
-      raft::copy(selected_indices.data_handle(), indices.data_handle(), nEigVecs, stream);
-    } else if (which == LANCZOS_WHICH::LM) {
-      // Take the last nEigVecs indices (largest magnitude)
-      raft::copy(
-        selected_indices.data_handle(), indices.data_handle() + (ncv - nEigVecs), nEigVecs, stream);
+      if (which == LANCZOS_WHICH::SM) {
+        // Take the first nEigVecs indices (smallest magnitude)
+        raft::copy(selected_indices.data_handle(), indices.data_handle(), nEigVecs, stream);
+      } else if (which == LANCZOS_WHICH::LM) {
+        // Take the last nEigVecs indices (largest magnitude)
+        raft::copy(selected_indices.data_handle(),
+                   indices.data_handle() + (ncv - nEigVecs),
+                   nEigVecs,
+                   stream);
+      }
+
+      // Re-sort these indices by algebraic value to maintain algebraic ordering
+      thrust::sort(thrust::device,
+                   selected_indices.data_handle(),
+                   selected_indices.data_handle() + nEigVecs,
+                   [eigenvalues = eigenvalues.data_handle()] __device__(int a, int b) {
+                     return eigenvalues[a] < eigenvalues[b];
+                   });
     }
-
-    // Re-sort these indices by algebraic value to maintain algebraic ordering
-    thrust::sort(thrust::device,
-                 selected_indices.data_handle(),
-                 selected_indices.data_handle() + nEigVecs,
-                 [eigenvalues = eigenvalues.data_handle()] __device__(int a, int b) {
-                   return eigenvalues[a] < eigenvalues[b];
-                 });
     raft::matrix::gather(
       handle,
       raft::make_device_matrix_view<const ValueTypeT, uint32_t, raft::row_major>(
@@ -282,14 +285,12 @@ void lanczos_aux(raft::resources const& handle,
   } else {
     spmv_alg = CUSPARSE_SPMV_ALG_DEFAULT;
   }
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream           = resource::get_cuda_stream(handle);
+  bool const is_dry_run = resource::get_dry_run_flag(handle);
 
   IndexTypeT n  = A.structure_view().get_n_rows();
   auto v_vector = raft::make_device_vector_view<const ValueTypeT>(v.data_handle(), n);
   auto u_vector = raft::make_device_vector_view<const ValueTypeT>(u.data_handle(), n);
-
-  raft::copy(
-    v.data_handle(), V.data_handle() + start_idx * V.stride(0), n, stream);  // V(start_idx, 0)
 
   auto cusparse_h                 = resource::get_cusparse_handle(handle);
   cusparseSpMatDescr_t cusparse_A = raft::sparse::linalg::detail::create_descriptor(A);
@@ -312,17 +313,24 @@ void lanczos_aux(raft::resources const& handle,
                                                 stream);
   auto cusparse_spmv_buffer = raft::make_device_vector<ValueTypeT>(handle, bufferSize);
 
+  if (!is_dry_run) {
+    raft::copy(
+      v.data_handle(), V.data_handle() + start_idx * V.stride(0), n, stream);  // V(start_idx, 0)
+  }
+
   for (int i = start_idx; i < end_idx; i++) {
-    raft::sparse::detail::cusparsespmv(cusparse_h,
-                                       CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                       &one,
-                                       cusparse_A,
-                                       cusparse_v,
-                                       &zero,
-                                       cusparse_u,
-                                       spmv_alg,
-                                       cusparse_spmv_buffer.data_handle(),
-                                       stream);
+    if (!is_dry_run) {
+      raft::sparse::detail::cusparsespmv(cusparse_h,
+                                         CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                         &one,
+                                         cusparse_A,
+                                         cusparse_v,
+                                         &zero,
+                                         cusparse_u,
+                                         spmv_alg,
+                                         cusparse_spmv_buffer.data_handle(),
+                                         stream);
+    }
 
     auto alpha_i =
       raft::make_device_scalar_view(alpha.data_handle() + i * alpha.stride(1));  // alpha(0, i)
@@ -336,10 +344,12 @@ void lanczos_aux(raft::resources const& handle,
     ValueTypeT b            = 0;
     ValueTypeT mone         = -1;
 
-    raft::copy<ValueTypeT>(
-      &b, beta.data_handle() + ((i - 1 + ncv) % ncv) * beta.stride(1), 1, stream);
-    raft::copy<ValueTypeT>(
-      &alpha_i_host, alpha.data_handle() + i * alpha.stride(1), 1, stream);  // alpha(0, i)
+    if (!is_dry_run) {
+      raft::copy<ValueTypeT>(
+        &b, beta.data_handle() + ((i - 1 + ncv) % ncv) * beta.stride(1), 1, stream);
+      raft::copy<ValueTypeT>(
+        &alpha_i_host, alpha.data_handle() + i * alpha.stride(1), 1, stream);  // alpha(0, i)
+    }
 
     raft::linalg::axpy(handle, n, &alpha_i_host, v.data_handle(), 1, vv.data_handle(), 1, stream);
     raft::linalg::axpy(handle,
@@ -457,9 +467,10 @@ auto lanczos_smallest(raft::resources const& handle,
   } else {
     spmv_alg = CUSPARSE_SPMV_ALG_DEFAULT;
   }
-  int n       = A.structure_view().get_n_rows();
-  int ncv     = restartIter;
-  auto stream = resource::get_cuda_stream(handle);
+  int n           = A.structure_view().get_n_rows();
+  int ncv         = restartIter;
+  auto stream     = resource::get_cuda_stream(handle);
+  bool is_dry_run = resource::get_dry_run_flag(handle);
 
   auto V = raft::make_device_matrix<ValueTypeT, uint32_t, raft::row_major>(handle, ncv, n);
   auto V_0_view =
@@ -468,7 +479,7 @@ auto lanczos_smallest(raft::resources const& handle,
 
   auto u        = raft::make_device_matrix<ValueTypeT, uint32_t, raft::row_major>(handle, 1, n);
   auto u_vector = raft::make_device_vector_view<ValueTypeT, uint32_t>(u.data_handle(), n);
-  raft::copy(u.data_handle(), v0, n, stream);
+  if (!is_dry_run) { raft::copy(u.data_handle(), v0, n, stream); }
 
   auto cublas_h = resource::get_cublas_handle(handle);
   auto v0nrm    = raft::make_device_vector<ValueTypeT, uint32_t>(handle, 1);
@@ -564,8 +575,14 @@ auto lanczos_smallest(raft::resources const& handle,
     raft::make_device_matrix_view<const ValueTypeT>(beta_k.data_handle(), 1, nEigVecs);
   raft::linalg::norm<raft::linalg::L2Norm, raft::Apply::ALONG_ROWS>(
     handle, input, output.view(), raft::sqrt_op());
-  raft::copy(&res, output.data_handle(), 1, stream);
-  resource::sync_stream(handle, stream);
+  if (!is_dry_run) {
+    raft::copy(&res, output.data_handle(), 1, stream);
+    resource::sync_stream(handle, stream);
+  } else {
+    // Force exactly one loop iteration so the MR records all allocations inside the loop body.
+    res     = tol + 1;
+    maxIter = ncv + (ncv - nEigVecs);
+  }
 
   auto uu  = raft::make_device_matrix<ValueTypeT>(handle, 1, nEigVecs);
   int iter = ncv;
@@ -574,12 +591,14 @@ auto lanczos_smallest(raft::resources const& handle,
       beta.data_handle(), 1, nEigVecs);
     raft::matrix::fill(handle, beta_view, zero);
 
-    raft::copy(alpha.data_handle(), eigenvalues_k.data_handle(), nEigVecs, stream);
+    if (!is_dry_run) {
+      raft::copy(alpha.data_handle(), eigenvalues_k.data_handle(), nEigVecs, stream);
+    }
 
     auto x_T =
       raft::make_device_matrix_view<ValueTypeT>(ritz_eigenvectors.data_handle(), nEigVecs, n);
 
-    raft::copy(V.data_handle(), x_T.data_handle(), nEigVecs * n, stream);
+    if (!is_dry_run) { raft::copy(V.data_handle(), x_T.data_handle(), nEigVecs * n, stream); }
 
     ValueTypeT one  = 1;
     ValueTypeT mone = -1;
@@ -647,16 +666,18 @@ auto lanczos_smallest(raft::resources const& handle,
                                                   stream);
     auto cusparse_spmv_buffer = raft::make_device_vector<ValueTypeT>(handle, bufferSize);
 
-    raft::sparse::detail::cusparsespmv(cusparse_h,
-                                       CUSPARSE_OPERATION_NON_TRANSPOSE,
-                                       &one,
-                                       cusparse_A,
-                                       cusparse_v,
-                                       &zero,
-                                       cusparse_u,
-                                       spmv_alg,
-                                       cusparse_spmv_buffer.data_handle(),
-                                       stream);
+    if (!is_dry_run) {
+      raft::sparse::detail::cusparsespmv(cusparse_h,
+                                         CUSPARSE_OPERATION_NON_TRANSPOSE,
+                                         &one,
+                                         cusparse_A,
+                                         cusparse_v,
+                                         &zero,
+                                         cusparse_u,
+                                         spmv_alg,
+                                         cusparse_spmv_buffer.data_handle(),
+                                         stream);
+    }
 
     auto alpha_k = raft::make_device_scalar_view<ValueTypeT>(alpha.data_handle() + nEigVecs);
 
@@ -777,13 +798,17 @@ auto lanczos_smallest(raft::resources const& handle,
       raft::make_device_matrix_view<const ValueTypeT>(beta_k.data_handle(), 1, nEigVecs);
     raft::linalg::norm<raft::linalg::L2Norm, raft::Apply::ALONG_ROWS>(
       handle, input2, output2.view(), raft::sqrt_op());
-    raft::copy(&res, output2.data_handle(), 1, stream);
-    resource::sync_stream(handle, stream);
+    if (!is_dry_run) {
+      raft::copy(&res, output2.data_handle(), 1, stream);
+      resource::sync_stream(handle, stream);
+    }
     RAFT_LOG_TRACE("Iteration %f: residual (tolerance) %d", iter, res);
   }
 
-  raft::copy(eigVals_dev, eigenvalues_k.data_handle(), nEigVecs, stream);
-  raft::copy(eigVecs_dev, ritz_eigenvectors.data_handle(), n * nEigVecs, stream);
+  if (!is_dry_run) {
+    raft::copy(eigVals_dev, eigenvalues_k.data_handle(), nEigVecs, stream);
+    raft::copy(eigVecs_dev, ritz_eigenvectors.data_handle(), n * nEigVecs, stream);
+  }
 
   return 0;
 }

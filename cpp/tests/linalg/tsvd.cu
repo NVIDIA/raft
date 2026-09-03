@@ -1,10 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "../test_utils.cuh"
 
+#include <raft/core/copy.hpp>
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/linalg/tsvd.cuh>
@@ -145,7 +147,16 @@ class TsvdTest : public ::testing::TestWithParam<TsvdInputs<T>> {
     auto sv_view =
       raft::make_device_vector_view<T, std::size_t>(singular_vals2.data(), n_components);
 
-    tsvd_fit_transform(handle, prms, input_view, trans_view, comp_view, ev_view, evr_view, sv_view);
+    // Wrap the calls in the dry-run check: tSVD's internal buffers are sized purely from the
+    // argument shapes, so the predicted (dry-run) peak allocation must match the real peak exactly.
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        tsvd_fit_transform(h, prms, input_view, trans_view, comp_view, ev_view, evr_view, sv_view);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      // Lower bound: fit must allocate at least the n_cols x n_cols cross-product matrix.
+      n_cols * n_cols * sizeof(T));
 
     data2_back.resize(len, stream);
 
@@ -156,7 +167,30 @@ class TsvdTest : public ::testing::TestWithParam<TsvdInputs<T>> {
     auto output_view = raft::make_device_matrix_view<T, std::size_t, raft::col_major>(
       data2_back.data(), n_rows, n_cols);
 
-    tsvd_inverse_transform(handle, prms, trans_in_view, comp_in_view, output_view);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        tsvd_inverse_transform(h, prms, trans_in_view, comp_in_view, output_view);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
+
+    // The U-based sign-flip branch is unreachable through tsvd_fit_transform's default arguments;
+    // exercise it on scratch copies so that the reference comparisons above stay untouched.
+    auto flip_input =
+      raft::make_device_matrix<T, std::size_t, raft::col_major>(handle, n_rows, n_cols);
+    auto flip_comp =
+      raft::make_device_matrix<T, std::size_t, raft::col_major>(handle, n_components, n_cols);
+    raft::copy(handle, flip_input.view(), input_view);
+    raft::copy(handle, flip_comp.view(), comp_view);
+
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        sign_flip_components(h, flip_input.view(), flip_comp.view(), true, true);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      // Lower bound: the U-based branch must allocate at least the n_rows x n_components product.
+      n_rows * n_components * sizeof(T));
   }
 
  protected:

@@ -6,7 +6,6 @@
 #pragma once
 
 #include <raft/core/device_mdspan.hpp>
-#include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/kernel_launch.hpp>

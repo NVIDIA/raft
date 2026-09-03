@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -12,6 +12,8 @@
 
 #include <rmm/cuda_stream_view.hpp>
 #endif
+
+#include <source_location>
 
 namespace RAFT_EXPORT raft {
 
@@ -72,10 +74,15 @@ struct stream_view {
   [[nodiscard]] auto is_default() const { return base_view_.is_default(); }
   void synchronize() const { base_view_.synchronize(); }
   void synchronize_no_throw() const { base_view_.synchronize_no_throw(); }
-  void interruptible_synchronize() const
+  /**
+   * @param[in] location the call site to blame for the errors; leave at its default unless
+   * synchronizing on behalf of a caller, in which case forward the caller's location.
+   */
+  void interruptible_synchronize(
+    [[maybe_unused]] std::source_location location = std::source_location::current()) const
   {
 #ifndef RAFT_DISABLE_CUDA
-    interruptible::synchronize(base_view_);
+    interruptible::synchronize(base_view_, location);
 #else
     synchronize();
 #endif

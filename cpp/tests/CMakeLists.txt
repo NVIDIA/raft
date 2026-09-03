@@ -95,6 +95,7 @@ if(BUILD_TESTS)
     core/bitset.cu
     core/device_resources_manager.cpp
     core/device_setter.cpp
+    core/error.cpp
     core/math_device.cu
     core/math_host.cpp
     core/operators_device.cu
@@ -121,7 +122,7 @@ if(BUILD_TESTS)
 
   ConfigureTest(
     NAME CORE_TEST PATH core/stream_view.cpp core/mdspan_copy.cpp core/host_memory_resource.cpp
-    core/allocation_tracking.cpp LIB EXPLICIT_INSTANTIATE_ONLY NOCUDA
+    core/allocation_tracking.cpp core/error.cpp LIB EXPLICIT_INSTANTIATE_ONLY NOCUDA
   )
 
   list(APPEND EXT_HEADER_TEST_SOURCES ext_headers/raft_core_logger.cpp)
@@ -329,6 +330,8 @@ if(BUILD_TESTS)
     util/bitonic_sort.cu
     util/cudart_utils.cpp
     util/device_atomics.cu
+    util/dry_run_guards.cu
+    util/dry_run_resources.cpp
     util/fast_int_div.cu
     util/integer_utils.cpp
     util/integer_utils.cu

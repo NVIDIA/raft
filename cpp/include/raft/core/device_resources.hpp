@@ -38,6 +38,7 @@
 
 #include <memory>
 #include <optional>
+#include <source_location>
 #include <string>
 #include <utility>
 #include <vector>
@@ -113,13 +114,25 @@ class device_resources : public resources {
 
   /**
    * @brief synchronize a stream on the current container
+   *
+   * @param[in] stream stream to synchronize
+   * @param[in] location the call site to blame for the errors; leave at its default
    */
-  void sync_stream(rmm::cuda_stream_view stream) const { resource::sync_stream(*this, stream); }
+  void sync_stream(rmm::cuda_stream_view stream,
+                   std::source_location location = std::source_location::current()) const
+  {
+    resource::sync_stream(*this, stream, location);
+  }
 
   /**
    * @brief synchronize main stream on the current container
+   *
+   * @param[in] location the call site to blame for the errors; leave at its default
    */
-  void sync_stream() const { resource::sync_stream(*this); }
+  void sync_stream(std::source_location location = std::source_location::current()) const
+  {
+    resource::sync_stream(*this, location);
+  }
 
   /**
    * @brief returns main stream on the current container

@@ -1,11 +1,13 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #pragma once
 #include <raft/core/detail/copy.hpp>
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/nvtx.hpp>
+
 namespace RAFT_EXPORT raft {
 
 #ifndef RAFT_NON_CUDA_COPY_IMPLEMENTED
@@ -52,6 +54,9 @@ detail::mdspan_copyable_not_with_kernel_t<DstType, SrcType> copy(resources const
                                                                  DstType&& dst,
                                                                  SrcType&& src)
 {
+  common::nvtx::range<common::nvtx::domain::raft> fun_scope("raft::copy rank=%d size=%zu",
+                                                            static_cast<int>(dst.rank()),
+                                                            static_cast<std::size_t>(dst.size()));
   detail::copy(res, std::forward<DstType>(dst), std::forward<SrcType>(src));
 }
 #endif

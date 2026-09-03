@@ -6,9 +6,12 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/interruptible.hpp>
 #include <raft/core/nvtx.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resources.hpp>
 #include <raft/util/kernel_launch.hpp>
 
 #include <rmm/cuda_stream.hpp>
+#include <rmm/cuda_stream_view.hpp>
 
 #include <gtest/gtest.h>
 #include <omp.h>
@@ -16,6 +19,9 @@
 #include <cstddef>
 #include <iostream>
 #include <memory>
+#include <regex>
+#include <source_location>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -85,6 +91,119 @@ TEST(Raft, InterruptibleDelayedInit)
     ASSERT_EQ(a.get(), b.get());
     ASSERT_EQ(a.get(), c.get());
   }).join();
+}
+
+namespace {
+
+/**
+ * A stream that cannot be synchronized: querying a capturing stream fails with a non-sticky error,
+ * which is a safe way to exercise the error reporting; the stream is fully usable again afterwards.
+ */
+class capturing_stream {
+ public:
+  capturing_stream()
+  {
+    RAFT_CUDA_TRY(cudaStreamBeginCapture(stream_.value(), cudaStreamCaptureModeRelaxed));
+  }
+
+  ~capturing_stream()
+  {
+    // Querying the stream has invalidated the capture, so ending it is expected to fail.
+    cudaGraph_t graph{};
+    cudaStreamEndCapture(stream_.value(), &graph);
+    cudaGetLastError();
+  }
+
+  capturing_stream(capturing_stream const&)                    = delete;
+  capturing_stream(capturing_stream&&)                         = delete;
+  auto operator=(capturing_stream const&) -> capturing_stream& = delete;
+  auto operator=(capturing_stream&&) -> capturing_stream&      = delete;
+
+  [[nodiscard]] auto view() const -> rmm::cuda_stream_view { return stream_.view(); }
+
+ private:
+  rmm::cuda_stream stream_{};
+};
+
+/** A utility synchronizing on behalf of its caller. */
+void sync_on_behalf_of_caller(raft::resources const& res,
+                              std::source_location location = std::source_location::current())
+{
+  resource::sync_stream(res, location);
+}
+
+}  // namespace
+
+TEST(Raft, InterruptibleSynchronizeBlamesTheCallSite)
+{
+  capturing_stream stream{};
+  std::string caught{};
+  auto sync_line = __LINE__ + 2;
+  try {
+    interruptible::synchronize(stream.view());
+    FAIL() << "Expected cuda_error from synchronizing a capturing stream";
+  } catch (raft::cuda_error const& e) {
+    caught = e.what();
+  }
+
+  // Must blame this test translation unit, not the interruptible implementation.
+  EXPECT_EQ(caught.find("interruptible.hpp"), std::string::npos) << caught;
+  std::string re_exp{R"(CUDA error encountered at: file=.*interruptible\.cu line=)"};
+  re_exp += std::to_string(sync_line);
+  re_exp += R"( function=.*InterruptibleSynchronizeBlamesTheCallSite.*: )";
+  re_exp += R"(call='cudaStreamQuery', Reason=.*)";
+  EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
+    << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
+}
+
+TEST(Raft, SyncStreamBlamesTheCallSite)
+{
+  capturing_stream stream{};
+  raft::resources res;
+  resource::set_cuda_stream(res, stream.view());
+
+  std::string caught{};
+  try {
+    sync_on_behalf_of_caller(res);
+    FAIL() << "Expected cuda_error from synchronizing a capturing stream";
+  } catch (raft::cuda_error const& e) {
+    caught = e.what();
+  }
+
+  // The location travels from here through sync_on_behalf_of_caller, resource::sync_stream and
+  // interruptible::synchronize, so that none of them is blamed.
+  for (auto const* implementation :
+       {"interruptible.hpp", "cuda_stream.hpp", "sync_on_behalf_of_caller"}) {
+    EXPECT_EQ(caught.find(implementation), std::string::npos) << caught;
+  }
+  std::string re_exp{R"(CUDA error encountered at: file=.*interruptible\.cu line=\d+)"};
+  re_exp += R"( function=.*SyncStreamBlamesTheCallSite.*: )";
+  re_exp += R"(call='cudaStreamQuery', Reason=.*)";
+  EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
+    << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
+}
+
+TEST(Raft, InterruptedExceptionBlamesTheCallSite)
+{
+  interruptible::get_token()->cancel();
+  std::string caught{};
+  auto yield_line = __LINE__ + 2;
+  try {
+    interruptible::yield();
+    FAIL() << "Expected interrupted_exception after cancelling this thread";
+  } catch (interrupted_exception const& e) {
+    caught = e.what();
+  }
+
+  std::string re_exp{R"(RAFT failure at file=.*interruptible\.cu line=)"};
+  re_exp += std::to_string(yield_line);
+  re_exp += R"( function=.*InterruptedExceptionBlamesTheCallSite.*: )";
+  re_exp += R"(The work in this thread was cancelled\.)";
+  EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
+    << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
+
+  // clear the cancellation state to not disrupt other tests
+  interruptible::yield_no_throw();
 }
 
 TEST(Raft, InterruptibleOpenMP)

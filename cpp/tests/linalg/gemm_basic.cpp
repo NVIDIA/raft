@@ -92,8 +92,8 @@ void test_gemm_pointer_mode_host(bool use_alpha, bool use_beta)
   raft::copy(c_device.data_handle(), c_host.data(), c_host.size(), stream);
 
   // Create scalar views for alpha and beta
-  auto alpha_scalar = raft::make_host_scalar(alpha_val);
-  auto beta_scalar  = raft::make_host_scalar(beta_val);
+  auto alpha_scalar = raft::make_host_scalar(res, alpha_val);
+  auto beta_scalar  = raft::make_host_scalar(res, beta_val);
 
   // Perform GEMM: C = alpha * A * B + beta * C
   raft::linalg::gemm(res,

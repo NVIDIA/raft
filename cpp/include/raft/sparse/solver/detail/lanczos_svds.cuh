@@ -11,6 +11,7 @@
 #include <raft/core/nvtx.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/axpy.cuh>
 #include <raft/linalg/dot.cuh>
@@ -25,6 +26,7 @@
 #include <raft/sparse/solver/detail/svds_sign_correction.cuh>
 #include <raft/sparse/solver/solver_types.hpp>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cublas_v2.h>
 
@@ -56,6 +58,7 @@ ValueTypeT vector_norm(raft::resources const& handle, ValueTypeT const* x, int n
       x, static_cast<uint32_t>(n), 1),
     d_norm.view(),
     raft::sqrt_op{});
+  if (resource::get_dry_run_flag(handle)) { return ValueTypeT(1); }
   ValueTypeT result{};
   raft::update_host(&result, d_norm.data_handle(), 1, stream);
   resource::sync_stream(handle, stream);
@@ -125,7 +128,6 @@ void mgs2_orthogonalize(raft::resources const& handle,
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::mgs2_orthogonalize");
   if (n_valid <= 0) { return; }
 
-  auto stream    = resource::get_cuda_stream(handle);
   auto target_in = raft::make_device_vector_view<const ValueTypeT, uint32_t>(
     target, static_cast<uint32_t>(n_rows));
   auto target_out =
@@ -143,8 +145,7 @@ void mgs2_orthogonalize(raft::resources const& handle,
       }
       {
         common::nvtx::range<common::nvtx::domain::raft> negate_scope("lanczos_svds::mgs2_negate");
-        negate_scalar_kernel<<<1, 1, 0, stream>>>(coeff);
-        RAFT_CUDA_TRY(cudaPeekAtLastError());
+        raft::launch_kernel(handle, 1, 1, negate_scalar_kernel<ValueTypeT>, coeff);
       }
       {
         common::nvtx::range<common::nvtx::domain::raft> subtract_scope(
@@ -204,8 +205,7 @@ ValueTypeT normalize_or_randomize(raft::resources const& handle,
   RAFT_EXPECTS(nrm >= eps, "Unable to generate a non-zero Lanczos vector");
   auto inv_nrm = ValueTypeT(1) / nrm;
   scale_vector(handle, target, n_rows, inv_nrm);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
-  resource::sync_stream(handle, stream);
+  resource::sync_stream(handle);
   return nrm;
 }
 
@@ -219,6 +219,7 @@ void build_bidiagonal_matrix(raft::resources const& handle,
   auto stream = resource::get_cuda_stream(handle);
   int ncv     = static_cast<int>(alphas.size());
   std::vector<ValueTypeT> h_B(static_cast<std::size_t>(ncv) * ncv, ValueTypeT(0));
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   for (int i = 0; i < ncv; ++i) {
     h_B[static_cast<std::size_t>(i) * ncv + i] = alphas[i];
@@ -266,7 +267,7 @@ void lanczos_bidiagonalize(raft::resources const& handle,
   betas.assign(ncv + 1, ValueTypeT(0));
 
   auto* v0 = V_full.data_handle() + static_cast<std::size_t>(n_locked) * n;
-  raft::copy(v0, v_start, n, stream);
+  if (!resource::get_dry_run_flag(handle)) { raft::copy(v0, v_start, n, stream); }
   orthogonalize(handle, v0, V_full.data_handle(), n, n_locked, ortho_coeffs, use_mgs2);
 
   bool used_random = false;
@@ -383,7 +384,7 @@ void compute_ritz_vectors(raft::resources const& handle,
     raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, ncv, num_found);
   auto Qt_good_t =
     raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, ncv, num_found);
-  {
+  if (!resource::get_dry_run_flag(handle)) {
     common::nvtx::range<common::nvtx::domain::raft> copy_scope("lanczos_svds::ritz_copy_basis");
     raft::update_device(P_good.data_handle(), h_P_good.data(), h_P_good.size(), stream);
     raft::update_device(Qt_good_t.data_handle(), h_Qt_good_t.data(), h_Qt_good_t.size(), stream);
@@ -433,7 +434,7 @@ void compute_ritz_vectors(raft::resources const& handle,
                        stream);
   }
 
-  {
+  if (!resource::get_dry_run_flag(handle)) {
     common::nvtx::range<common::nvtx::domain::raft> copy_scope("lanczos_svds::ritz_copy_output");
     raft::copy(U_full.data_handle() + static_cast<std::size_t>(n_locked) * m,
                U_ritz.data_handle(),
@@ -471,7 +472,9 @@ void compute_restart_vector(raft::resources const& handle,
   auto stream = resource::get_cuda_stream(handle);
   auto d_coeffs =
     raft::make_device_vector<ValueTypeT, uint32_t>(handle, static_cast<uint32_t>(n_cols));
-  raft::update_device(d_coeffs.data_handle(), coeffs.data(), n_cols, stream);
+  raft::copy(handle,
+             d_coeffs.view(),
+             raft::make_device_vector_view<const ValueTypeT, uint32_t>(coeffs.data(), n_cols));
 
   auto const* V_segment = V_full.data_handle() + static_cast<std::size_t>(n_locked) * n;
   raft::linalg::gemv(handle,
@@ -505,8 +508,9 @@ void sort_singular_triplets(raft::resources const& handle,
     return singular_values[a] > singular_values[b];
   });
 
-  bool already_sorted = true;
-  for (int i = 0; i < k; ++i) {
+  bool dry_run        = resource::get_dry_run_flag(handle);
+  bool already_sorted = !dry_run;  // always go through allocations in dry run.
+  for (int i = 0; i < k && already_sorted; ++i) {
     already_sorted = already_sorted && order[i] == i;
   }
   if (already_sorted) { return; }
@@ -515,6 +519,8 @@ void sort_singular_triplets(raft::resources const& handle,
   auto U_sorted = raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, m, k);
   auto V_sorted = raft::make_device_matrix<ValueTypeT, uint32_t, raft::col_major>(handle, n, k);
   std::vector<ValueTypeT> sorted_s(k);
+
+  if (dry_run) { return; }
 
   for (int dst = 0; dst < k; ++dst) {
     int src = order[dst];
@@ -613,14 +619,16 @@ void sparse_lanczos_svd(
   // therefore deterministic; without this memset the restart vector would depend on
   // whatever the allocator handed back, which is non-reproducible under a pooled memory
   // resource and can be Inf/NaN if the recycled bytes happen to form one.
-  RAFT_CUDA_TRY(cudaMemsetAsync(U_full.data_handle(),
-                                0,
-                                sizeof(ValueTypeT) * static_cast<std::size_t>(m) * total_capacity,
-                                resource::get_cuda_stream(handle)));
-  RAFT_CUDA_TRY(cudaMemsetAsync(V_full.data_handle(),
-                                0,
-                                sizeof(ValueTypeT) * static_cast<std::size_t>(n) * total_capacity,
-                                resource::get_cuda_stream(handle)));
+  if (!resource::get_dry_run_flag(handle)) {
+    RAFT_CUDA_TRY(cudaMemsetAsync(U_full.data_handle(),
+                                  0,
+                                  sizeof(ValueTypeT) * static_cast<std::size_t>(m) * total_capacity,
+                                  stream));
+    RAFT_CUDA_TRY(cudaMemsetAsync(V_full.data_handle(),
+                                  0,
+                                  sizeof(ValueTypeT) * static_cast<std::size_t>(n) * total_capacity,
+                                  stream));
+  }
 
   {
     common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::initial_random_vector");
@@ -690,6 +698,8 @@ void sparse_lanczos_svd(
                           true,
                           stream);
     }
+
+    if (resource::get_dry_run_flag(handle)) { break; }
 
     std::vector<ValueTypeT> h_s(active_ncv);
     std::vector<ValueTypeT> h_P(static_cast<std::size_t>(active_ncv) * active_ncv);
@@ -793,7 +803,7 @@ void sparse_lanczos_svd(
     stats->breakdown_events       = stat_breakdown_events;
   }
 
-  RAFT_EXPECTS(n_locked >= k,
+  RAFT_EXPECTS(n_locked >= k || resource::get_dry_run_flag(handle),
                "sparse_lanczos_svd failed to converge all requested components within "
                "max_iterations");
 
@@ -821,7 +831,7 @@ void sparse_lanczos_svd(
   sort_singular_triplets(
     handle, U_refined.data_handle(), m, V_full.data_handle(), n, locked_singular_values);
 
-  {
+  if (!resource::get_dry_run_flag(handle)) {
     common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::copy_outputs");
     raft::update_device(singular_values.data_handle(), locked_singular_values.data(), k, stream);
     if (U) {

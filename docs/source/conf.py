@@ -112,6 +112,7 @@ html_theme = "nvidia_sphinx_theme"
 # documentation.
 #
 html_theme_options = {
+    "public_docs_features": os.environ.get("CI") == "true",
     "external_links": [],
     "icon_links": [
         {
@@ -121,8 +122,13 @@ html_theme_options = {
             "type": "fontawesome",
         },
     ],
-    "show_toc_level": 1,
     "navbar_align": "right",
+    "navbar_center": "navbar-nav, version-switcher, navbar-external-links",
+    "show_toc_level": 1,
+    "switcher": {
+        "json_url": "https://docs.nvidia.com/raft/versions.json",
+        "version_match": version,
+    },
 }
 
 # Add any paths that contain custom static files (such as style sheets) here,

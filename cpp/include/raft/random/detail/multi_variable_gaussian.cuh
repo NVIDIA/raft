@@ -10,6 +10,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/linalg/detail/cusolver_wrappers.hpp>
@@ -76,7 +77,8 @@ template <typename T>
 void matVecAdd(
   T* out, const T* in_m, const T* in_v, T scalar, int rows, int cols, cudaStream_t stream)
 {
-  raft::linalg::matrixVectorOp<true, true>(
+  raft::linalg::detail::matrixVectorOp<true, true>(
+    false,
     out,
     in_m,
     in_v,
@@ -147,6 +149,8 @@ class multi_variable_gaussian_impl {
   {
     auto cusolverHandle = resource::get_cusolver_dn_handle(handle);
 
+    // Generator setup runs in both modes: it allocates no tracked memory and launches no kernels.
+    // The actual RNG work is in give_gaussian(), which is dry-run guarded.
     CURAND_CHECK(curandCreateGenerator(&gen, CURAND_RNG_PSEUDO_DEFAULT));
     CURAND_CHECK(curandSetPseudoRandomGeneratorSeed(gen, 28));  // SEED
     if (method == chol_decomp) {
@@ -186,6 +190,7 @@ class multi_variable_gaussian_impl {
 
   void give_gaussian(const int nPoints, T* P, T* X, const T* x = 0)
   {
+    if (resource::get_dry_run_flag(handle)) { return; }
     auto cusolverHandle = resource::get_cusolver_dn_handle(handle);
     auto cudaStream     = resource::get_cuda_stream(handle);
     if (method == chol_decomp) {

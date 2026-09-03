@@ -38,7 +38,8 @@ TEST(Raft, AtomicIncWarp)
   rmm::cuda_stream_pool pool{1};
   auto s = pool.get_stream();
 
-  rmm::device_scalar<int> counter{0, s};
+  int zero = 0;
+  rmm::device_scalar<int> counter{zero, s};
   rmm::device_uvector<int> out_device{num_elts, s};
   std::array<int, num_elts> out_host{0};
 

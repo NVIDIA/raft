@@ -192,13 +192,19 @@ class rmat_lanczos_tests
     auto csr_matrix = raft::make_device_csr_matrix_view<ValueType, IndexType, IndexType, IndexType>(
       const_cast<ValueType*>(symmetric_coo.vals()), csr_structure);
 
-    std::get<0>(stats) = raft::sparse::solver::lanczos_compute_eigenpairs<IndexType, ValueType>(
+    raft::execute_with_dry_run_check(
       handle,
-      config,
-      csr_matrix,
-      std::make_optional(v0.view()),
-      eigenvalues.view(),
-      eigenvectors.view());
+      [&](raft::resources const& h) {
+        std::get<0>(stats) = raft::sparse::solver::lanczos_compute_eigenpairs<IndexType, ValueType>(
+          h,
+          config,
+          csr_matrix,
+          std::make_optional(v0.view()),
+          eigenvalues.view(),
+          eigenvectors.view());
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      sizeof(ValueType) * symmetric_coo.n_rows * config.ncv);
 
     ASSERT_TRUE(raft::devArrMatch<ValueType>(eigenvalues.data_handle(),
                                              expected_eigenvalues.data_handle(),
@@ -340,13 +346,19 @@ class lanczos_tests : public ::testing::TestWithParam<lanczos_inputs<IndexType, 
     auto csr_matrix = raft::make_device_csr_matrix_view<ValueType, IndexType, IndexType, IndexType>(
       const_cast<ValueType*>(vals.data_handle()), csr_structure);
 
-    std::get<0>(stats) = raft::sparse::solver::lanczos_compute_eigenpairs<IndexType, ValueType>(
+    raft::execute_with_dry_run_check(
       handle,
-      config,
-      csr_matrix,
-      std::make_optional(v0.view()),
-      eigenvalues.view(),
-      eigenvectors.view());
+      [&](raft::resources const& h) {
+        std::get<0>(stats) = raft::sparse::solver::lanczos_compute_eigenpairs<IndexType, ValueType>(
+          h,
+          config,
+          csr_matrix,
+          std::make_optional(v0.view()),
+          eigenvalues.view(),
+          eigenvectors.view());
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      sizeof(ValueType) * n * config.ncv);
 
     ASSERT_TRUE(raft::devArrMatch<ValueType>(
       eigenvalues.data_handle(),

@@ -17,6 +17,16 @@ namespace raft {
 namespace linalg {
 namespace detail {
 
+/**
+ * Upper bound on the number of blocks covering the reduced dimension, i.e. on @c gridDim.y .
+ *
+ * Both kernels below stride over the reduced dimension, so covering it with fewer blocks than
+ * elements is always correct. The bound must stay at or below the CUDA limit of 65535 on the y
+ * dimension of the grid, which the reduced dimension can otherwise easily exceed: reducing a
+ * matrix of 10M rows along the rows is a common case.
+ */
+constexpr int kMaxBlocksDimY = 8192;
+
 // Kernel to perform summation along the strided dimension
 // of the matrix, i.e. reduce along columns for row major or reduce along rows
 // for column major layout
@@ -150,10 +160,10 @@ void stridedReduction(OutType* dots,
     constexpr dim3 Block(ColsPerBlk, TPB / ColsPerBlk);
     constexpr int MinRowsPerThread = 16;
     constexpr int MinRowsPerBlk    = Block.y * MinRowsPerThread;
-    constexpr int MaxBlocksDimY    = 8192;
 
-    const dim3 grid(raft::ceildiv(D, (IdxType)ColsPerBlk),
-                    raft::min((IdxType)MaxBlocksDimY, raft::ceildiv(N, (IdxType)MinRowsPerBlk)));
+    const dim3 grid(
+      raft::div_rounding_up_safe(D, (IdxType)ColsPerBlk),
+      raft::min((IdxType)kMaxBlocksDimY, raft::div_rounding_up_safe(N, (IdxType)MinRowsPerBlk)));
     const size_t shmemSize = sizeof(OutType) * Block.x * 2;
 
     raft::launch_kernel({stream, shmemSize},
@@ -169,10 +179,11 @@ void stridedReduction(OutType* dots,
   } else {
     // Arbitrary numbers for now, probably need to tune
     const dim3 thrds(32, 16);
-    IdxType elemsPerThread = raft::ceildiv(N, (IdxType)thrds.y);
+    IdxType elemsPerThread = raft::div_rounding_up_safe(N, (IdxType)thrds.y);
     elemsPerThread         = (elemsPerThread > 8) ? 8 : elemsPerThread;
-    const dim3 nblks(raft::ceildiv(D, (IdxType)thrds.x),
-                     raft::ceildiv(N, (IdxType)thrds.y * elemsPerThread));
+    const dim3 nblks(raft::div_rounding_up_safe(D, (IdxType)thrds.x),
+                     raft::min((IdxType)kMaxBlocksDimY,
+                               raft::div_rounding_up_safe(N, (IdxType)thrds.y * elemsPerThread)));
     const size_t shmemSize = sizeof(OutType) * thrds.x * thrds.y;
 
     raft::launch_kernel({stream, shmemSize},

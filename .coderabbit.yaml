@@ -51,6 +51,12 @@ reviews:
         public API over detail, mdarray over device_uvector/std::vector, and
         avoiding deprecated functions). For public headers under cpp/include/raft,
         also require Doxygen on new APIs and deprecation warnings on breaking changes.
+        When changes touch code taking raft::resources (or related tests), also
+        review dry-run protocol compliance per cpp/REVIEW_GUIDELINES.md and
+        docs/source/dry_run_protocol.md: allocations must run in dry-run,
+        meaningful CUDA work must be guarded, entry points must remain callable,
+        and new/changed functionality should cover a sensible fraction of tests
+        with raft::execute_with_dry_run_check.
 
     - path: "python/**/*"
       instructions: |
@@ -68,3 +74,4 @@ knowledge_base:
       - "python/REVIEW_GUIDELINES.md"
       - "docs/source/contributing.md"
       - "docs/source/developer_guide.md"
+      - "docs/source/dry_run_protocol.md"

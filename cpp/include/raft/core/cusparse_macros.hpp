@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -70,19 +70,18 @@ inline const char* cusparse_error_to_string(cusparseStatus_t err)
  * Invokes a cuSparse runtime API function call, if the call does not return
  * CUSPARSE_STATUS_SUCCESS, throws an exception detailing the cuSparse error that occurred
  */
-#define RAFT_CUSPARSE_TRY(call)                                              \
-  do {                                                                       \
-    cusparseStatus_t const status = (call);                                  \
-    if (CUSPARSE_STATUS_SUCCESS != status) {                                 \
-      std::string msg{};                                                     \
-      SET_ERROR_MSG(msg,                                                     \
-                    "cuSparse error encountered at: ",                       \
-                    "call='%s', Reason=%d:%s",                               \
-                    #call,                                                   \
-                    status,                                                  \
-                    raft::sparse::detail::cusparse_error_to_string(status)); \
-      throw raft::cusparse_error(msg);                                       \
-    }                                                                        \
+#define RAFT_CUSPARSE_TRY(call)                                                              \
+  do {                                                                                       \
+    cusparseStatus_t const status = (call);                                                  \
+    if (CUSPARSE_STATUS_SUCCESS != status) {                                                 \
+      throw raft::cusparse_error(                                                            \
+        raft::format_error_message(std::source_location::current(),                          \
+                                   "cuSparse error encountered at: ",                        \
+                                   "call='%s', Reason=%d:%s",                                \
+                                   #call,                                                    \
+                                   status,                                                   \
+                                   raft::sparse::detail::cusparse_error_to_string(status))); \
+    }                                                                                        \
   } while (0)
 
 /**

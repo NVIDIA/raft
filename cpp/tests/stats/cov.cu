@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -64,21 +64,31 @@ class CovTest : public ::testing::TestWithParam<CovInputs<T>> {
     if (params.rowMajor) {
       using layout = raft::row_major;
       raft::stats::mean<true>(mean_act.data(), data.data(), cols, rows, stream);
-      cov(handle,
-          raft::make_device_matrix_view<T, std::uint32_t, layout>(data.data(), rows, cols),
-          raft::make_device_vector_view<const T, std::uint32_t>(mean_act.data(), cols),
-          raft::make_device_matrix_view<T, std::uint32_t, layout>(cov_act.data(), cols, cols),
-          params.sample,
-          params.stable);
+      raft::execute_with_dry_run_check(
+        handle,
+        [&](raft::resources const& h) {
+          cov(h,
+              raft::make_device_matrix_view<T, std::uint32_t, layout>(data.data(), rows, cols),
+              raft::make_device_vector_view<const T, std::uint32_t>(mean_act.data(), cols),
+              raft::make_device_matrix_view<T, std::uint32_t, layout>(cov_act.data(), cols, cols),
+              params.sample,
+              params.stable);
+        },
+        raft::alloc_behavior::NO_ALLOCATIONS);
     } else {
       using layout = raft::col_major;
       raft::stats::mean<false>(mean_act.data(), data.data(), cols, rows, stream);
-      cov(handle,
-          raft::make_device_matrix_view<T, std::uint32_t, layout>(data.data(), rows, cols),
-          raft::make_device_vector_view<const T, std::uint32_t>(mean_act.data(), cols),
-          raft::make_device_matrix_view<T, std::uint32_t, layout>(cov_act.data(), cols, cols),
-          params.sample,
-          params.stable);
+      raft::execute_with_dry_run_check(
+        handle,
+        [&](raft::resources const& h) {
+          cov(h,
+              raft::make_device_matrix_view<T, std::uint32_t, layout>(data.data(), rows, cols),
+              raft::make_device_vector_view<const T, std::uint32_t>(mean_act.data(), cols),
+              raft::make_device_matrix_view<T, std::uint32_t, layout>(cov_act.data(), cols, cols),
+              params.sample,
+              params.stable);
+        },
+        raft::alloc_behavior::NO_ALLOCATIONS);
     }
 
     T data_h[6]       = {1.0, 2.0, 5.0, 4.0, 2.0, 1.0};
@@ -93,7 +103,22 @@ class CovTest : public ::testing::TestWithParam<CovInputs<T>> {
     raft::update_device(cov_cm_ref.data(), cov_cm_ref_h, 4, stream);
 
     raft::stats::mean<false>(mean_cm.data(), data_cm.data(), 2, 3, stream);
-    cov<false>(handle, cov_cm.data(), data_cm.data(), mean_cm.data(), 2, 3, true, true, stream);
+    // Also exercise the legacy raw-pointer cov<false> overload under the dry-run
+    // checker so its dry-run compliance is verified
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        cov<false>(h,
+                   cov_cm.data(),
+                   data_cm.data(),
+                   mean_cm.data(),
+                   2,
+                   3,
+                   true,
+                   true,
+                   resource::get_cuda_stream(h));
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
   }
 
  protected:

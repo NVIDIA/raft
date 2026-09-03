@@ -222,6 +222,22 @@ namespace *raft*
     :project: RAFT
     :members:
 
+Dry-Run Resources
+~~~~~~~~~~~~~~~~~
+
+``#include <raft/core/dry_run_resources.hpp>``
+
+namespace *raft*
+
+.. doxygenclass:: raft::dry_run_resources
+    :project: RAFT
+    :members:
+
+namespace *raft::util*
+
+.. doxygenfunction:: raft::util::dry_run_execute
+    :project: RAFT
+
 Device Properties
 ~~~~~~~~~~~~~~~~~
 
