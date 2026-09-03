@@ -16,6 +16,41 @@
 #include <cstdint>
 
 namespace raft {
+class MDSpanCopy1DDeviceDeviceCuda : public testing::TestWithParam<std::int64_t> {};
+
+TEST_P(MDSpanCopy1DDeviceDeviceCuda, Copy)
+{
+  auto res        = device_resources{};
+  auto const cols = GetParam();
+  auto input      = make_device_vector<std::int64_t, std::int64_t, layout_c_contiguous>(res, cols);
+  auto output     = make_device_vector<int, std::int64_t, layout_c_contiguous>(res, cols);
+
+  for (auto i = std::int64_t{}; i < cols; ++i) {
+    input(i) = i;
+  }
+
+  static_assert(
+    detail::mdspan_copyable_with_kernel_v<decltype(output.view()), decltype(input.view())>,
+    "Current implementation should use kernel for this copy");
+  execute_with_dry_run_check(
+    res,
+    [&](raft::resources const& r) { copy(r, output.view(), input.view()); },
+    alloc_behavior::NO_ALLOCATIONS);
+  res.sync_stream();
+
+  for (auto i = std::int64_t{}; i < cols; ++i) {
+    ASSERT_EQ(output(i), static_cast<int>(i));
+  }
+}
+
+INSTANTIATE_TEST_SUITE_P(MDSpanCopy,
+                         MDSpanCopy1DDeviceDeviceCuda,
+                         testing::Values(std::int64_t{1023},
+                                         std::int64_t{1024},
+                                         std::int64_t{1025},
+                                         std::int64_t{4096},
+                                         std::int64_t{4097}));
+
 TEST(MDSpanCopy, Mdspan3DDeviceDeviceCuda)
 {
   auto res                   = device_resources{};
