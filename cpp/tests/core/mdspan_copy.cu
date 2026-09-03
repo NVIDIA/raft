@@ -16,12 +16,14 @@
 #include <cstdint>
 
 namespace raft {
-TEST(MDSpanCopy, Mdspan1DDeviceDeviceCuda)
+class MDSpanCopy1DDeviceDeviceCuda : public testing::TestWithParam<std::int64_t> {};
+
+TEST_P(MDSpanCopy1DDeviceDeviceCuda, Copy)
 {
-  auto res            = device_resources{};
-  auto constexpr cols = std::int64_t{4096};
-  auto input  = make_device_vector<std::int64_t, std::int64_t, layout_c_contiguous>(res, cols);
-  auto output = make_device_vector<int, std::int64_t, layout_c_contiguous>(res, cols);
+  auto res        = device_resources{};
+  auto const cols = GetParam();
+  auto input      = make_device_vector<std::int64_t, std::int64_t, layout_c_contiguous>(res, cols);
+  auto output     = make_device_vector<int, std::int64_t, layout_c_contiguous>(res, cols);
 
   for (auto i = std::int64_t{}; i < cols; ++i) {
     input(i) = i;
@@ -40,6 +42,14 @@ TEST(MDSpanCopy, Mdspan1DDeviceDeviceCuda)
     ASSERT_EQ(output(i), static_cast<int>(i));
   }
 }
+
+INSTANTIATE_TEST_SUITE_P(MDSpanCopy,
+                         MDSpanCopy1DDeviceDeviceCuda,
+                         testing::Values(std::int64_t{1023},
+                                         std::int64_t{1024},
+                                         std::int64_t{1025},
+                                         std::int64_t{4096},
+                                         std::int64_t{4097}));
 
 TEST(MDSpanCopy, Mdspan3DDeviceDeviceCuda)
 {
