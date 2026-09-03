@@ -58,7 +58,7 @@ class vMeasureTest : public ::testing::TestWithParam<vMeasureParam> {
 
     // allocating and initializing memory to the GPU
 
-    stream = resource::get_cuda_stream(handle);
+    stream = resource::get_cuda_stream(handle).get();
     rmm::device_uvector<T> truthClusterArray(nElements, stream);
     rmm::device_uvector<T> predClusterArray(nElements, stream);
     raft::update_device(truthClusterArray.data(), &arr1[0], (int)nElements, stream);

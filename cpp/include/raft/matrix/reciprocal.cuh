@@ -46,7 +46,7 @@ void reciprocal(raft::resources const& handle,
                              out.data_handle(),
                              *(scalar.data_handle()),
                              in.size(),
-                             resource::get_cuda_stream(handle),
+                             resource::get_cuda_stream(handle).get(),
                              setzero,
                              thres);
 }
@@ -74,7 +74,7 @@ void reciprocal(raft::resources const& handle,
   detail::reciprocal<math_t>(inout.data_handle(),
                              *(scalar.data_handle()),
                              inout.size(),
-                             resource::get_cuda_stream(handle),
+                             resource::get_cuda_stream(handle).get(),
                              setzero,
                              thres);
 }

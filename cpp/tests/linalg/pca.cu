@@ -43,7 +43,7 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
  public:
   PcaTest()
     : params(::testing::TestWithParam<PcaInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       explained_vars(params.n_col, stream),
       explained_vars_ref(params.n_col, stream),
       components(params.n_col * params.n_col, stream),
@@ -238,7 +238,7 @@ TEST_P(PcaTestValF, Result)
                           explained_vars_ref.data(),
                           params.n_col,
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<double> PcaTestValD;
@@ -248,7 +248,7 @@ TEST_P(PcaTestValD, Result)
                           explained_vars_ref.data(),
                           params.n_col,
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<float> PcaTestLeftVecF;
@@ -258,7 +258,7 @@ TEST_P(PcaTestLeftVecF, Result)
                           components_ref.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<double> PcaTestLeftVecD;
@@ -268,7 +268,7 @@ TEST_P(PcaTestLeftVecD, Result)
                           components_ref.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<float> PcaTestTransDataF;
@@ -278,7 +278,7 @@ TEST_P(PcaTestTransDataF, Result)
                           trans_data_ref.data(),
                           (params.n_row * params.n_col),
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<double> PcaTestTransDataD;
@@ -288,7 +288,7 @@ TEST_P(PcaTestTransDataD, Result)
                           trans_data_ref.data(),
                           (params.n_row * params.n_col),
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<float> PcaTestDataVecSmallF;
@@ -298,7 +298,7 @@ TEST_P(PcaTestDataVecSmallF, Result)
                           data_back.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<double> PcaTestDataVecSmallD;
@@ -308,7 +308,7 @@ TEST_P(PcaTestDataVecSmallD, Result)
                           data_back.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<float> PcaTestDataVecF;

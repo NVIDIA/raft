@@ -18,6 +18,7 @@
 #include <rmm/device_uvector.hpp>
 
 #include <cuda/iterator>
+#include <cuda/stream>
 #include <cuda_profiler_api.h>
 #include <thrust/for_each.h>
 
@@ -41,7 +42,7 @@ template <typename T, typename I, typename ParamsReader>
 struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Params> {
   const raft::resources handle;
   const LinewiseTestParams params;
-  rmm::cuda_stream_view stream;
+  cuda::stream_ref stream;
 
   LinewiseTest()
     : testing::TestWithParam<typename ParamsReader::Params>(),
@@ -175,7 +176,7 @@ struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Par
   {
     rmm::device_uvector<T> blob_val(params.checkCorrectness ? blob.size() / 2 : 0, stream);
 
-    stream.synchronize();
+    stream.sync();
     cudaProfilerStart();
     testing::AssertionResult r = testing::AssertionSuccess();
     for (auto [n, m] : dims) {
@@ -197,7 +198,7 @@ struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Par
           }
           if (params.checkCorrectness) {
             linalg::naiveMatVec(
-              blob_val.data(), in, vec1, lineLen, nLines, true, alongRows, T(1), stream);
+              blob_val.data(), in, vec1, lineLen, nLines, true, alongRows, T(1), stream.get());
             r = devArrMatch(blob_val.data(), out, n * m, CompareApprox<T>(params.tolerance))
                 << " " << (alongRows ? "alongRows" : "acrossRows")
                 << " with one vec; lineLen: " << lineLen << "; nLines " << nLines;
@@ -213,8 +214,16 @@ struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Par
             }
           }
           if (params.checkCorrectness) {
-            linalg::naiveMatVec(
-              blob_val.data(), in, vec1, vec2, lineLen, nLines, true, alongRows, T(1), stream);
+            linalg::naiveMatVec(blob_val.data(),
+                                in,
+                                vec1,
+                                vec2,
+                                lineLen,
+                                nLines,
+                                true,
+                                alongRows,
+                                T(1),
+                                stream.get());
             r = devArrMatch(blob_val.data(), out, n * m, CompareApprox<T>(params.tolerance))
                 << " " << (alongRows ? "alongRows" : "acrossRows")
                 << " with two vecs;  lineLen: " << lineLen << "; nLines " << nLines;
@@ -233,7 +242,7 @@ struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Par
   {
     rmm::device_uvector<T> blob_val(params.checkCorrectness ? blob.size() / 2 : 0, stream);
 
-    stream.synchronize();
+    stream.sync();
     cudaProfilerStart();
     testing::AssertionResult r = testing::AssertionSuccess();
     for (auto alongRows : ::testing::Bool()) {

@@ -33,6 +33,7 @@
 #include <rmm/resource_ref.hpp>
 
 #include <cuda/iterator>
+#include <cuda/stream>
 #include <thrust/device_vector.h>
 #include <thrust/execution_policy.h>
 #include <thrust/for_each.h>
@@ -43,9 +44,9 @@
 #include <memory_resource>
 
 namespace {
-void check_status(int32_t* d_status, rmm::cuda_stream_view stream)
+void check_status(int32_t* d_status, cuda::stream_ref stream)
 {
-  stream.synchronize();
+  stream.sync();
   int32_t h_status{1};
   raft::update_host(&h_status, d_status, 1, stream);
   ASSERT_EQ(h_status, 0);
@@ -54,7 +55,7 @@ void check_status(int32_t* d_status, rmm::cuda_stream_view stream)
 // just simple integration test, main tests are in mdspan ref implementation.
 void test_mdspan()
 {
-  auto stream = rmm::cuda_stream_default;
+  auto stream = cuda::stream_ref{cudaStream_t{cudaStreamDefault}};
   rmm::device_uvector<float> a{16ul, stream};
   thrust::sequence(rmm::exec_policy(stream), a.begin(), a.end());
   cuda::std::mdspan<float, cuda::std::extents<int, raft::dynamic_extent, raft::dynamic_extent>>
@@ -299,7 +300,7 @@ namespace {
 void test_factory_methods()
 {
   size_t n{100};
-  rmm::device_uvector<float> d_vec(n, rmm::cuda_stream_default);
+  rmm::device_uvector<float> d_vec(n, cuda::stream_ref{cudaStream_t{cudaStreamDefault}});
   {
     auto d_matrix = make_device_matrix_view(d_vec.data(), static_cast<int>(d_vec.size() / 2), 2);
     ASSERT_EQ(d_matrix.extent(0), n / 2);
@@ -674,7 +675,7 @@ TEST(MDArray, Padding) { test_mdarray_padding(); }
 /*void test_submdspan_padding()
 {
   using extents_type = stdex::extents<dynamic_extent, dynamic_extent>;
-  auto s             = rmm::cuda_stream_default;
+  auto s             = cuda::stream_ref{cudaStream_t{cudaStreamDefault}};
 
   {
     constexpr int rows            = 6;
@@ -825,7 +826,7 @@ void test_mdspan_padding_by_type()
 {
   using extents_type = cuda::std::extents<size_t, dynamic_extent, dynamic_extent>;
   raft::resources handle;
-  auto s = rmm::cuda_stream_default;
+  auto s = cuda::stream_ref{cudaStream_t{cudaStreamDefault}};
 
   {
     constexpr int rows            = 6;
@@ -919,7 +920,7 @@ void test_mdspan_aligned_matrix()
 
   // now work with device memory
   // use simple 1D array to allocate some space
-  auto s          = rmm::cuda_stream_default;
+  auto s          = cuda::stream_ref{cudaStream_t{cudaStreamDefault}};
   using extent_1d = cuda::std::extents<size_t, dynamic_extent>;
   layout_c_contiguous::mapping<extent_1d> layout_1d{extent_1d{rows * 32}};
   using mdarray_t    = device_mdarray<long, extent_1d, layout_c_contiguous>;

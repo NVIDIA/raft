@@ -10,6 +10,8 @@
 #include <raft/core/resource/resource_types.hpp>
 #include <raft/core/resources.hpp>
 
+#include <cuda/stream>
+
 #include <cublas_v2.h>
 
 namespace RAFT_EXPORT raft {
@@ -17,10 +19,10 @@ namespace resource {
 
 class cublas_resource : public resource {
  public:
-  cublas_resource(rmm::cuda_stream_view stream)
+  cublas_resource(cuda::stream_ref stream)
   {
     RAFT_CUBLAS_TRY_NO_THROW(cublasCreate(&cublas_res));
-    RAFT_CUBLAS_TRY_NO_THROW(cublasSetStream(cublas_res, stream));
+    RAFT_CUBLAS_TRY_NO_THROW(cublasSetStream(cublas_res, stream.get()));
   }
 
   ~cublas_resource() override { RAFT_CUBLAS_TRY_NO_THROW(cublasDestroy(cublas_res)); }
@@ -38,12 +40,12 @@ class cublas_resource : public resource {
  */
 class cublas_resource_factory : public resource_factory {
  public:
-  cublas_resource_factory(rmm::cuda_stream_view stream) : stream_(stream) {}
+  cublas_resource_factory(cuda::stream_ref stream) : stream_(stream) {}
   resource_type get_resource_type() override { return resource_type::CUBLAS_HANDLE; }
   resource* make_resource() override { return new cublas_resource(stream_); }
 
  private:
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
 };
 
 /**
@@ -60,10 +62,11 @@ class cublas_resource_factory : public resource_factory {
 inline cublasHandle_t get_cublas_handle(resources const& res)
 {
   if (!res.has_resource_factory(resource_type::CUBLAS_HANDLE)) {
-    res.ensure_default_factory(std::make_shared<cublas_resource_factory>(get_cuda_stream(res)));
+    res.ensure_default_factory(
+      std::make_shared<cublas_resource_factory>(get_cuda_stream(res).get()));
   }
   auto ret = *res.get_resource<cublasHandle_t>(resource_type::CUBLAS_HANDLE);
-  RAFT_CUBLAS_TRY(cublasSetStream(ret, get_cuda_stream(res)));
+  RAFT_CUBLAS_TRY(cublasSetStream(ret, get_cuda_stream(res).get()));
   return ret;
 };
 

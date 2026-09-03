@@ -68,7 +68,7 @@ class ReduceColsTest : public ::testing::TestWithParam<ReduceColsInputs<T, IdxT>
     params = ::testing::TestWithParam<ReduceColsInputs<T, IdxT>>::GetParam();
     raft::random::RngState r(params.seed);
     raft::resources handle;
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     auto nrows  = params.rows;
     auto ncols  = params.cols;
     auto nkeys  = params.nkeys;

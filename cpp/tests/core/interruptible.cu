@@ -11,7 +11,8 @@
 #include <raft/util/kernel_launch.hpp>
 
 #include <rmm/cuda_stream.hpp>
-#include <rmm/cuda_stream_view.hpp>
+
+#include <cuda/stream>
 
 #include <gtest/gtest.h>
 #include <omp.h>
@@ -119,7 +120,7 @@ class capturing_stream {
   auto operator=(capturing_stream const&) -> capturing_stream& = delete;
   auto operator=(capturing_stream&&) -> capturing_stream&      = delete;
 
-  [[nodiscard]] auto view() const -> rmm::cuda_stream_view { return stream_.view(); }
+  [[nodiscard]] auto view() const -> cuda::stream_ref { return stream_.view(); }
 
  private:
   rmm::cuda_stream stream_{};

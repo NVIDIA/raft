@@ -33,8 +33,11 @@ void ratio(raft::resources const& handle,
            raft::device_matrix_view<math_t, idx_t, layout> dest)
 {
   RAFT_EXPECTS(src.size() == dest.size(), "Input and output matrices must be the same size.");
-  detail::ratio(
-    handle, src.data_handle(), dest.data_handle(), src.size(), resource::get_cuda_stream(handle));
+  detail::ratio(handle,
+                src.data_handle(),
+                dest.data_handle(),
+                src.size(),
+                resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -52,7 +55,7 @@ void ratio(raft::resources const& handle, raft::device_matrix_view<math_t, idx_t
                 inout.data_handle(),
                 inout.data_handle(),
                 inout.size(),
-                resource::get_cuda_stream(handle));
+                resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -69,8 +72,11 @@ void ratio(raft::resources const& handle,
            raft::device_vector_view<math_t, idx_t> dest)
 {
   RAFT_EXPECTS(src.size() == dest.size(), "Input and output vectors must be the same size.");
-  detail::ratio(
-    handle, src.data_handle(), dest.data_handle(), src.size(), resource::get_cuda_stream(handle));
+  detail::ratio(handle,
+                src.data_handle(),
+                dest.data_handle(),
+                src.size(),
+                resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -87,7 +93,7 @@ void ratio(raft::resources const& handle, raft::device_vector_view<math_t, idx_t
                 inout.data_handle(),
                 inout.data_handle(),
                 inout.size(),
-                resource::get_cuda_stream(handle));
+                resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group matrix_ratio

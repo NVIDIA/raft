@@ -45,7 +45,7 @@ class SWoRTest : public ::testing::TestWithParam<SWoRInputs<T>> {
  public:
   SWoRTest()
     : params(::testing::TestWithParam<SWoRInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in(params.len, stream),
       wts(params.len, stream),
       out(params.sampledLen, stream),
@@ -84,7 +84,7 @@ class SWoRMdspanTest : public ::testing::TestWithParam<SWoRInputs<T>> {
  public:
   SWoRMdspanTest()
     : params(::testing::TestWithParam<SWoRInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in(params.len, stream),
       wts(params.len, stream),
       out(params.sampledLen, stream),

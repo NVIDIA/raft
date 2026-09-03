@@ -45,7 +45,7 @@ inline void serialize_mdspan(
   // Copy to host before serializing
   // For contiguous layouts, size() == product of dimensions
   std::vector<typename obj_t::value_type> tmp(obj.size());
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
   raft::update_host(tmp.data(), obj.data_handle(), obj.size(), stream);
   resource::sync_stream(handle);
   using inner_accessor_type = typename obj_t::accessor_type::accessor_type;
@@ -98,7 +98,7 @@ inline void deserialize_mdspan(
       tmp.data(), obj.extents());
   detail::numpy_serializer::deserialize_host_mdspan(is, tmp_mdspan);
 
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
   raft::update_device(obj.data_handle(), tmp.data(), obj.size(), stream);
   resource::sync_stream(handle);
 }

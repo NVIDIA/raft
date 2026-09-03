@@ -211,7 +211,7 @@ class MapTest : public ::testing::TestWithParam<MapInputs<InType, IdxType, OutTy
  public:
   MapTest()
     : params(::testing::TestWithParam<MapInputs<InType, IdxType, OutType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in1(params.len, stream),
       in2(params.len, stream),
       in3(params.len, stream),
@@ -310,7 +310,7 @@ class MapOffsetTest : public ::testing::TestWithParam<MapInputs<OutType, IdxType
  public:
   MapOffsetTest()
     : params(::testing::TestWithParam<MapInputs<OutType, IdxType, OutType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       out_ref(params.len, stream),
       out(params.len, stream)
   {

@@ -40,7 +40,7 @@ template <typename T>
 class DispersionTest : public ::testing::TestWithParam<DispersionInputs<T>> {
  protected:
   DispersionTest()
-    : stream(resource::get_cuda_stream(handle)), exp_mean(0, stream), act_mean(0, stream)
+    : stream(resource::get_cuda_stream(handle).get()), exp_mean(0, stream), act_mean(0, stream)
   {
   }
 

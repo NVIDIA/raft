@@ -99,7 +99,7 @@ void map_reduce(raft::resources const& handle,
     neutral,
     map,
     op,
-    resource::get_cuda_stream(handle),
+    resource::get_cuda_stream(handle).get(),
     in.data_handle(),
     args...);
 }

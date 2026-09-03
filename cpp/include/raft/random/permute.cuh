@@ -122,13 +122,14 @@ void permute(raft::resources const& handle,
   if (permsOut_ptr != nullptr || out_ptr != nullptr) {
     const IdxType N = in.extent(0);
     const IdxType D = in.extent(1);
-    detail::permute<InputOutputValueType, IntType, IdxType>(permsOut_ptr,
-                                                            out_ptr,
-                                                            in.data_handle(),
-                                                            D,
-                                                            N,
-                                                            is_row_major,
-                                                            resource::get_cuda_stream(handle));
+    detail::permute<InputOutputValueType, IntType, IdxType>(
+      permsOut_ptr,
+      out_ptr,
+      in.data_handle(),
+      D,
+      N,
+      is_row_major,
+      resource::get_cuda_stream(handle).get());
   }
 }
 

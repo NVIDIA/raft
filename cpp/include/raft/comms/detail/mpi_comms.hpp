@@ -12,8 +12,9 @@
 #include <raft/core/resources.hpp>
 #include <raft/util/cudart_utils.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/device_scalar.hpp>
+
+#include <cuda/stream>
 
 #include <mpi.h>
 #include <nccl.h>
@@ -96,7 +97,7 @@ constexpr MPI_Op get_mpi_op(const op_t op)
 
 class mpi_comms : public comms_iface {
  public:
-  mpi_comms(MPI_Comm comm, const bool owns_mpi_comm, rmm::cuda_stream_view stream)
+  mpi_comms(MPI_Comm comm, const bool owns_mpi_comm, cuda::stream_ref stream)
     : owns_mpi_comm_(owns_mpi_comm),
       mpi_comm_(comm),
       size_(0),
@@ -123,10 +124,7 @@ class mpi_comms : public comms_iface {
     initialize();
   }
 
-  mpi_comms(MPI_Comm mpi_comm,
-            bool owns_mpi_comm,
-            ncclComm_t nccl_comm,
-            rmm::cuda_stream_view stream)
+  mpi_comms(MPI_Comm mpi_comm, bool owns_mpi_comm, ncclComm_t nccl_comm, cuda::stream_ref stream)
     : owns_mpi_comm_(owns_mpi_comm),
       mpi_comm_(mpi_comm),
       nccl_comm_(nccl_comm),

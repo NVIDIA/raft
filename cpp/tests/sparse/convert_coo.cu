@@ -30,7 +30,7 @@ class CSRtoCOOTest : public ::testing::TestWithParam<CSRtoCOOInputs<Index_>> {
  public:
   CSRtoCOOTest()
     : params(::testing::TestWithParam<CSRtoCOOInputs<Index_>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       ex_scan(params.ex_scan.size(), stream),
       verify(params.verify.size(), stream),
       result(params.verify.size(), stream)

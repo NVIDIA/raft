@@ -38,7 +38,7 @@ void upper_triangular(raft::resources const& handle,
                               dst.data_handle(),
                               src.extent(0),
                               src.extent(1),
-                              resource::get_cuda_stream(handle));
+                              resource::get_cuda_stream(handle).get());
 }
 /** @} */  // end group matrix_triangular
 

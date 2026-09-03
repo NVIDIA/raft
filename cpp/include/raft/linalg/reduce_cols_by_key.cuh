@@ -99,7 +99,7 @@ void reduce_cols_by_key(
                      data.extent(0),
                      data.extent(1),
                      nkeys,
-                     resource::get_cuda_stream(handle),
+                     resource::get_cuda_stream(handle).get(),
                      reset_sums);
 }
 

@@ -37,7 +37,7 @@ class randomized_svdTest : public ::testing::TestWithParam<randomized_svdInputs<
  public:
   randomized_svdTest()
     : params(::testing::TestWithParam<randomized_svdInputs<T>>::GetParam()),
-      stream(handle.get_stream()),
+      stream(handle.get_stream().get()),
       data(params.n_row * params.n_col, stream),
       reconst(params.n_row * params.n_col, stream),
       left_eig_vectors_act(params.n_row * params.k, stream),

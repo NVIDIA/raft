@@ -53,7 +53,7 @@ class SliceTest : public ::testing::TestWithParam<SliceInputs<T>> {
  public:
   SliceTest()
     : params(::testing::TestWithParam<SliceInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream)
   {
   }

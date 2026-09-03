@@ -12,6 +12,8 @@
 
 #include <rmm/device_uvector.hpp>
 
+#include <cuda/stream>
+
 #include <gtest/gtest.h>
 
 #include <regex>
@@ -67,7 +69,7 @@ concept launchable_when_moved = requires(W w)
 // is always the one of the launch. Everything else must fail to compile.
 static_assert(launchable_as_named<raft::resources&>,
               "resources must convert to a launch_on prvalue");
-static_assert(launchable_as_named<rmm::cuda_stream_view>,
+static_assert(launchable_as_named<cuda::stream_ref>,
               "a stream view must convert to a launch_on prvalue");
 static_assert(launchable_as_named<cudaStream_t>,
               "a raw stream handle must convert to a launch_on prvalue");
@@ -81,8 +83,8 @@ static_assert(!launchable_when_moved<raft::launch_on>,
 TEST(KernelLaunch, SuccessfulLaunch)
 {
   raft::resources res;
-  rmm::device_uvector<int> out(1, resource::get_cuda_stream(res));
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res)));
+  rmm::device_uvector<int> out(1, resource::get_cuda_stream(res).get());
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res).get()));
 
   raft::launch_kernel(res, 1, 32, write_one_kernel, out.data());
   resource::sync_stream(res);
@@ -95,8 +97,8 @@ TEST(KernelLaunch, SuccessfulLaunch)
 TEST(KernelLaunch, RestrictedPointerArgument)
 {
   raft::resources res;
-  rmm::device_uvector<int> out(1, resource::get_cuda_stream(res));
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res)));
+  rmm::device_uvector<int> out(1, resource::get_cuda_stream(res).get());
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res).get()));
 
   launch_write_one_with_restricted_pointer(res, out.data());
   resource::sync_stream(res);
@@ -109,7 +111,7 @@ TEST(KernelLaunch, RestrictedPointerArgument)
 TEST(KernelLaunch, ConvertedRestrictedPointerArgument)
 {
   raft::resources res;
-  auto stream = resource::get_cuda_stream(res);
+  auto stream = resource::get_cuda_stream(res).get();
   rmm::device_uvector<int> in(1, stream);
   rmm::device_uvector<int> out(1, stream);
   int host_in = 1;
@@ -126,7 +128,7 @@ TEST(KernelLaunch, ConvertedRestrictedPointerArgument)
 TEST(KernelLaunch, StreamOverload)
 {
   raft::resources res;
-  auto stream = resource::get_cuda_stream(res);
+  cuda::stream_ref stream = resource::get_cuda_stream(res).get();
   EXPECT_NO_THROW(raft::launch_kernel(stream, 1, 1, noop_kernel));
   resource::sync_stream(res);
 }
@@ -134,7 +136,7 @@ TEST(KernelLaunch, StreamOverload)
 TEST(KernelLaunch, RawStreamHandleOverload)
 {
   raft::resources res;
-  cudaStream_t stream = resource::get_cuda_stream(res).value();
+  cudaStream_t stream = resource::get_cuda_stream(res).get();
   EXPECT_NO_THROW(raft::launch_kernel(stream, 1, 1, noop_kernel));
   resource::sync_stream(res);
 }
@@ -142,9 +144,9 @@ TEST(KernelLaunch, RawStreamHandleOverload)
 TEST(KernelLaunch, SharedMemory)
 {
   raft::resources res;
-  auto stream = resource::get_cuda_stream(res);
+  cuda::stream_ref stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
 
   raft::launch_kernel({stream, sizeof(int)}, 1, 32, smem_kernel, out.data());
   resource::sync_stream(res);
@@ -184,7 +186,7 @@ TEST(KernelLaunch, ErrorReportsCallSite)
 TEST(KernelLaunch, DryRunSkipsLaunch)
 {
   raft::resources res;
-  auto stream = resource::get_cuda_stream(res);
+  auto stream = resource::get_cuda_stream(res).get();
   // Allocate and zero with the real resources: dry-run memory must never be written to.
   rmm::device_uvector<int> out(1, stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
@@ -214,9 +216,9 @@ TEST(KernelLaunch, DryRunIgnoresBadConfig)
 TEST(KernelLaunch, SkipExecutionOnStream)
 {
   raft::resources res;
-  auto stream = resource::get_cuda_stream(res);
+  cuda::stream_ref stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
 
   raft::launch_kernel({stream, 0, true}, 1, 32, write_one_kernel, out.data());
   resource::sync_stream(res);

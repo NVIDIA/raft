@@ -19,11 +19,11 @@
 #include <raft/util/kernel_launch.hpp>
 #include <raft/util/pow2_utils.cuh>
 
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/device_uvector.hpp>
 #include <rmm/resource_ref.hpp>
 
 #include <cub/util_type.cuh>  // cub::Traits
+#include <cuda/stream>
 
 #include <algorithm>
 #include <functional>
@@ -865,7 +865,7 @@ struct launch_setup {
                      const IdxT* in_indptr,
                      T* out_key,
                      IdxT* out_idx,
-                     rmm::cuda_stream_view stream)
+                     cuda::stream_ref stream)
   {
     const int capacity = bound_by_power_of_two(k);
     if constexpr (Capacity > 1) {
@@ -1075,7 +1075,7 @@ void select_k_(bool dry_run,
                T* out,
                IdxT* out_idx,
                bool select_min,
-               rmm::cuda_stream_view stream,
+               cuda::stream_ref stream,
                rmm::device_async_resource_ref mr)
 {
   rmm::device_uvector<T> tmp_val(num_of_block * k * batch_size, stream, mr);

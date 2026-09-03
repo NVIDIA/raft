@@ -32,7 +32,7 @@ class CSRRowNormTest : public ::testing::TestWithParam<CSRRowNormInputs<Type_f, 
  public:
   CSRRowNormTest()
     : params(::testing::TestWithParam<CSRRowNormInputs<Type_f, Index_>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.data.size(), stream),
       verify(params.indptr.size() - 1, stream),
       indptr(params.indptr.size(), stream),

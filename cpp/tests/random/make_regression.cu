@@ -19,6 +19,8 @@
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
 
+#include <cuda/stream>
+
 #include <gtest/gtest.h>
 
 namespace raft::random {
@@ -52,7 +54,7 @@ class MakeRegressionTest : public ::testing::TestWithParam<MakeRegressionInputs<
                     params.n_samples,
                     params.n_features,
                     params.n_informative,
-                    stream,
+                    stream.get(),
                     coef.data(),
                     params.n_targets,
                     params.bias,
@@ -83,18 +85,22 @@ class MakeRegressionTest : public ::testing::TestWithParam<MakeRegressionInputs<
                        &beta,
                        values_cm.data(),
                        params.n_samples,
-                       stream);
+                       stream.get());
 
     // Transpose the values to row-major
-    raft::linalg::transpose(
-      handle, values_cm.data(), values_prod.data(), params.n_samples, params.n_targets, stream);
+    raft::linalg::transpose(handle,
+                            values_cm.data(),
+                            values_prod.data(),
+                            params.n_samples,
+                            params.n_targets,
+                            stream.get());
 
     // Add the bias
     raft::linalg::addScalar(values_prod.data(),
                             values_prod.data(),
                             params.bias,
                             params.n_samples * params.n_targets,
-                            stream);
+                            stream.get());
 
     // Count the number of zeroes in the coefficients
     rmm::device_scalar<int> zc_device(stream);
@@ -103,7 +109,7 @@ class MakeRegressionTest : public ::testing::TestWithParam<MakeRegressionInputs<
                             0,
                             raft::compose_op{raft::cast_op<int>{}, raft::equal_const_op<T>{0}},
                             raft::add_op{},
-                            stream,
+                            stream.get(),
                             coef.data());
     zero_count = zc_device.value(stream);
   }
@@ -111,7 +117,7 @@ class MakeRegressionTest : public ::testing::TestWithParam<MakeRegressionInputs<
  protected:
   MakeRegressionInputs<T> params{::testing::TestWithParam<MakeRegressionInputs<T>>::GetParam()};
   raft::resources handle;
-  rmm::cuda_stream_view stream{resource::get_cuda_stream(handle)};
+  cuda::stream_ref stream{resource::get_cuda_stream(handle)};
   rmm::device_uvector<T> values_ret{size_t(params.n_samples) * size_t(params.n_targets), stream};
   rmm::device_uvector<T> values_prod{size_t(params.n_samples) * size_t(params.n_targets), stream};
 
@@ -137,7 +143,7 @@ TEST_P(MakeRegressionTestF, Result)
                           params.n_samples,
                           params.n_targets,
                           raft::CompareApprox<float>(params.tolerance),
-                          stream));
+                          stream.get()));
 }
 INSTANTIATE_TEST_CASE_P(MakeRegressionTests, MakeRegressionTestF, ::testing::ValuesIn(inputsf_t));
 
@@ -160,7 +166,7 @@ TEST_P(MakeRegressionTestD, Result)
                           params.n_samples,
                           params.n_targets,
                           raft::CompareApprox<double>(params.tolerance),
-                          stream));
+                          stream.get()));
 }
 INSTANTIATE_TEST_CASE_P(MakeRegressionTests, MakeRegressionTestD, ::testing::ValuesIn(inputsd_t));
 
@@ -221,18 +227,22 @@ class MakeRegressionMdspanTest : public ::testing::TestWithParam<MakeRegressionI
                        &beta,
                        values_cm.data(),
                        params.n_samples,
-                       stream);
+                       stream.get());
 
     // Transpose the values to row-major
-    raft::linalg::transpose(
-      handle, values_cm.data(), values_prod.data(), params.n_samples, params.n_targets, stream);
+    raft::linalg::transpose(handle,
+                            values_cm.data(),
+                            values_prod.data(),
+                            params.n_samples,
+                            params.n_targets,
+                            stream.get());
 
     // Add the bias
     raft::linalg::addScalar(values_prod.data(),
                             values_prod.data(),
                             params.bias,
                             params.n_samples * params.n_targets,
-                            stream);
+                            stream.get());
 
     // Count the number of zeroes in the coefficients
     rmm::device_scalar<int> zc_device(stream);
@@ -241,7 +251,7 @@ class MakeRegressionMdspanTest : public ::testing::TestWithParam<MakeRegressionI
                             0,
                             raft::compose_op{raft::cast_op<int>{}, raft::equal_const_op<T>{0}},
                             raft::add_op{},
-                            stream,
+                            stream.get(),
                             coef.data());
     zero_count = zc_device.value(stream);
   }
@@ -249,7 +259,7 @@ class MakeRegressionMdspanTest : public ::testing::TestWithParam<MakeRegressionI
  private:
   MakeRegressionInputs<T> params{::testing::TestWithParam<MakeRegressionInputs<T>>::GetParam()};
   raft::resources handle;
-  rmm::cuda_stream_view stream{resource::get_cuda_stream(handle)};
+  cuda::stream_ref stream{resource::get_cuda_stream(handle).get()};
   rmm::device_uvector<T> values_ret{size_t(params.n_samples) * size_t(params.n_targets), stream};
   rmm::device_uvector<T> values_prod{size_t(params.n_samples) * size_t(params.n_targets), stream};
 
@@ -268,7 +278,7 @@ TEST_P(MakeRegressionMdspanTestF, Result)
                           params.n_samples,
                           params.n_targets,
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 INSTANTIATE_TEST_CASE_P(MakeRegressionMdspanTests,
                         MakeRegressionMdspanTestF,
@@ -286,7 +296,7 @@ TEST_P(MakeRegressionMdspanTestD, Result)
                           params.n_samples,
                           params.n_targets,
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 INSTANTIATE_TEST_CASE_P(MakeRegressionMdspanTests,
                         MakeRegressionMdspanTestD,

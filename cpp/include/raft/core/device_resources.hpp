@@ -29,6 +29,7 @@
 #include <rmm/exec_policy.hpp>
 #include <rmm/resource_ref.hpp>
 
+#include <cuda/stream>
 #include <cuda_runtime.h>
 
 #include <cublas_v2.h>
@@ -75,8 +76,8 @@ class device_resources : public resources {
    * @param[in] allocation_limit the total amount of memory in bytes available to the temporary
    *            workspace resources.
    */
-  device_resources(rmm::cuda_stream_view stream_view                  = rmm::cuda_stream_per_thread,
-                   std::shared_ptr<rmm::cuda_stream_pool> stream_pool = {nullptr},
+  device_resources(cuda::stream_ref stream_view = cuda::stream_ref{cudaStreamPerThread},
+                   std::shared_ptr<rmm::cuda_stream_pool> stream_pool          = {nullptr},
                    std::optional<raft::mr::device_resource> workspace_resource = std::nullopt,
                    std::optional<std::size_t> allocation_limit                 = std::nullopt)
     : resources{}
@@ -118,7 +119,7 @@ class device_resources : public resources {
    * @param[in] stream stream to synchronize
    * @param[in] location the call site to blame for the errors; leave at its default
    */
-  void sync_stream(rmm::cuda_stream_view stream,
+  void sync_stream(cuda::stream_ref stream,
                    std::source_location location = std::source_location::current()) const
   {
     resource::sync_stream(*this, stream, location);
@@ -137,7 +138,7 @@ class device_resources : public resources {
   /**
    * @brief returns main stream on the current container
    */
-  rmm::cuda_stream_view get_stream() const { return resource::get_cuda_stream(*this); }
+  cuda::stream_ref get_stream() const { return resource::get_cuda_stream(*this); }
 
   /**
    * @brief returns whether stream pool was initialized on the current container
@@ -158,7 +159,7 @@ class device_resources : public resources {
   /**
    * @brief return stream from pool
    */
-  rmm::cuda_stream_view get_stream_from_stream_pool() const
+  cuda::stream_ref get_stream_from_stream_pool() const
   {
     return resource::get_stream_from_stream_pool(*this);
   }
@@ -166,7 +167,7 @@ class device_resources : public resources {
   /**
    * @brief return stream from pool at index
    */
-  rmm::cuda_stream_view get_stream_from_stream_pool(std::size_t stream_idx) const
+  cuda::stream_ref get_stream_from_stream_pool(std::size_t stream_idx) const
   {
     return resource::get_stream_from_stream_pool(*this, stream_idx);
   }
@@ -174,7 +175,7 @@ class device_resources : public resources {
   /**
    * @brief return stream from pool if size > 0, else main stream on current container
    */
-  rmm::cuda_stream_view get_next_usable_stream() const
+  cuda::stream_ref get_next_usable_stream() const
   {
     return resource::get_next_usable_stream(*this);
   }
@@ -184,7 +185,7 @@ class device_resources : public resources {
    *
    * @param[in] stream_idx the required index of the stream in the stream pool if available
    */
-  rmm::cuda_stream_view get_next_usable_stream(std::size_t stream_idx) const
+  cuda::stream_ref get_next_usable_stream(std::size_t stream_idx) const
   {
     return resource::get_next_usable_stream(*this, stream_idx);
   }

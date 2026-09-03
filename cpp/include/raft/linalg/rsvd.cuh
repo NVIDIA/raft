@@ -197,7 +197,7 @@ void rsvd_fixed_rank(raft::resources const& handle,
                 false,
                 static_cast<ValueType>(0),
                 0,
-                resource::get_cuda_stream(handle));
+                resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -276,7 +276,7 @@ void rsvd_fixed_rank_symmetric(
                 false,
                 static_cast<ValueType>(0),
                 0,
-                resource::get_cuda_stream(handle));
+                resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -358,7 +358,7 @@ void rsvd_fixed_rank_jacobi(raft::resources const& handle,
                 true,
                 tol,
                 max_sweeps,
-                resource::get_cuda_stream(handle));
+                resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -441,7 +441,7 @@ void rsvd_fixed_rank_symmetric_jacobi(
                 true,
                 tol,
                 max_sweeps,
-                resource::get_cuda_stream(handle));
+                resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -521,7 +521,7 @@ void rsvd_perc(raft::resources const& handle,
            false,
            static_cast<ValueType>(0),
            0,
-           resource::get_cuda_stream(handle));
+           resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -601,7 +601,7 @@ void rsvd_perc_symmetric(raft::resources const& handle,
            false,
            static_cast<ValueType>(0),
            0,
-           resource::get_cuda_stream(handle));
+           resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -685,7 +685,7 @@ void rsvd_perc_jacobi(raft::resources const& handle,
            true,
            tol,
            max_sweeps,
-           resource::get_cuda_stream(handle));
+           resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -770,7 +770,7 @@ void rsvd_perc_symmetric_jacobi(
            true,
            tol,
            max_sweeps,
-           resource::get_cuda_stream(handle));
+           resource::get_cuda_stream(handle).get());
 }
 
 /**

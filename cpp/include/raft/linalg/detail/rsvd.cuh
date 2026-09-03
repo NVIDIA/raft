@@ -51,7 +51,7 @@ void randomized_svd(const raft::resources& handle,
   RAFT_EXPECTS((k + p) < std::min(n_rows, n_cols), "k + p must be < min(n_rows, n_cols)");
   RAFT_EXPECTS(!gen_U || (U != nullptr), "computation of U vector requested but found nullptr");
   RAFT_EXPECTS(!gen_V || (V != nullptr), "computation of V vector requested but found nullptr");
-  cudaStream_t stream          = resource::get_cuda_stream(handle);
+  cudaStream_t stream          = resource::get_cuda_stream(handle).get();
   cusolverDnHandle_t cusolverH = resource::get_cusolver_dn_handle(handle);
 
   char jobu = gen_U ? 'S' : 'N';

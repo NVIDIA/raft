@@ -119,7 +119,7 @@ void stddev(raft::resources const& handle,
                                data.extent(1),
                                data.extent(0),
                                sample,
-                               resource::get_cuda_stream(handle));
+                               resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_stddev
@@ -166,7 +166,7 @@ void vars(raft::resources const& handle,
                              data.extent(1),
                              data.extent(0),
                              sample,
-                             resource::get_cuda_stream(handle));
+                             resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_variance

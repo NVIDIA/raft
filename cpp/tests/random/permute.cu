@@ -46,7 +46,7 @@ class PermTest : public ::testing::TestWithParam<PermInputs<T>> {
 
   void SetUp() override
   {
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     params      = ::testing::TestWithParam<PermInputs<T>>::GetParam();
     // forcefully set needPerms, since we need it for unit-testing!
     if (params.needShuffle) { params.needPerms = true; }

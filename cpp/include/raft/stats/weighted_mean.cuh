@@ -124,7 +124,7 @@ void weighted_mean(raft::resources const& handle,
                                                     weights.data_handle(),
                                                     data.extent(1),
                                                     data.extent(0),
-                                                    resource::get_cuda_stream(handle));
+                                                    resource::get_cuda_stream(handle).get());
 }
 
 /**

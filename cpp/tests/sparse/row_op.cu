@@ -46,7 +46,7 @@ class CSRRowOpTest : public ::testing::TestWithParam<CSRRowOpInputs<Type_f, Inde
  public:
   CSRRowOpTest()
     : params(::testing::TestWithParam<CSRRowOpInputs<Type_f, Index_>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       verify(params.verify.size(), stream),
       ex_scan(params.ex_scan.size(), stream),
       result(params.verify.size(), stream)

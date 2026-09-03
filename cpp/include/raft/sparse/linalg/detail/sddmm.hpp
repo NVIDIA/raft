@@ -61,7 +61,7 @@ void sddmm(raft::resources const& handle,
                                                    descr_c,
                                                    alg,
                                                    &bufferSize,
-                                                   resource::get_cuda_stream(handle)));
+                                                   resource::get_cuda_stream(handle).get()));
 
   resource::sync_stream(handle);
 
@@ -79,7 +79,7 @@ void sddmm(raft::resources const& handle,
                                                         descr_c,
                                                         alg,
                                                         reinterpret_cast<void*>(tmp.data()),
-                                                        resource::get_cuda_stream(handle)));
+                                                        resource::get_cuda_stream(handle).get()));
 }
 
 }  // end namespace detail
