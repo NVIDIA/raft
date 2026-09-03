@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/random/rng.cuh>
 #include <raft/sparse/linalg/spmm.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <thrust/fill.h>
 
@@ -172,25 +173,37 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
 
     dim3 blocks(raft::ceildiv<int>(params.M, 128), raft::ceildiv<int>(params.N, 4), 1);
     dim3 threads(128, 4, 1);
-    naiveGemm<<<blocks, threads, 0, stream>>>(params.trans_x,
-                                              params.trans_y,
-                                              params.M,
-                                              params.N,
-                                              params.K,
-                                              alpha,
-                                              X,
-                                              ldx,
-                                              true,
-                                              Y,
-                                              ldy,
-                                              params.row_major,
-                                              beta,
-                                              Z_ref,
-                                              ldz,
-                                              params.row_major);
+    raft::launch_kernel(handle,
+                        blocks,
+                        threads,
+                        naiveGemm,
+                        params.trans_x,
+                        params.trans_y,
+                        params.M,
+                        params.N,
+                        params.K,
+                        alpha,
+                        X,
+                        ldx,
+                        true,
+                        Y,
+                        ldy,
+                        params.row_major,
+                        beta,
+                        Z_ref,
+                        ldz,
+                        params.row_major);
 
-    spmm(
-      handle, params.trans_x, params.trans_y, &alpha, X_csr, y_stride_view, &beta, z_stride_view);
+    // min_alloc: the actual contiguous span of the strided z matrix (what spmm allocates for z_tmp)
+    auto z_span = params.row_major ? (size_t(params.M) - 1) * ldz + params.N
+                                   : (size_t(params.N) - 1) * ldz + params.M;
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        spmm(h, params.trans_x, params.trans_y, &alpha, X_csr, y_stride_view, &beta, z_stride_view);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      z_span * sizeof(T));
 
     resource::sync_stream(handle, stream);
 

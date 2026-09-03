@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,9 +14,11 @@
 #include <raft/core/operators.hpp>
 #include <raft/core/pinned_mdarray.hpp>
 #include <raft/core/pinned_mdspan.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/util/cuda_dev_essentials.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/integer_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <omp.h>
 
@@ -148,18 +150,51 @@ void gatherImpl(const InputIteratorT in,
   if (len < static_cast<IndexT>(32 * TPB * n_sm)) {
     using Policy    = gather_policy<TPB, 1>;
     IndexT n_blocks = raft::ceildiv(map_length * D, static_cast<IndexT>(Policy::stride));
-    gather_kernel<Policy><<<n_blocks, Policy::n_threads, 0, stream>>>(
-      in, ld, D, len, map, stencil, out, pred_op, transform_op);
+    raft::launch_kernel(stream,
+                        n_blocks,
+                        Policy::n_threads,
+                        gather_kernel<Policy>,
+                        in,
+                        ld,
+                        D,
+                        len,
+                        map,
+                        stencil,
+                        out,
+                        pred_op,
+                        transform_op);
   } else if (len < static_cast<IndexT>(32 * 4 * TPB * n_sm)) {
     using Policy    = gather_policy<TPB, 4>;
     IndexT n_blocks = raft::ceildiv(map_length * D, static_cast<IndexT>(Policy::stride));
-    gather_kernel<Policy><<<n_blocks, Policy::n_threads, 0, stream>>>(
-      in, ld, D, len, map, stencil, out, pred_op, transform_op);
+    raft::launch_kernel(stream,
+                        n_blocks,
+                        Policy::n_threads,
+                        gather_kernel<Policy>,
+                        in,
+                        ld,
+                        D,
+                        len,
+                        map,
+                        stencil,
+                        out,
+                        pred_op,
+                        transform_op);
   } else {
     using Policy    = gather_policy<TPB, 8>;
     IndexT n_blocks = raft::ceildiv(map_length * D, static_cast<IndexT>(Policy::stride));
-    gather_kernel<Policy><<<n_blocks, Policy::n_threads, 0, stream>>>(
-      in, ld, D, len, map, stencil, out, pred_op, transform_op);
+    raft::launch_kernel(stream,
+                        n_blocks,
+                        Policy::n_threads,
+                        gather_kernel<Policy>,
+                        in,
+                        ld,
+                        D,
+                        len,
+                        map,
+                        stencil,
+                        out,
+                        pred_op,
+                        transform_op);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }
@@ -551,13 +586,15 @@ void gather(raft::resources const& res,
             device_vector_view<const IdxT, MatIdxT> indices,
             raft::device_matrix_view<T, MatIdxT> output)
 {
+  auto dry_run = resource::get_dry_run_flag(res);
   raft::common::nvtx::range<common::nvtx::domain::raft> fun_scope("gather");
   IdxT n_dim        = output.extent(1);
   IdxT n_train      = output.extent(0);
   auto indices_host = raft::make_host_vector<IdxT, MatIdxT>(n_train);
-  raft::copy(
-    indices_host.data_handle(), indices.data_handle(), n_train, resource::get_cuda_stream(res));
-  resource::sync_stream(res);
+  if (!dry_run) {
+    raft::copy(
+      indices_host.data_handle(), indices.data_handle(), n_train, resource::get_cuda_stream(res));
+  }
 
   const size_t buffer_size = 32768 * 1024;  // bytes
   const size_t max_batch_size =
@@ -568,6 +605,10 @@ void gather(raft::resources const& res,
   // and gathering the data.
   auto out_tmp1 = raft::make_pinned_matrix<T, MatIdxT>(res, max_batch_size, n_dim);
   auto out_tmp2 = raft::make_pinned_matrix<T, MatIdxT>(res, max_batch_size, n_dim);
+
+  if (dry_run) { return; }
+
+  resource::sync_stream(res);
 
   // Usually a limited number of threads provide sufficient bandwidth for gathering data.
 #if defined(_OPENMP)

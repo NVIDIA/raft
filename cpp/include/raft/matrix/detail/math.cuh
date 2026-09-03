@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,12 +7,14 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/operators.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/binary_op.cuh>
 #include <raft/linalg/map_then_reduce.cuh>
 #include <raft/linalg/matrix_vector_op.cuh>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -187,10 +189,10 @@ template <typename math_t, typename IdxType = int>
 void ratio(
   raft::resources const& handle, const math_t* src, math_t* dest, IdxType len, cudaStream_t stream)
 {
-  auto d_src  = src;
-  auto d_dest = dest;
-
   rmm::device_scalar<math_t> d_sum(stream);
+  if (resource::get_dry_run_flag(handle)) { return; }
+  auto d_src      = src;
+  auto d_dest     = dest;
   auto* d_sum_ptr = d_sum.data();
   raft::linalg::mapThenSumReduce(d_sum_ptr, len, raft::identity_op{}, stream, src);
   raft::linalg::unaryOp(
@@ -201,15 +203,16 @@ template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = 
 void matrixVectorBinaryMult(
   Type* data, const Type* vec, IdxType n_row, IdxType n_col, cudaStream_t stream)
 {
-  raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
-    data, data, vec, n_col, n_row, raft::mul_op(), stream);
+  raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+    false, data, data, vec, n_col, n_row, raft::mul_op(), stream);
 }
 
 template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = int, int TPB = 256>
 void matrixVectorBinaryMultSkipZero(
   Type* data, const Type* vec, IdxType n_row, IdxType n_col, cudaStream_t stream)
 {
-  raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
+  raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+    false,
     data,
     data,
     vec,
@@ -228,8 +231,8 @@ template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = 
 void matrixVectorBinaryDiv(
   Type* data, const Type* vec, IdxType n_row, IdxType n_col, cudaStream_t stream)
 {
-  raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
-    data, data, vec, n_col, n_row, raft::div_op(), stream);
+  raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+    false, data, data, vec, n_col, n_row, raft::div_op(), stream);
 }
 
 template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = int, int TPB = 256>
@@ -241,7 +244,8 @@ void matrixVectorBinaryDivSkipZero(Type* data,
                                    bool return_zero = false)
 {
   if (return_zero) {
-    raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
+    raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+      false,
       data,
       data,
       vec,
@@ -255,7 +259,8 @@ void matrixVectorBinaryDivSkipZero(Type* data,
       },
       stream);
   } else {
-    raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
+    raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+      false,
       data,
       data,
       vec,
@@ -275,16 +280,16 @@ template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = 
 void matrixVectorBinaryAdd(
   Type* data, const Type* vec, IdxType n_row, IdxType n_col, cudaStream_t stream)
 {
-  raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
-    data, data, vec, n_col, n_row, raft::add_op(), stream);
+  raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+    false, data, data, vec, n_col, n_row, raft::add_op(), stream);
 }
 
 template <bool rowMajor, bool bcastAlongRows, typename Type, typename IdxType = int, int TPB = 256>
 void matrixVectorBinarySub(
   Type* data, const Type* vec, IdxType n_row, IdxType n_col, cudaStream_t stream)
 {
-  raft::linalg::matrixVectorOp<rowMajor, bcastAlongRows>(
-    data, data, vec, n_col, n_row, raft::sub_op(), stream);
+  raft::linalg::detail::matrixVectorOp<rowMajor, bcastAlongRows>(
+    false, data, data, vec, n_col, n_row, raft::sub_op(), stream);
 }
 
 // Computes an argmin/argmax column-wise in a DxN matrix
@@ -327,13 +332,13 @@ template <typename RedOp, typename math_t, typename out_t, typename idx_t>
 inline void argReduce(const math_t* in, idx_t D, idx_t N, out_t* out, cudaStream_t stream)
 {
   if (D <= 32) {
-    argReduceKernel<RedOp, 32><<<N, 32, 0, stream>>>(in, D, N, out);
+    raft::launch_kernel(stream, N, 32, argReduceKernel<RedOp, 32>, in, D, N, out);
   } else if (D <= 64) {
-    argReduceKernel<RedOp, 64><<<N, 64, 0, stream>>>(in, D, N, out);
+    raft::launch_kernel(stream, N, 64, argReduceKernel<RedOp, 64>, in, D, N, out);
   } else if (D <= 128) {
-    argReduceKernel<RedOp, 128><<<N, 128, 0, stream>>>(in, D, N, out);
+    raft::launch_kernel(stream, N, 128, argReduceKernel<RedOp, 128>, in, D, N, out);
   } else {
-    argReduceKernel<RedOp, 256><<<N, 256, 0, stream>>>(in, D, N, out);
+    raft::launch_kernel(stream, N, 256, argReduceKernel<RedOp, 256>, in, D, N, out);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }
@@ -389,13 +394,13 @@ void signFlip(math_t* inout, int n_rows, int n_cols, cudaStream_t stream)
   int N     = n_cols;
   auto data = inout;
   if (D <= 32) {
-    signFlipKernel<math_t, 32><<<N, 32, 0, stream>>>(data, D, N);
+    raft::launch_kernel(stream, N, 32, signFlipKernel<math_t, 32>, data, D, N);
   } else if (D <= 64) {
-    signFlipKernel<math_t, 64><<<N, 64, 0, stream>>>(data, D, N);
+    raft::launch_kernel(stream, N, 64, signFlipKernel<math_t, 64>, data, D, N);
   } else if (D <= 128) {
-    signFlipKernel<math_t, 128><<<N, 128, 0, stream>>>(data, D, N);
+    raft::launch_kernel(stream, N, 128, signFlipKernel<math_t, 128>, data, D, N);
   } else {
-    signFlipKernel<math_t, 256><<<N, 256, 0, stream>>>(data, D, N);
+    raft::launch_kernel(stream, N, 256, signFlipKernel<math_t, 256>, data, D, N);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,18 +8,22 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/detail/mdspan_util.cuh>  // detail::popc
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/sparse/convert/detail/adj_to_csr.cuh>
 #include <raft/util/device_loads_stores.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
 #include <cub/block/block_reduce.cuh>
+#include <cub/device/device_scan.cuh>
 #include <cuda/std/cassert>
 #include <cuda/std/functional>
 #include <thrust/fill.h>
-#include <thrust/scan.h>
+
+#include <limits>
 
 namespace raft {
 namespace sparse {
@@ -105,7 +109,6 @@ void calc_nnz_by_rows(raft::resources const& handle,
     sub_nnz_size     = num_rows * ((num_cols + bits_per_sub_col - 1) / bits_per_sub_col);
     return;
   }
-  auto stream        = resource::get_cuda_stream(handle);
   const size_t total = num_rows * num_cols;
   const size_t bitmap_num =
     (total + index_t(sizeof(bitmap_t) * 8) - 1) / index_t(sizeof(bitmap_t) * 8);
@@ -116,9 +119,16 @@ void calc_nnz_by_rows(raft::resources const& handle,
 
   auto block = bitmap_to_csr_tpb;
 
-  calc_nnz_by_rows_kernel<bitmap_t, index_t, nnz_t><<<grid, block, 0, stream>>>(
-    bitmap, num_rows, num_cols, bitmap_num, sub_col_nnz, bits_per_sub_col);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(handle,
+                      grid,
+                      block,
+                      calc_nnz_by_rows_kernel<bitmap_t, index_t, nnz_t>,
+                      bitmap,
+                      num_rows,
+                      num_cols,
+                      bitmap_num,
+                      sub_col_nnz,
+                      bits_per_sub_col);
 }
 
 template <typename bitmap_t, typename index_t, typename nnz_t, bool check_nnz>
@@ -244,16 +254,24 @@ void fill_indices_by_rows(raft::resources const& handle,
                           index_t bits_per_sub_col,
                           size_t sub_nnz_size)
 {
-  auto stream  = resource::get_cuda_stream(handle);
   auto block_x = num_rows;
   auto block_y = sub_nnz_size / num_rows;
   dim3 grid(block_x, block_y, 1);
 
   auto block = bitmap_to_csr_tpb;
 
-  fill_indices_by_rows_kernel<bitmap_t, index_t, nnz_t, check_nnz><<<grid, block, 0, stream>>>(
-    bitmap, indptr, num_rows, num_cols, nnz, indices, sub_col_nnz, bits_per_sub_col);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(handle,
+                      grid,
+                      block,
+                      fill_indices_by_rows_kernel<bitmap_t, index_t, nnz_t, check_nnz>,
+                      bitmap,
+                      indptr,
+                      num_rows,
+                      num_cols,
+                      nnz,
+                      indices,
+                      sub_col_nnz,
+                      bits_per_sub_col);
 }
 
 template <typename bitmap_t,
@@ -283,7 +301,10 @@ void bitmap_to_csr(raft::resources const& handle,
   index_t* indptr  = csr_view.get_indptr().data();
   index_t* indices = csr_view.get_indices().data();
 
-  RAFT_CUDA_TRY(cudaMemsetAsync(indptr, 0, (csr_view.get_n_rows() + 1) * sizeof(index_t), stream));
+  if (!resource::get_dry_run_flag(handle)) {
+    RAFT_CUDA_TRY(
+      cudaMemsetAsync(indptr, 0, (csr_view.get_n_rows() + 1) * sizeof(index_t), stream));
+  }
 
   size_t sub_nnz_size      = 0;
   index_t bits_per_sub_col = 0;
@@ -300,6 +321,21 @@ void bitmap_to_csr(raft::resources const& handle,
   rmm::device_async_resource_ref device_memory = resource::get_workspace_resource_ref(handle);
   rmm::device_uvector<nnz_t> sub_nnz(sub_nnz_size + 1, stream, device_memory);
 
+  size_t scan_ws_bytes = 0;
+  cub::DeviceScan::ExclusiveSum(
+    nullptr, scan_ws_bytes, sub_nnz.data(), sub_nnz.data(), sub_nnz_size + 1, stream);
+  rmm::device_uvector<char> scan_ws(scan_ws_bytes, stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    if constexpr (is_device_csr_sparsity_owning_v<csr_matrix_t>) {
+      auto safe_nnz = std::min(
+        static_cast<uint64_t>(csr_view.get_n_rows()) * static_cast<uint64_t>(csr_view.get_n_cols()),
+        static_cast<uint64_t>(std::numeric_limits<nnz_t>::max()));
+      csr.initialize_sparsity(static_cast<nnz_t>(safe_nnz));
+    }
+    return;
+  }
+
   calc_nnz_by_rows(handle,
                    bitmap.data(),
                    csr_view.get_n_rows(),
@@ -308,8 +344,8 @@ void bitmap_to_csr(raft::resources const& handle,
                    sub_nnz_size,
                    bits_per_sub_col);
 
-  thrust::exclusive_scan(
-    thrust_policy, sub_nnz.data(), sub_nnz.data() + sub_nnz_size + 1, sub_nnz.data());
+  cub::DeviceScan::ExclusiveSum(
+    scan_ws.data(), scan_ws_bytes, sub_nnz.data(), sub_nnz.data(), sub_nnz_size + 1, stream);
 
   if constexpr (is_device_csr_sparsity_owning_v<csr_matrix_t>) {
     nnz_t nnz = 0;

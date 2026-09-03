@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cub/device/device_radix_sort.cuh>
 #include <thrust/device_ptr.h>
@@ -58,9 +59,16 @@ void computeCMatWAtomics(const T* groundTruth,
     cudaFuncSetCacheConfig(devConstructContingencyMatrix<T, OutT>, cudaFuncCachePreferL1));
   static const int block = 128;
   auto grid              = raft::ceildiv(nSamples, block);
-  devConstructContingencyMatrix<T, OutT><<<grid, block, 0, stream>>>(
-    groundTruth, predictedLabel, nSamples, outMat, outIdxOffset, outDimN);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(stream,
+                      grid,
+                      block,
+                      devConstructContingencyMatrix<T, OutT>,
+                      groundTruth,
+                      predictedLabel,
+                      nSamples,
+                      outMat,
+                      outIdxOffset,
+                      outDimN);
 }
 
 template <typename T, typename OutT = int>
@@ -102,9 +110,16 @@ void computeCMatWSmemAtomics(const T* groundTruth,
   static const int block  = 128;
   auto grid               = raft::ceildiv(nSamples, block);
   size_t smemSizePerBlock = outDimN * outDimN * sizeof(OutT);
-  devConstructContingencyMatrixSmem<T, OutT><<<grid, block, smemSizePerBlock, stream>>>(
-    groundTruth, predictedLabel, nSamples, outMat, outIdxOffset, outDimN);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel({stream, smemSizePerBlock},
+                      grid,
+                      block,
+                      devConstructContingencyMatrixSmem<T, OutT>,
+                      groundTruth,
+                      predictedLabel,
+                      nSamples,
+                      outMat,
+                      outIdxOffset,
+                      outDimN);
 }
 
 template <typename T, typename OutT = int>
@@ -190,6 +205,7 @@ void getInputClassCardinality(
  * @brief Calculate workspace size for running contingency matrix calculations
  * @tparam T label type
  * @tparam OutT output matrix type
+ * @param dry_run: whether to run in dry-run mode (returns upper-bound estimate)
  * @param nSamples: number of elements in input array
  * @param groundTruth: device 1-d array for ground truth (num of rows)
  * @param stream: cuda stream for execution
@@ -197,13 +213,26 @@ void getInputClassCardinality(
  * @param maxLabel: Optional, max value in input array
  */
 template <typename T, typename OutT = int>
-size_t getContingencyMatrixWorkspaceSize(int nSamples,
+size_t getContingencyMatrixWorkspaceSize(bool dry_run,
+                                         int nSamples,
                                          const T* groundTruth,
                                          cudaStream_t stream,
                                          T minLabel = std::numeric_limits<T>::max(),
                                          T maxLabel = std::numeric_limits<T>::max())
 {
   size_t workspaceSize = 0;
+  if (dry_run) {
+    // Upper-bound estimate for dry-run mode:
+    // Worst case: each sample is a unique class, so outDimN = nSamples
+    // For SORT_AND_GATOMICS implementation:
+    // - tmpStagingMemorySize = alignTo(nSamples * sizeof(T), 256) * 2
+    // - CUB workspace: conservative upper bound of 4 * nSamples * sizeof(T)
+    auto tmpStagingMemorySize = raft::alignTo<size_t>(nSamples * sizeof(T), 256);
+    tmpStagingMemorySize *= 2;
+    size_t cubWorkspaceUpperBound = 4 * nSamples * sizeof(T);
+    workspaceSize                 = tmpStagingMemorySize + cubWorkspaceUpperBound;
+    return workspaceSize;
+  }
   // below is a redundant computation - can be avoided
   if (minLabel == std::numeric_limits<T>::max() || maxLabel == std::numeric_limits<T>::max()) {
     getInputClassCardinality<T>(groundTruth, nSamples, stream, minLabel, maxLabel);

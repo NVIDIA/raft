@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/util/integer_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 
@@ -53,12 +54,16 @@ class Multiplication64bit : public testing::TestWithParam<MulInputs> {
     wmul_64bit(result_high, result_low, params.operand_1, params.operand_2);
     wmul_64bit(swapped_result_high, swapped_result_low, params.operand_2, params.operand_1);
 
-    mul64_test_kernel<<<1, 1, 0, stream>>>(d_result_high.data(),
-                                           d_result_low.data(),
-                                           d_swapped_result_high.data(),
-                                           d_swapped_result_low.data(),
-                                           params.operand_1,
-                                           params.operand_2);
+    raft::launch_kernel(stream,
+                        1,
+                        1,
+                        mul64_test_kernel,
+                        d_result_high.data(),
+                        d_result_low.data(),
+                        d_swapped_result_high.data(),
+                        d_swapped_result_low.data(),
+                        params.operand_1,
+                        params.operand_2);
   }
 
   raft::resources handle;

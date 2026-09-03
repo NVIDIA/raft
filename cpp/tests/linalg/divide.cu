@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/linalg/divide.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -28,8 +29,7 @@ void naiveDivide(Type* out, const Type* in, Type scalar, int len, cudaStream_t s
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveDivideKernel<Type><<<nblks, TPB, 0, stream>>>(out, in, scalar, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naiveDivideKernel<Type>, out, in, scalar, len);
 }
 
 template <typename T>
@@ -54,7 +54,10 @@ class DivideTest : public ::testing::TestWithParam<raft::linalg::UnaryOpInputs<T
     auto out_view    = raft::make_device_vector_view(out.data(), len);
     auto in_view     = raft::make_device_vector_view<const T>(in.data(), len);
     auto scalar_view = raft::make_host_scalar_view<const T>(&params.scalar);
-    divide_scalar(handle, in_view, out_view, scalar_view);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) { divide_scalar(h, in_view, out_view, scalar_view); },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     resource::sync_stream(handle, stream);
   }
 

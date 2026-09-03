@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,9 +7,11 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/device_atomics.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/vectorized.cuh>
 
 #include <rmm/device_uvector.hpp>
@@ -130,6 +132,8 @@ void adj_to_csr(raft::resources const& handle,
                 index_t* out_col_ind     // output column indices
 )
 {
+  if (resource::get_dry_run_flag(handle)) { return; }  // No allocations below
+
   auto stream = resource::get_cuda_stream(handle);
 
   // Check inputs and return early if possible.
@@ -156,9 +160,16 @@ void adj_to_csr(raft::resources const& handle,
   dim3 block(adj_to_csr_tpb, 1);
   dim3 grid(blocks_per_row, grid_rows);
 
-  adj_to_csr_kernel<index_t>
-    <<<grid, block, 0, stream>>>(adj, row_ind, num_rows, num_cols, tmp, out_col_ind);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(handle,
+                      grid,
+                      block,
+                      adj_to_csr_kernel<index_t>,
+                      adj,
+                      row_ind,
+                      num_rows,
+                      num_cols,
+                      tmp,
+                      out_col_ind);
 }
 
 };  // end NAMESPACE detail

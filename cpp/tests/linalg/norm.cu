@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/itertools.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda_fp16.h>
 
@@ -71,9 +72,8 @@ void naiveRowNorm(
 {
   static const IdxT TPB = 64;
   IdxT nblks            = raft::ceildiv(N, TPB);
-  naiveRowNormKernel<Type, IdxT, OutType>
-    <<<nblks, TPB, 0, stream>>>(dots, data, D, N, type, do_sqrt);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveRowNormKernel<Type, IdxT, OutType>, dots, data, D, N, type, do_sqrt);
 }
 
 template <typename T, typename IdxT, typename OutT = T>
@@ -99,35 +99,40 @@ class RowNormTest : public ::testing::TestWithParam<NormInputs<OutT, IdxT>> {
       data.data(), params.rows, params.cols);
     auto input_col_major = raft::make_device_matrix_view<const T, IdxT, raft::col_major>(
       data.data(), params.rows, params.cols);
-    if (params.do_sqrt) {
-      if (params.rowMajor) {
-        if (params.type == L2Norm) {
-          norm<L2Norm, Apply::ALONG_ROWS>(handle, input_row_major, output_view, raft::sqrt_op{});
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.do_sqrt) {
+          if (params.rowMajor) {
+            if (params.type == L2Norm) {
+              norm<L2Norm, Apply::ALONG_ROWS>(h, input_row_major, output_view, raft::sqrt_op{});
+            } else {
+              norm<L1Norm, Apply::ALONG_ROWS>(h, input_row_major, output_view, raft::sqrt_op{});
+            }
+          } else {
+            if (params.type == L2Norm) {
+              norm<L2Norm, Apply::ALONG_ROWS>(h, input_col_major, output_view, raft::sqrt_op{});
+            } else {
+              norm<L1Norm, Apply::ALONG_ROWS>(h, input_col_major, output_view, raft::sqrt_op{});
+            }
+          }
         } else {
-          norm<L1Norm, Apply::ALONG_ROWS>(handle, input_row_major, output_view, raft::sqrt_op{});
+          if (params.rowMajor) {
+            if (params.type == L2Norm) {
+              norm<L2Norm, Apply::ALONG_ROWS>(h, input_row_major, output_view);
+            } else {
+              norm<L1Norm, Apply::ALONG_ROWS>(h, input_row_major, output_view);
+            }
+          } else {
+            if (params.type == L2Norm) {
+              norm<L2Norm, Apply::ALONG_ROWS>(h, input_col_major, output_view);
+            } else {
+              norm<L1Norm, Apply::ALONG_ROWS>(h, input_col_major, output_view);
+            }
+          }
         }
-      } else {
-        if (params.type == L2Norm) {
-          norm<L2Norm, Apply::ALONG_ROWS>(handle, input_col_major, output_view, raft::sqrt_op{});
-        } else {
-          norm<L1Norm, Apply::ALONG_ROWS>(handle, input_col_major, output_view, raft::sqrt_op{});
-        }
-      }
-    } else {
-      if (params.rowMajor) {
-        if (params.type == L2Norm) {
-          norm<L2Norm, Apply::ALONG_ROWS>(handle, input_row_major, output_view);
-        } else {
-          norm<L1Norm, Apply::ALONG_ROWS>(handle, input_row_major, output_view);
-        }
-      } else {
-        if (params.type == L2Norm) {
-          norm<L2Norm, Apply::ALONG_ROWS>(handle, input_col_major, output_view);
-        } else {
-          norm<L1Norm, Apply::ALONG_ROWS>(handle, input_col_major, output_view);
-        }
-      }
-    }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     resource::sync_stream(handle, stream);
   }
 
@@ -163,9 +168,8 @@ void naiveColNorm(
 {
   static const IdxT TPB = 64;
   IdxT nblks            = raft::ceildiv(D, TPB);
-  naiveColNormKernel<Type, IdxT, OutType>
-    <<<nblks, TPB, 0, stream>>>(dots, data, D, N, type, do_sqrt);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, naiveColNormKernel<Type, IdxT, OutType>, dots, data, D, N, type, do_sqrt);
 }
 
 template <typename T, typename IdxT, typename OutT = T>
@@ -192,35 +196,40 @@ class ColNormTest : public ::testing::TestWithParam<NormInputs<OutT, IdxT>> {
       data.data(), params.rows, params.cols);
     auto input_col_major = raft::make_device_matrix_view<const T, IdxT, raft::col_major>(
       data.data(), params.rows, params.cols);
-    if (params.do_sqrt) {
-      if (params.rowMajor) {
-        if (params.type == L2Norm) {
-          norm<L2Norm, Apply::ALONG_COLUMNS>(handle, input_row_major, output_view, raft::sqrt_op{});
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.do_sqrt) {
+          if (params.rowMajor) {
+            if (params.type == L2Norm) {
+              norm<L2Norm, Apply::ALONG_COLUMNS>(h, input_row_major, output_view, raft::sqrt_op{});
+            } else {
+              norm<L1Norm, Apply::ALONG_COLUMNS>(h, input_row_major, output_view, raft::sqrt_op{});
+            }
+          } else {
+            if (params.type == L2Norm) {
+              norm<L2Norm, Apply::ALONG_COLUMNS>(h, input_col_major, output_view, raft::sqrt_op{});
+            } else {
+              norm<L1Norm, Apply::ALONG_COLUMNS>(h, input_col_major, output_view, raft::sqrt_op{});
+            }
+          }
         } else {
-          norm<L1Norm, Apply::ALONG_COLUMNS>(handle, input_row_major, output_view, raft::sqrt_op{});
+          if (params.rowMajor) {
+            if (params.type == L2Norm) {
+              norm<L2Norm, Apply::ALONG_COLUMNS>(h, input_row_major, output_view);
+            } else {
+              norm<L1Norm, Apply::ALONG_COLUMNS>(h, input_row_major, output_view);
+            }
+          } else {
+            if (params.type == L2Norm) {
+              norm<L2Norm, Apply::ALONG_COLUMNS>(h, input_col_major, output_view);
+            } else {
+              norm<L1Norm, Apply::ALONG_COLUMNS>(h, input_col_major, output_view);
+            }
+          }
         }
-      } else {
-        if (params.type == L2Norm) {
-          norm<L2Norm, Apply::ALONG_COLUMNS>(handle, input_col_major, output_view, raft::sqrt_op{});
-        } else {
-          norm<L1Norm, Apply::ALONG_COLUMNS>(handle, input_col_major, output_view, raft::sqrt_op{});
-        }
-      }
-    } else {
-      if (params.rowMajor) {
-        if (params.type == L2Norm) {
-          norm<L2Norm, Apply::ALONG_COLUMNS>(handle, input_row_major, output_view);
-        } else {
-          norm<L1Norm, Apply::ALONG_COLUMNS>(handle, input_row_major, output_view);
-        }
-      } else {
-        if (params.type == L2Norm) {
-          norm<L2Norm, Apply::ALONG_COLUMNS>(handle, input_col_major, output_view);
-        } else {
-          norm<L1Norm, Apply::ALONG_COLUMNS>(handle, input_col_major, output_view);
-        }
-      }
-    }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     resource::sync_stream(handle, stream);
   }
 

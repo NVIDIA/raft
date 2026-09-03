@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -45,6 +45,7 @@
 #include <raft/core/interruptible.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -112,13 +113,15 @@ RAFT_KERNEL computeTheNumerator(
 /**
  * @brief Function to calculate RandIndex
  * <a href="https://en.wikipedia.org/wiki/Rand_index">more info on rand index</a>
+ * @param dry_run: whether to run in dry-run mode
  * @param firstClusterArray: the array of classes of type T
  * @param secondClusterArray: the array of classes of type T
  * @param size: the size of the data points of type uint64_t
  * @param stream: the cudaStream object
  */
 template <typename T>
-double compute_rand_index(const T* firstClusterArray,
+double compute_rand_index(bool dry_run,
+                          const T* firstClusterArray,
                           const T* secondClusterArray,
                           uint64_t size,
                           cudaStream_t stream)
@@ -130,6 +133,7 @@ double compute_rand_index(const T* firstClusterArray,
 
   // allocating and initializing memory for a and b in the GPU
   rmm::device_uvector<uint64_t> arr_buf(2, stream);
+  if (dry_run) { return 0.0; }
   RAFT_CUDA_TRY(cudaMemsetAsync(arr_buf.data(), 0, 2 * sizeof(uint64_t), stream));
 
   // kernel configuration
@@ -139,8 +143,15 @@ double compute_rand_index(const T* firstClusterArray,
                  raft::ceildiv<int>(size, numThreadsPerBlock.y));
 
   // calling the kernel
-  computeTheNumerator<T, BLOCK_DIM_X, BLOCK_DIM_Y><<<numBlocks, numThreadsPerBlock, 0, stream>>>(
-    firstClusterArray, secondClusterArray, size, arr_buf.data(), arr_buf.data() + 1);
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      numThreadsPerBlock,
+                      computeTheNumerator<T, BLOCK_DIM_X, BLOCK_DIM_Y>,
+                      firstClusterArray,
+                      secondClusterArray,
+                      size,
+                      arr_buf.data(),
+                      arr_buf.data() + 1);
 
   // synchronizing and updating the calculated values of a and b from device to host
   uint64_t ab_host[2] = {0};

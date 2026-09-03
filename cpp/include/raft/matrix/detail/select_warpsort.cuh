@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,11 +10,13 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/custom_resource.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/select_k_layout.cuh>
 #include <raft/util/bitonic_sort.cuh>
 #include <raft/util/cache.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/integer_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/pow2_utils.cuh>
 
 #include <rmm/cuda_stream_view.hpp>
@@ -857,7 +859,7 @@ struct launch_setup {
                      size_t len,
                      int num_blocks,
                      int block_dim,
-                     int smem_size,
+                     size_t smem_size,
                      const T* in_key,
                      const IdxT* in_idx,
                      const IdxT* in_indptr,
@@ -893,13 +895,31 @@ struct launch_setup {
       size_t batch_chunk = std::min<size_t>(kMaxGridDimY, batch_size - offset);
       dim3 gs(num_blocks, batch_chunk, 1);
       if (select_min) {
-        block_kernel<WarpSortClass, Capacity, true, T, IdxT, RowLayout>
-          <<<gs, block_dim, smem_size, stream>>>(
-            in_key, in_idx, in_indptr, g_offset, IdxT(len), k, out_key, out_idx);
+        raft::launch_kernel({stream, smem_size},
+                            gs,
+                            block_dim,
+                            block_kernel<WarpSortClass, Capacity, true, T, IdxT, RowLayout>,
+                            in_key,
+                            in_idx,
+                            in_indptr,
+                            g_offset,
+                            IdxT(len),
+                            k,
+                            out_key,
+                            out_idx);
       } else {
-        block_kernel<WarpSortClass, Capacity, false, T, IdxT, RowLayout>
-          <<<gs, block_dim, smem_size, stream>>>(
-            in_key, in_idx, in_indptr, g_offset, IdxT(len), k, out_key, out_idx);
+        raft::launch_kernel({stream, smem_size},
+                            gs,
+                            block_dim,
+                            block_kernel<WarpSortClass, Capacity, false, T, IdxT, RowLayout>,
+                            in_key,
+                            in_idx,
+                            in_indptr,
+                            g_offset,
+                            IdxT(len),
+                            k,
+                            out_key,
+                            out_idx);
       }
       RAFT_CUDA_TRY(cudaPeekAtLastError());
       out_key += batch_chunk * num_blocks * k;
@@ -1043,7 +1063,8 @@ template <template <int, bool, typename, typename> class WarpSortClass,
           typename T,
           typename IdxT,
           typename RowLayout>
-void select_k_(int num_of_block,
+void select_k_(bool dry_run,
+               int num_of_block,
                int num_of_warp,
                const T* in,
                const IdxT* in_idx,
@@ -1059,6 +1080,8 @@ void select_k_(int num_of_block,
 {
   rmm::device_uvector<T> tmp_val(num_of_block * k * batch_size, stream, mr);
   rmm::device_uvector<IdxT> tmp_idx(num_of_block * k * batch_size, stream, mr);
+
+  if (dry_run) { return; }
 
   int capacity   = bound_by_power_of_two(k);
   int warp_width = std::min(capacity, WarpSize);
@@ -1122,7 +1145,8 @@ void select_k_impl(raft::resources const& res,
   calc_launch_parameter<WarpSortClass, T, IdxT>(
     res, batch_size, len, k, &num_of_block, &num_of_warp);
 
-  select_k_<WarpSortClass, T, IdxT, RowLayout>(num_of_block,
+  select_k_<WarpSortClass, T, IdxT, RowLayout>(resource::get_dry_run_flag(res),
+                                               num_of_block,
                                                num_of_warp,
                                                in,
                                                in_idx,
@@ -1199,7 +1223,8 @@ void select_k(raft::resources const& res,
   int len_per_thread = len / (num_of_block * num_of_warp * std::min(capacity, WarpSize));
 
   if (len_per_thread <= LaunchThreshold<warp_sort_immediate>::len_factor_for_choosing) {
-    select_k_<warp_sort_immediate, T, IdxT, RowLayout>(num_of_block,
+    select_k_<warp_sort_immediate, T, IdxT, RowLayout>(resource::get_dry_run_flag(res),
+                                                       num_of_block,
                                                        num_of_warp,
                                                        in,
                                                        in_idx,
@@ -1215,7 +1240,8 @@ void select_k(raft::resources const& res,
   } else {
     calc_launch_parameter<warp_sort_filtered, T, IdxT>(
       res, batch_size, len, k, &num_of_block, &num_of_warp);
-    select_k_<warp_sort_filtered, T, IdxT, RowLayout>(num_of_block,
+    select_k_<warp_sort_filtered, T, IdxT, RowLayout>(resource::get_dry_run_flag(res),
+                                                      num_of_block,
                                                       num_of_warp,
                                                       in,
                                                       in_idx,

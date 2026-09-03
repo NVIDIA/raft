@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,6 +11,7 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/logger.hpp>
 #include <raft/core/mdspan.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/stream_view.hpp>
 #include <raft/core/resources.hpp>
 
@@ -24,6 +25,7 @@
 #ifdef __CUDACC__
 #include <raft/linalg/transpose.cuh>
 #include <raft/util/cuda_dev_essentials.cuh>
+#include <raft/util/kernel_launch.hpp>
 #endif
 #endif
 
@@ -301,12 +303,10 @@ __device__ auto increment_indices(IdxType* indices,
       }
     }(i);
 
-    auto cur_index = IdxType{};
-
-    while (cur_index < md.extent(real_index) - 1 && increment >= index_strides[real_index]) {
-      increment -= index_strides[real_index];
-      ++cur_index;
-    }
+    auto const max_index = md.extent(real_index) - IdxType{1};
+    auto const quotient  = increment / index_strides[real_index];
+    auto const cur_index = quotient < max_index ? quotient : max_index;
+    increment -= cur_index * index_strides[real_index];
     indices[real_index] = cur_index;
   }
 
@@ -399,6 +399,11 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
     RAFT_EXPECTS(src.extent(i) == dst.extent(i), "Must copy between mdspans of the same shape");
   }
 
+  // Dry-run: do NOT guard here. The use_intermediate_src/use_intermediate_dst
+  // branches allocate a real device_mdarray that must be tracked (Rule 1), then
+  // recurse into detail::copy, whose leaf branches self-guard the actual data
+  // movement. Only the leaf branches below (which perform CUDA/host copies onto
+  // the shared probe buffer and allocate nothing) are guarded individually.
   if constexpr (config::use_intermediate_src) {
 #ifndef RAFT_DISABLE_CUDA
     // Copy to intermediate source on device, then perform necessary
@@ -432,6 +437,7 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
     throw(raft::non_cuda_build_error("Copying from device in non-CUDA build"));
 #endif
   } else if constexpr (config::can_use_raft_copy) {
+    if (resource::get_dry_run_flag(res)) { return; }
 #ifndef RAFT_DISABLE_CUDA
     raft::copy(dst.data_handle(), src.data_handle(), dst.size(), resource::get_cuda_stream(res));
 #else
@@ -439,6 +445,7 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
     throw(raft::non_cuda_build_error("Copying to from or on device in non-CUDA build"));
 #endif
   } else if constexpr (config::can_use_cublas) {
+    if (resource::get_dry_run_flag(res)) { return; }
 #ifndef RAFT_DISABLE_CUDA
     if constexpr (!((std::is_same_v<typename std::remove_reference_t<DstType>::value_type, half>) &&
                     (std::is_same_v<typename std::remove_reference_t<SrcType>::value_type,
@@ -503,7 +510,12 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
       raft::ceildiv(typename config::index_type(dst.size()),
                     typename config::index_type(mdspan_copy_tile_elems)));
     auto constexpr const threads = dim3{mdspan_copy_tile_dim, mdspan_copy_tile_dim, 1};
-    mdspan_copy_kernel<<<blocks, threads, 0, resource::get_cuda_stream(res)>>>(dst, src);
+    raft::launch_kernel(res,
+                        blocks,
+                        threads,
+                        mdspan_copy_kernel<typename config::dst_type, typename config::src_type>,
+                        dst,
+                        src);
 #else
     // Should never actually reach this because of enable_ifs. Included for
     // safety.
@@ -512,8 +524,10 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
       "raft/core/copy.cuh and include the header in a .cu file");
 #endif
   } else if constexpr (config::can_use_std_copy) {
+    if (resource::get_dry_run_flag(res)) { return; }
     std::copy(src.data_handle(), src.data_handle() + dst.size(), dst.data_handle());
   } else {
+    if (resource::get_dry_run_flag(res)) { return; }
     // TODO(wphicks): Make the following cache-oblivious and add SIMD support
     auto indices = std::array<typename config::index_type, config::dst_rank>{};
     for (auto i = std::size_t{}; i < dst.size(); ++i) {

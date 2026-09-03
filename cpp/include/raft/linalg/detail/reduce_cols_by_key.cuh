@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <stdlib.h>
 
@@ -117,13 +118,21 @@ void reduce_cols_by_key(const T* data,
     int target_nblks  = 4 * n_sm;
     int max_nblks     = raft::ceildiv<IdxType>(nrows * ncols, TPB);
     int nblks         = std::min(target_nblks, max_nblks);
-    reduce_cols_by_key_cached_kernel<<<nblks, TPB, cache_size, stream>>>(
-      data, keys, out, nrows, ncols, nkeys);
+    raft::launch_kernel({stream, cache_size},
+                        nblks,
+                        TPB,
+                        reduce_cols_by_key_cached_kernel,
+                        data,
+                        keys,
+                        out,
+                        nrows,
+                        ncols,
+                        nkeys);
   } else {
     constexpr int TPB = 256;
     int nblks         = raft::ceildiv<IdxType>(nrows * ncols, TPB);
-    reduce_cols_by_key_direct_kernel<<<nblks, TPB, 0, stream>>>(
-      data, keys, out, nrows, ncols, nkeys);
+    raft::launch_kernel(
+      stream, nblks, TPB, reduce_cols_by_key_direct_kernel, data, keys, out, nrows, ncols, nkeys);
   }
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 }

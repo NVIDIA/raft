@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,13 +12,16 @@
 #include "rng_device.cuh"
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/random/rng_state.hpp>
 #include <raft/util/cuda_utils.cuh>
-#include <raft/util/detail/cub_wrappers.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/scatter.cuh>
 
 #include <rmm/device_uvector.hpp>
+
+#include <cub/device/device_radix_sort.cuh>
 
 #include <curand_kernel.h>
 
@@ -235,13 +238,29 @@ class RngImpl {
   {
     switch (state.type) {
       case GenPhilox:
-        fillKernel<OutType, LenType, PhiloxGenerator, ITEMS_PER_CALL>
-          <<<nBlocks, nThreads, 0, stream>>>(
-            state.seed, state.base_subsequence, 0, ptr, len, params);
+        raft::launch_kernel(
+          stream,
+          nBlocks,
+          nThreads,
+          fillKernel<OutType, LenType, PhiloxGenerator, ITEMS_PER_CALL, ParamType>,
+          state.seed,
+          state.base_subsequence,
+          0,
+          ptr,
+          len,
+          params);
         break;
       case GenPC:
-        fillKernel<OutType, LenType, PCGenerator, ITEMS_PER_CALL><<<nBlocks, nThreads, 0, stream>>>(
-          state.seed, state.base_subsequence, 0, ptr, len, params);
+        raft::launch_kernel(stream,
+                            nBlocks,
+                            nThreads,
+                            fillKernel<OutType, LenType, PCGenerator, ITEMS_PER_CALL, ParamType>,
+                            state.seed,
+                            state.base_subsequence,
+                            0,
+                            ptr,
+                            len,
+                            params);
         break;
       default: break;
     }
@@ -272,13 +291,37 @@ class RngImpl {
     SamplingParams<WeightsT, IdxT> params;
     params.inIdxPtr = inIdxPtr;
     params.wts      = wts;
+
+    // Query workspace size for sortPairs before dry-run check to track allocation
+    size_t workspace_size = 0;
+    cub::DeviceRadixSort::SortPairs(nullptr,
+                                    workspace_size,
+                                    expWts.data(),
+                                    sortedWts.data(),
+                                    inIdxPtr,
+                                    outIdxBuff.data(),
+                                    (int)len,
+                                    0,
+                                    sizeof(WeightsT) * 8,
+                                    stream);
+    rmm::device_uvector<char> workspace(workspace_size, stream);
+
+    if (resource::get_dry_run_flag(handle)) { return; }
     kernel_dispatch<WeightsT, IdxT, 1, SamplingParams<WeightsT, IdxT>>(
       expWts.data(), len, stream, params);
     ///@todo: use a more efficient partitioning scheme instead of full sort
     // sort the array and pick the top sampledLen items
     IdxT* outIdxPtr = outIdxBuff.data();
-    rmm::device_uvector<char> workspace(0, stream);
-    sortPairs(workspace, expWts.data(), sortedWts.data(), inIdxPtr, outIdxPtr, (int)len, stream);
+    cub::DeviceRadixSort::SortPairs(workspace.data(),
+                                    workspace_size,
+                                    expWts.data(),
+                                    sortedWts.data(),
+                                    inIdxPtr,
+                                    outIdxPtr,
+                                    (int)len,
+                                    0,
+                                    sizeof(WeightsT) * 8,
+                                    stream);
     if (outIdx != nullptr) {
       RAFT_CUDA_TRY(cudaMemcpyAsync(
         outIdx, outIdxPtr, sizeof(IdxT) * sampledLen, cudaMemcpyDeviceToDevice, stream));

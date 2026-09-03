@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,7 +11,9 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/exec_policy.hpp>
 
@@ -88,7 +90,6 @@ void transpose_half(raft::resources const& handle,
                     const IndexType stride_out = 1)
 {
   if (n_cols == 0 || n_rows == 0) return;
-  auto stream = resource::get_cuda_stream(handle);
 
   int dev_id, sm_count;
 
@@ -117,14 +118,28 @@ void transpose_half(raft::resources const& handle,
   dim3 grids(adjusted_grid_x, adjusted_grid_y);
 
   if (stride_in > 1 || stride_out > 1) {
-    transpose_half_kernel<IndexType, block_dim_x, block_dim_y>
-      <<<grids, blocks, 0, stream>>>(n_rows, n_cols, in, out, stride_in, stride_out);
+    raft::launch_kernel(handle,
+                        grids,
+                        blocks,
+                        transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
+                        n_rows,
+                        n_cols,
+                        in,
+                        out,
+                        stride_in,
+                        stride_out);
   } else {
-    transpose_half_kernel<IndexType, block_dim_x, block_dim_y>
-      <<<grids, blocks, 0, stream>>>(n_rows, n_cols, in, out, n_cols, n_rows);
+    raft::launch_kernel(handle,
+                        grids,
+                        blocks,
+                        transpose_half_kernel<IndexType, block_dim_x, block_dim_y>,
+                        n_rows,
+                        n_cols,
+                        in,
+                        out,
+                        n_cols,
+                        n_rows);
   }
-
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
 }
 
 template <typename math_t>
@@ -135,6 +150,7 @@ void transpose(raft::resources const& handle,
                int n_cols,
                cudaStream_t stream)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   int out_n_rows = n_cols;
   int out_n_cols = n_rows;
 
@@ -189,6 +205,7 @@ void transpose_row_major_impl(
   raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
   raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   auto out_n_rows   = in.extent(1);
   auto out_n_cols   = in.extent(0);
   T constexpr kOne  = 1;
@@ -231,6 +248,7 @@ void transpose_col_major_impl(
   raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
   raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   auto out_n_rows   = in.extent(1);
   auto out_n_cols   = in.extent(0);
   T constexpr kOne  = 1;

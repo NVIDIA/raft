@@ -11,6 +11,7 @@
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 #include <sys/timeb.h>
@@ -124,15 +125,13 @@ void normalize(OutT* theta,
 {
   // one threadblock with 256 threads is more than enough as the 'scale' parameters
   // won't be that large!
-  normalize_kernel<OutT, InT><<<1, 256, 0, stream>>>(theta, in_vals, max_scale, r_scale, c_scale);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(
+    stream, 1, 256, normalize_kernel<OutT, InT>, theta, in_vals, max_scale, r_scale, c_scale);
   if (handle_rect) {
-    handle_rect_kernel<<<1, 256, 0, stream>>>(theta, max_scale, r_scale, c_scale);
-    RAFT_CUDA_TRY(cudaGetLastError());
+    raft::launch_kernel(stream, 1, 256, handle_rect_kernel, theta, max_scale, r_scale, c_scale);
   }
   if (!theta_array) {
-    theta_kernel<<<1, 256, 0, stream>>>(theta, max_scale, r_scale, c_scale);
-    RAFT_CUDA_TRY(cudaGetLastError());
+    raft::launch_kernel(stream, 1, 256, theta_kernel, theta, max_scale, r_scale, c_scale);
   }
 }
 
@@ -214,9 +213,16 @@ class RmatGenTest : public ::testing::TestWithParam<RmatInputs> {
   {
     rmm::device_uvector<int> hist{theta.size(), stream};
     RAFT_CUDA_TRY(cudaMemsetAsync(hist.data(), 0, hist.size() * sizeof(int), stream));
-    compute_hist<<<raft::ceildiv<size_t>(out.size() / 2, 256), 256, 0, stream>>>(
-      hist.data(), out.data(), out.size(), max_scale, params.r_scale, params.c_scale);
-    RAFT_CUDA_TRY(cudaGetLastError());
+    raft::launch_kernel(stream,
+                        raft::ceildiv<size_t>(out.size() / 2, 256),
+                        256,
+                        compute_hist,
+                        hist.data(),
+                        out.data(),
+                        out.size(),
+                        max_scale,
+                        params.r_scale,
+                        params.c_scale);
     rmm::device_uvector<float> computed_theta{theta.size(), stream};
     normalize<float, int>(computed_theta.data(),
                           hist.data(),
@@ -319,9 +325,16 @@ class RmatGenMdspanTest : public ::testing::TestWithParam<RmatInputs> {
   {
     rmm::device_uvector<int> hist{theta.size(), stream};
     RAFT_CUDA_TRY(cudaMemsetAsync(hist.data(), 0, hist.size() * sizeof(int), stream));
-    compute_hist<<<raft::ceildiv<size_t>(out.size() / 2, 256), 256, 0, stream>>>(
-      hist.data(), out.data(), out.size(), max_scale, params.r_scale, params.c_scale);
-    RAFT_CUDA_TRY(cudaGetLastError());
+    raft::launch_kernel(stream,
+                        raft::ceildiv<size_t>(out.size() / 2, 256),
+                        256,
+                        compute_hist,
+                        hist.data(),
+                        out.data(),
+                        out.size(),
+                        max_scale,
+                        params.r_scale,
+                        params.c_scale);
     rmm::device_uvector<float> computed_theta{theta.size(), stream};
     normalize<float, int>(computed_theta.data(),
                           hist.data(),

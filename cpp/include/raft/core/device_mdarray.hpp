@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/core/device_container_policy.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/mdarray.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <rmm/resource_ref.hpp>
@@ -149,7 +150,9 @@ auto make_device_scalar(raft::resources const& handle)
 
 /**
  * @brief Create a device scalar from v
- * (async copy in the resource-provided stream).
+ *
+ * @note This function performs a H2D copy and implicitly synchronizes the resource's stream,
+ *       which impacts performance when there's unfinished work in the stream.
  *
  * @tparam ElementType the data type of the scalar element
  * @tparam IndexType the index type of the extents
@@ -164,7 +167,9 @@ auto make_device_scalar(raft::resources const& handle, ElementType const& v)
   using policy_t = typename device_scalar<ElementType, IndexType>::container_policy_type;
   policy_t policy{};
   auto scalar = device_scalar<ElementType, IndexType>{handle, extents, policy};
-  scalar(0)   = v;
+  // No real storage in dry-run mode (as with every make_*_mdarray factory), so skip the
+  // async copy: the backing buffer aliases the shared probe and must not be written.
+  if (!resource::get_dry_run_flag(handle)) { scalar(0) = v; }
   return scalar;
 }
 

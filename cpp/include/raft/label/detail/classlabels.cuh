@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -30,15 +31,17 @@ namespace detail {
  * from this array.
  *
  * \tparam value_t numeric type of the arrays with class labels
- * \param [in] y device array of labels, size [n]
- * \param [in] n number of labels
+ * \param [in] dry_run if true, perform allocations but skip CUDA work
  * \param [out] unique device array of unique labels, unallocated on entry,
  *   on exit it has size [n_unique]
- * \param [out] n_unique number of unique labels
+ * \param [in] y device array of labels, size [n]
+ * \param [in] n number of labels
  * \param [in] stream cuda stream
+ * \return number of unique labels (upper bound when dry_run is true)
  */
 template <typename value_t>
-int getUniquelabels(rmm::device_uvector<value_t>& unique, value_t* y, size_t n, cudaStream_t stream)
+int getUniquelabels(
+  bool dry_run, rmm::device_uvector<value_t>& unique, value_t* y, size_t n, cudaStream_t stream)
 {
   rmm::device_scalar<int> d_num_selected(stream);
   rmm::device_uvector<value_t> workspace(n, stream);
@@ -53,6 +56,11 @@ int getUniquelabels(rmm::device_uvector<value_t>& unique, value_t* y, size_t n, 
     NULL, bytes2, workspace.data(), workspace.data(), d_num_selected.data(), n, stream);
   bytes = std::max(bytes, bytes2);
   rmm::device_uvector<char> cub_storage(bytes, stream);
+
+  if (dry_run) {
+    if (unique.size() < n) { unique = rmm::device_uvector<value_t>(n, stream); }
+    return static_cast<int>(n);
+  }
 
   // Select Unique classes
   cub::DeviceRadixSort::SortKeys(
@@ -71,6 +79,26 @@ int getUniquelabels(rmm::device_uvector<value_t>& unique, value_t* y, size_t n, 
   raft::copy(unique.data(), workspace.data(), n_unique, stream);
 
   return n_unique;
+}
+
+/**
+ * Get unique class labels.
+ *
+ * The y array is assumed to store class labels. The unique values are selected
+ * from this array.
+ *
+ * \tparam value_t numeric type of the arrays with class labels
+ * \param [out] unique device array of unique labels, unallocated on entry,
+ *   on exit it has size [n_unique]
+ * \param [in] y device array of labels, size [n]
+ * \param [in] n number of labels
+ * \param [in] stream cuda stream
+ * \return number of unique labels
+ */
+template <typename value_t>
+int getUniquelabels(rmm::device_uvector<value_t>& unique, value_t* y, size_t n, cudaStream_t stream)
+{
+  return getUniquelabels(false, unique, y, n, stream);
 }
 
 /**
@@ -163,8 +191,17 @@ void make_monotonic(
   rmm::device_uvector<Type> map_ids(0, stream);
   int num_clusters = getUniquelabels(map_ids, in, N, stream);
 
-  map_label_kernel<Type, TPB_X><<<blocks, threads, 0, stream>>>(
-    map_ids.data(), num_clusters, in, out, N, filter_op, zero_based);
+  raft::launch_kernel(stream,
+                      blocks,
+                      threads,
+                      map_label_kernel<Type, TPB_X, Lambda>,
+                      map_ids.data(),
+                      num_clusters,
+                      in,
+                      out,
+                      N,
+                      filter_op,
+                      zero_based);
 }
 
 /**

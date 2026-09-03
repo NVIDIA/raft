@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/sparse/detail/utils.h>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -136,18 +137,32 @@ void weak_cc_batched(Index_* labels,
   bool host_m;
 
   Index_ MAX_LABEL = std::numeric_limits<Index_>::max();
-  weak_cc_init_all_kernel<Index_, TPB_X>
-    <<<raft::ceildiv(N, Index_(TPB_X)), TPB_X, 0, stream>>>(labels, N, MAX_LABEL, filter_op);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      raft::ceildiv(N, Index_(TPB_X)),
+                      TPB_X,
+                      weak_cc_init_all_kernel<Index_, TPB_X>,
+                      labels,
+                      N,
+                      MAX_LABEL,
+                      filter_op);
 
   int n_iters = 0;
   do {
     RAFT_CUDA_TRY(cudaMemsetAsync(state->m, false, sizeof(bool), stream));
 
-    weak_cc_label_device<Index_, TPB_X>
-      <<<raft::ceildiv(batch_size, Index_(TPB_X)), TPB_X, 0, stream>>>(
-        labels, row_ind, row_ind_ptr, nnz, state->m, start_vertex_id, batch_size, N, filter_op);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(stream,
+                        raft::ceildiv(batch_size, Index_(TPB_X)),
+                        TPB_X,
+                        weak_cc_label_device<Index_, TPB_X>,
+                        labels,
+                        row_ind,
+                        row_ind_ptr,
+                        nnz,
+                        state->m,
+                        start_vertex_id,
+                        batch_size,
+                        N,
+                        filter_op);
 
     //** Updating m *
     raft::update_host(&host_m, state->m, 1, stream);

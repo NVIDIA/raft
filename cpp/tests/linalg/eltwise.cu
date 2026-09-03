@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/eltwise.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <gtest/gtest.h>
 
@@ -29,8 +30,7 @@ void naiveScale(Type* out, const Type* in, Type scalar, int len, cudaStream_t st
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveScaleKernel<Type><<<nblks, TPB, 0, stream>>>(out, in, scalar, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naiveScaleKernel<Type>, out, in, scalar, len);
 }
 
 template <typename T>
@@ -116,8 +116,7 @@ void naiveAdd(Type* out, const Type* in1, const Type* in2, int len, cudaStream_t
 {
   static const int TPB = 64;
   int nblks            = raft::ceildiv(len, TPB);
-  naiveAddKernel<Type><<<nblks, TPB, 0, stream>>>(out, in1, in2, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream, nblks, TPB, naiveAddKernel<Type>, out, in1, in2, len);
 }
 
 template <typename T>

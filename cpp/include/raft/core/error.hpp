@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,9 +13,12 @@
 #define ENABLE_COLLECT_CALLSTACK
 #endif
 
+#include <cstdarg>
+#include <cstddef>
 #include <cstdio>
 #include <iostream>
 #include <memory>
+#include <source_location>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -28,6 +31,51 @@
 #endif
 
 namespace RAFT_EXPORT raft {
+
+namespace detail {
+
+/**
+ * @brief Write into @p out the message described by @p location, @p location_prefix and @p fmt.
+ *
+ * Does not throw, so that the caller can `va_end` its arguments before reporting a failure.
+ *
+ * @param[out] out receives the formatted message; untouched on failure
+ * @param[in] location the call site to blame
+ * @param[in] location_prefix text placed in front of the location, e.g. "RAFT failure at "
+ * @param[in] fmt printf-style format string of the reason
+ * @param[in] args arguments of @p fmt, started and ended by the caller
+ * @return whether the message could be formatted
+ */
+[[nodiscard]] inline auto try_vformat_error_message(std::string& out,
+                                                    std::source_location location,
+                                                    char const* location_prefix,
+                                                    char const* fmt,
+                                                    std::va_list args) -> bool
+{
+  char const* location_fmt = "file=%s line=%d function=%s: ";
+  char const* file         = location.file_name();
+  auto line                = static_cast<int>(location.line());
+  char const* function     = location.function_name();
+
+  std::va_list args_measure;
+  va_copy(args_measure, args);
+  int size1 = std::snprintf(nullptr, 0, "%s", location_prefix);
+  int size2 = std::snprintf(nullptr, 0, location_fmt, file, line, function);
+  int size3 = std::vsnprintf(nullptr, 0, fmt, args_measure);
+  va_end(args_measure);
+  if (size1 < 0 || size2 < 0 || size3 < 0) { return false; }
+
+  auto size = static_cast<std::size_t>(size1 + size2 + size3 + 1); /* +1 for final '\0' */
+  std::vector<char> buf(size);
+  std::snprintf(buf.data(), static_cast<std::size_t>(size1) + 1, "%s", location_prefix);
+  std::snprintf(
+    buf.data() + size1, static_cast<std::size_t>(size2) + 1, location_fmt, file, line, function);
+  std::vsnprintf(buf.data() + size1 + size2, static_cast<std::size_t>(size3) + 1, fmt, args);
+  out.assign(buf.data(), buf.data() + size - 1); /* -1 to remove final '\0' */
+  return true;
+}
+
+}  // namespace detail
 
 /**
  * @defgroup error_handling Exceptions & Error Handling
@@ -150,8 +198,76 @@ struct non_cuda_build_error : public raft::exception {
 };
 
 /**
+ * @brief Format an error message that blames the call site given by @p location.
+ *
+ * A function that reports errors on behalf of its caller takes a `std::source_location` defaulted
+ * to `std::source_location::current()` and forwards it here, so that the message points at the
+ * caller rather than at the implementation:
+ * @code
+ *   void sync(cudaStream_t stream, std::source_location loc = std::source_location::current())
+ *   {
+ *     auto status = cudaStreamSynchronize(stream);
+ *     if (status != cudaSuccess) {
+ *       throw raft::cuda_error(raft::format_error_message(
+ *         loc, "CUDA error encountered at: ", "Reason=%s", cudaGetErrorString(status)));
+ *     }
+ *   }
+ * @endcode
+ *
+ * The enclosing function is reported next to the file and the line, since it names the template
+ * instantiation that the file and the line alone cannot.
+ *
+ * @param[in] location the call site to blame
+ * @param[in] location_prefix text placed in front of the location, e.g. "RAFT failure at "
+ * @param[in] fmt printf-style format string describing the reason of the error
+ * @param[in] ... arguments of @p fmt; only types that may be passed through `...` are allowed
+ * @return the message, of the form "<prefix>file=<file> line=<line> function=<function>: <reason>"
+ */
+[[nodiscard]] RAFT_FORMAT_PRINTF(3, 4) inline auto format_error_message(
+  std::source_location location, char const* location_prefix, char const* fmt, ...) -> std::string
+{
+  std::string msg{};
+  std::va_list args;
+  va_start(args, fmt);
+  bool const formatted =
+    detail::try_vformat_error_message(msg, location, location_prefix, fmt, args);
+  va_end(args);
+  if (!formatted) { throw raft::exception("Error in snprintf, cannot handle raft exception."); }
+  return msg;
+}
+
+/**
  * @}
  */
+
+namespace detail {
+
+/**
+ * @brief The implementation of the deprecated SET_ERROR_MSG macro.
+ *
+ * Same as raft::format_error_message; exists as a separate entry point only to carry the
+ * deprecation warning of the macro to its call sites.
+ */
+#ifndef RAFT_HIDE_DEPRECATION_WARNINGS
+[[deprecated(
+  "SET_ERROR_MSG is deprecated, use raft::format_error_message("
+  "std::source_location::current(), location_prefix, fmt, ...) instead")]]
+#endif
+RAFT_FORMAT_PRINTF(3, 4) inline auto format_error_message_deprecated(std::source_location location,
+                                                                     char const* location_prefix,
+                                                                     char const* fmt,
+                                                                     ...) -> std::string
+{
+  std::string msg{};
+  std::va_list args;
+  va_start(args, fmt);
+  bool const formatted = try_vformat_error_message(msg, location, location_prefix, fmt, args);
+  va_end(args);
+  if (!formatted) { throw raft::exception("Error in snprintf, cannot handle raft exception."); }
+  return msg;
+}
+
+}  // namespace detail
 
 }  // namespace RAFT_EXPORT raft
 
@@ -186,21 +302,14 @@ struct non_cuda_build_error : public raft::exception {
 /**
  * Macro to append error message to first argument.
  * This should only be called in contexts where it is OK to throw exceptions!
+ *
+ * @deprecated use raft::format_error_message instead, which does not need a macro to know the call
+ * site and can be forwarded a location captured elsewhere.
  */
-#define SET_ERROR_MSG(msg, location_prefix, fmt, ...)                                            \
-  do {                                                                                           \
-    int size1 = std::snprintf(nullptr, 0, "%s", location_prefix);                                \
-    int size2 = std::snprintf(nullptr, 0, "file=%s line=%d: ", __FILE__, __LINE__);              \
-    int size3 = std::snprintf(nullptr, 0, fmt, ##__VA_ARGS__);                                   \
-    if (size1 < 0 || size2 < 0 || size3 < 0)                                                     \
-      throw raft::exception("Error in snprintf, cannot handle raft exception.");                 \
-    auto size = size1 + size2 + size3 + 1; /* +1 for final '\0' */                               \
-    std::vector<char> buf(size);                                                                 \
-    std::snprintf(buf.data(), size1 + 1 /* +1 for '\0' */, "%s", location_prefix);               \
-    std::snprintf(                                                                               \
-      buf.data() + size1, size2 + 1 /* +1 for '\0' */, "file=%s line=%d: ", __FILE__, __LINE__); \
-    std::snprintf(buf.data() + size1 + size2, size3 + 1 /* +1 for '\0' */, fmt, ##__VA_ARGS__);  \
-    msg += std::string(buf.data(), buf.data() + size - 1); /* -1 to remove final '\0' */         \
+#define SET_ERROR_MSG(msg, location_prefix, fmt, ...)                        \
+  do {                                                                       \
+    msg += raft::detail::format_error_message_deprecated(                    \
+      std::source_location::current(), location_prefix, fmt, ##__VA_ARGS__); \
   } while (0)
 
 /**
@@ -216,13 +325,12 @@ struct non_cuda_build_error : public raft::exception {
  * optional format tagas
  * @throw raft::logic_error if the condition evaluates to false.
  */
-#define RAFT_EXPECTS(cond, fmt, ...)                              \
-  do {                                                            \
-    if (!(cond)) {                                                \
-      std::string msg{};                                          \
-      SET_ERROR_MSG(msg, "RAFT failure at ", fmt, ##__VA_ARGS__); \
-      throw raft::logic_error(msg);                               \
-    }                                                             \
+#define RAFT_EXPECTS(cond, fmt, ...)                                               \
+  do {                                                                             \
+    if (!(cond)) {                                                                 \
+      throw raft::logic_error(raft::format_error_message(                          \
+        std::source_location::current(), "RAFT failure at ", fmt, ##__VA_ARGS__)); \
+    }                                                                              \
   } while (0)
 
 /**
@@ -232,11 +340,10 @@ struct non_cuda_build_error : public raft::exception {
  * optional format tagas
  * @throw always throws raft::logic_error
  */
-#define RAFT_FAIL(fmt, ...)                                     \
-  do {                                                          \
-    std::string msg{};                                          \
-    SET_ERROR_MSG(msg, "RAFT failure at ", fmt, ##__VA_ARGS__); \
-    throw raft::logic_error(msg);                               \
+#define RAFT_FAIL(fmt, ...)                                                      \
+  do {                                                                           \
+    throw raft::logic_error(raft::format_error_message(                          \
+      std::source_location::current(), "RAFT failure at ", fmt, ##__VA_ARGS__)); \
   } while (0)
 
 /**

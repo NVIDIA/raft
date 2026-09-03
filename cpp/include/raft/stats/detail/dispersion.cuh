@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/linalg/eltwise.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -88,7 +89,8 @@ RAFT_KERNEL dispersionKernel(DataT* result,
  * @return the cluster dispersion value
  */
 template <typename DataT, typename IdxT = int, int TPB = 256>
-DataT dispersion(const DataT* centroids,
+DataT dispersion(bool dry_run,
+                 const DataT* centroids,
                  const IdxT* clusterSizes,
                  DataT* globalCentroid,
                  IdxT nClusters,
@@ -96,33 +98,46 @@ DataT dispersion(const DataT* centroids,
                  IdxT dim,
                  cudaStream_t stream)
 {
+  rmm::device_uvector<DataT> mean(globalCentroid == nullptr ? dim : 0, stream);
+  rmm::device_uvector<DataT> result(1, stream);
+  DataT* mu = globalCentroid;
+  if (globalCentroid == nullptr) { mu = mean.data(); }
+
+  if (dry_run) { return DataT{0}; }
+
   static const int RowsPerThread = 4;
   static const int ColsPerBlk    = 32;
   static const int RowsPerBlk    = (TPB / ColsPerBlk) * RowsPerThread;
   dim3 grid(raft::ceildiv(nPoints, (IdxT)RowsPerBlk), raft::ceildiv(dim, (IdxT)ColsPerBlk));
-  rmm::device_uvector<DataT> mean(0, stream);
-  rmm::device_uvector<DataT> result(1, stream);
-  DataT* mu = globalCentroid;
-  if (globalCentroid == nullptr) {
-    mean.resize(dim, stream);
-    mu = mean.data();
-  }
   RAFT_CUDA_TRY(cudaMemsetAsync(mu, 0, sizeof(DataT) * dim, stream));
   RAFT_CUDA_TRY(cudaMemsetAsync(result.data(), 0, sizeof(DataT), stream));
-  weightedMeanKernel<DataT, IdxT, TPB, ColsPerBlk>
-    <<<grid, TPB, 0, stream>>>(mu, centroids, clusterSizes, dim, nClusters);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(stream,
+                      grid,
+                      TPB,
+                      weightedMeanKernel<DataT, IdxT, TPB, ColsPerBlk>,
+                      mu,
+                      centroids,
+                      clusterSizes,
+                      dim,
+                      nClusters);
   DataT ratio = DataT(1) / DataT(nPoints);
   raft::linalg::scalarMultiply(mu, mu, ratio, dim, stream);
   // finally, compute the dispersion
   constexpr int ItemsPerThread = 4;
   int nblks                    = raft::ceildiv<int>(dim * nClusters, TPB * ItemsPerThread);
-  dispersionKernel<DataT, IdxT, TPB>
-    <<<nblks, TPB, 0, stream>>>(result.data(), centroids, clusterSizes, mu, dim, nClusters);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(stream,
+                      nblks,
+                      TPB,
+                      dispersionKernel<DataT, IdxT, TPB>,
+                      result.data(),
+                      centroids,
+                      clusterSizes,
+                      mu,
+                      dim,
+                      nClusters);
   DataT h_result;
   raft::update_host(&h_result, result.data(), 1, stream);
-  raft::interruptible::synchronize(stream);
+  if (!dry_run) { raft::interruptible::synchronize(stream); }
   return sqrt(h_result);
 }
 

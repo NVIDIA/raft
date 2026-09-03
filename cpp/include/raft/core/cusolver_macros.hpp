@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -78,19 +78,18 @@ inline const char* cusolver_error_to_string(cusolverStatus_t err)
  * Invokes a cuSOLVER runtime API function call, if the call does not return
  * CUSolver_STATUS_SUCCESS, throws an exception detailing the cuSOLVER error that occurred
  */
-#define RAFT_CUSOLVER_TRY(call)                                              \
-  do {                                                                       \
-    cusolverStatus_t const status = (call);                                  \
-    if (CUSOLVER_STATUS_SUCCESS != status) {                                 \
-      std::string msg{};                                                     \
-      SET_ERROR_MSG(msg,                                                     \
-                    "cuSOLVER error encountered at: ",                       \
-                    "call='%s', Reason=%d:%s",                               \
-                    #call,                                                   \
-                    status,                                                  \
-                    raft::linalg::detail::cusolver_error_to_string(status)); \
-      throw raft::cusolver_error(msg);                                       \
-    }                                                                        \
+#define RAFT_CUSOLVER_TRY(call)                                                              \
+  do {                                                                                       \
+    cusolverStatus_t const status = (call);                                                  \
+    if (CUSOLVER_STATUS_SUCCESS != status) {                                                 \
+      throw raft::cusolver_error(                                                            \
+        raft::format_error_message(std::source_location::current(),                          \
+                                   "cuSOLVER error encountered at: ",                        \
+                                   "call='%s', Reason=%d:%s",                                \
+                                   #call,                                                    \
+                                   status,                                                   \
+                                   raft::linalg::detail::cusolver_error_to_string(status))); \
+    }                                                                                        \
   } while (0)
 
 // FIXME: remove after consumer rename

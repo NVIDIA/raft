@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/sparse/detail/utils.h>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/device_atomics.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda_runtime.h>
 
@@ -50,8 +51,7 @@ void coo_degree(const T* rows, nnz_t nnz, outT* results, cudaStream_t stream)
   dim3 grid_rc(raft::ceildiv((nnz_t)nnz, (nnz_t)TPB_X), 1, 1);
   dim3 blk_rc(TPB_X, 1, 1);
 
-  coo_degree_kernel<TPB_X><<<grid_rc, blk_rc, 0, stream>>>(rows, nnz, results);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(stream, grid_rc, blk_rc, coo_degree_kernel<TPB_X>, rows, nnz, results);
 }
 
 template <int TPB_X = 64, typename T, typename idx_t, typename nnz_t>
@@ -86,8 +86,15 @@ void coo_degree_scalar(
 {
   dim3 grid_rc(raft::ceildiv(nnz, static_cast<nnz_t>(TPB_X)), 1, 1);
   dim3 blk_rc(TPB_X, 1, 1);
-  coo_degree_scalar_kernel<TPB_X, T, idx_t, outT, nnz_t>
-    <<<grid_rc, blk_rc, 0, stream>>>(rows, vals, nnz, scalar, results);
+  raft::launch_kernel(stream,
+                      grid_rc,
+                      blk_rc,
+                      coo_degree_scalar_kernel<TPB_X, T, idx_t, outT, nnz_t>,
+                      rows,
+                      vals,
+                      nnz,
+                      scalar,
+                      results);
 }
 
 /**
@@ -105,8 +112,14 @@ void coo_degree_nz(const idx_t* rows, const T* vals, nnz_t nnz, idx_t* results, 
 {
   dim3 grid_rc(raft::ceildiv(nnz, TPB_X), 1, 1);
   dim3 blk_rc(TPB_X, 1, 1);
-  coo_degree_nz_kernel<TPB_X, T, idx_t, nnz_t>
-    <<<grid_rc, blk_rc, 0, stream>>>(rows, vals, nnz, results);
+  raft::launch_kernel(stream,
+                      grid_rc,
+                      blk_rc,
+                      coo_degree_nz_kernel<TPB_X, T, idx_t, nnz_t>,
+                      rows,
+                      vals,
+                      nnz,
+                      results);
 }
 
 };  // end NAMESPACE detail

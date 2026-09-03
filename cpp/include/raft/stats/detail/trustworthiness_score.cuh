@@ -1,13 +1,16 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/distance/distance.cuh>
 #include <raft/matrix/col_wise_sort.cuh>
 #include <raft/spatial/knn/knn.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
@@ -153,48 +156,35 @@ double trustworthiness_score(const raft::resources& h,
     raft::distance::pairwise_distance(
       h, &X[(n - toDo) * m], X, X_dist.data(), curBatchSize, n, m, distance_type);
 
-    size_t colSortWorkspaceSize = 0;
-    bool bAllocWorkspace        = false;
+    // Use dry-run compliant handle-based overload that manages workspace internally
+    auto dist_view = raft::make_device_matrix_view<const math_t, int, raft::row_major>(
+      X_dist.data(), curBatchSize, n);
+    auto ind_view =
+      raft::make_device_matrix_view<int, int, raft::row_major>(X_ind.data(), curBatchSize, n);
+    raft::matrix::sort_cols_per_row(h, dist_view, ind_view, std::nullopt);
 
-    raft::matrix::sort_cols_per_row(X_dist.data(),
-                                    X_ind.data(),
-                                    curBatchSize,
-                                    n,
-                                    bAllocWorkspace,
-                                    nullptr,
-                                    colSortWorkspaceSize,
-                                    stream);
-
-    if (bAllocWorkspace) {
-      rmm::device_uvector<char> sortColsWorkspace(colSortWorkspaceSize, stream);
-
-      raft::matrix::sort_cols_per_row(X_dist.data(),
-                                      X_ind.data(),
-                                      curBatchSize,
-                                      n,
-                                      bAllocWorkspace,
-                                      sortColsWorkspace.data(),
-                                      colSortWorkspaceSize,
-                                      stream);
-    }
+    // The workspace won't grow anymore
+    if (resource::get_dry_run_flag(h)) { return 0.0; }
 
     int work     = curBatchSize * n;
     int n_blocks = raft::ceildiv(work, N_THREADS);
-    build_lookup_table<<<n_blocks, N_THREADS, 0, stream>>>(
-      lookup_table.data(), X_ind.data(), n, work);
+    raft::launch_kernel(
+      h, n_blocks, N_THREADS, build_lookup_table, lookup_table.data(), X_ind.data(), n, work);
 
     RAFT_CUDA_TRY(cudaMemsetAsync(t_dbuf.data(), 0, sizeof(double), stream));
 
     work     = curBatchSize * (n_neighbors + 1);
     n_blocks = raft::ceildiv(work, N_THREADS);
-    compute_rank<<<n_blocks, N_THREADS, 0, stream>>>(
-      t_dbuf.data(),
-      lookup_table.data(),
-      &emb_ind.data()[(n - toDo) * (n_neighbors + 1)],
-      n,
-      n_neighbors + 1,
-      work);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(h,
+                        n_blocks,
+                        N_THREADS,
+                        compute_rank,
+                        t_dbuf.data(),
+                        lookup_table.data(),
+                        &emb_ind.data()[(n - toDo) * (n_neighbors + 1)],
+                        n,
+                        n_neighbors + 1,
+                        work);
 
     t += t_dbuf.value(stream);
 

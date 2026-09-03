@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -13,6 +13,8 @@
 
 #include <iostream>
 #include <regex>
+#include <source_location>
+#include <string>
 #include <vector>
 
 namespace raft {
@@ -64,18 +66,37 @@ TEST(Raft, Utils)
                                                            << "expected regex:'" << re_exp << "'";
   }
 
-  // Now we test SET_ERROR_MSG instead of THROW
+  // Now we test raft::format_error_message instead of THROW
+  auto const loc = std::source_location::current();
   std::string msg{"prefix:"};
-  ASSERT_NO_THROW(SET_ERROR_MSG(msg, "location prefix:", test_format_c, 123));
+  msg += raft::format_error_message(loc, "location prefix:", test_format_c, 123);
 
   std::string re_exp{"^prefix:location prefix:file="};
   re_exp += reg_file;
-  // test code must be at line >10 (copyright), assume line is never >9999
-  re_exp += " line=\\d{2,4}: ";
+  re_exp += " line=";
+  re_exp += std::to_string(loc.line());
+  re_exp += " function=.*Raft_Utils_Test.*: ";
   re_exp += reg_escape(test);
   re_exp += "123$";
   EXPECT_TRUE(std::regex_match(msg, std::regex(re_exp))) << "message:'" << msg << "'" << std::endl
                                                          << "expected regex:'" << re_exp << "'";
+
+  // The deprecated macro keeps appending the same message, at its own call site
+  std::string legacy_msg{"prefix:"};
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  ASSERT_NO_THROW(SET_ERROR_MSG(legacy_msg, "location prefix:", test_format_c, 123));
+#pragma GCC diagnostic pop
+
+  std::string re_exp_legacy{"^prefix:location prefix:file="};
+  re_exp_legacy += reg_file;
+  // test code must be at line >10 (copyright), assume line is never >9999
+  re_exp_legacy += " line=\\d{2,4} function=.*Raft_Utils_Test.*: ";
+  re_exp_legacy += reg_escape(test);
+  re_exp_legacy += "123$";
+  EXPECT_TRUE(std::regex_match(legacy_msg, std::regex(re_exp_legacy)))
+    << "message:'" << legacy_msg << "'" << std::endl
+    << "expected regex:'" << re_exp_legacy << "'";
 }
 
 TEST(Raft, GetDeviceForAddress)

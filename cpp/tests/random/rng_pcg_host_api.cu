@@ -1,9 +1,11 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include "../test_utils.cuh"
+
+#include <raft/util/kernel_launch.hpp>
 
 namespace raft {
 namespace random {
@@ -57,8 +59,15 @@ class HostApiTest {
     RngState r(seed, GenPC);
     DeviceState<PCGenerator> d_state(r);
 
-    pcg_device_kernel<DataType, ParamType, CPT, IPC><<<n_blocks, n_threads, 0, stream>>>(
-      d_buffer.data(), d_state, dist_params, total_threads, len);
+    raft::launch_kernel(handle,
+                        n_blocks,
+                        n_threads,
+                        pcg_device_kernel<DataType, ParamType, CPT, IPC>,
+                        d_buffer.data(),
+                        d_state,
+                        dist_params,
+                        total_threads,
+                        len);
 
     RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
     for (size_t tid = 0; tid < len; tid++) {

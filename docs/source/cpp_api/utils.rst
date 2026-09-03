@@ -19,3 +19,15 @@ namespace *raft*
     :project: RAFT
     :members:
     :content-only:
+
+Kernel Launch
+-------------
+
+``#include <raft/util/kernel_launch.hpp>``
+
+namespace *raft*
+
+.. doxygengroup:: kernel_launch
+    :project: RAFT
+    :members:
+    :content-only:

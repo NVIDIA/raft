@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "../test_utils.cuh"
@@ -8,6 +8,7 @@
 #include <raft/linalg/mean_squared_error.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 
@@ -42,14 +43,15 @@ class MeanSquaredErrorTest : public ::testing::TestWithParam<MeanSquaredErrorInp
   MeanSquaredErrorInputs<T> params;
 
   raft::resources handle;
+  T zero = 0;
   rmm::device_scalar<T> output;
   rmm::device_scalar<T> refoutput;
 
  public:
   MeanSquaredErrorTest()
     : testing::TestWithParam<MeanSquaredErrorInputs<T>>(),
-      output(0, resource::get_cuda_stream(handle)),
-      refoutput(0, resource::get_cuda_stream(handle))
+      output(zero, resource::get_cuda_stream(handle)),
+      refoutput(zero, resource::get_cuda_stream(handle))
   {
     resource::sync_stream(handle);
   }
@@ -69,14 +71,27 @@ class MeanSquaredErrorTest : public ::testing::TestWithParam<MeanSquaredErrorInp
     uniform(handle, r, b.data(), params.len, T(-1.0), T(1.0));
     resource::sync_stream(handle);
 
-    mean_squared_error<T, std::uint32_t, T>(handle,
-                                            make_device_vector_view<const T>(a.data(), params.len),
-                                            make_device_vector_view<const T>(b.data(), params.len),
-                                            make_device_scalar_view<T>(output.data()),
-                                            params.weight);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        mean_squared_error<T, std::uint32_t, T>(
+          h,
+          make_device_vector_view<const T>(a.data(), params.len),
+          make_device_vector_view<const T>(b.data(), params.len),
+          make_device_scalar_view<T>(output.data()),
+          params.weight);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
 
-    naiveMeanSquaredError<<<256, 256, 0, stream>>>(
-      params.len, a.data(), b.data(), params.weight, refoutput.data());
+    raft::launch_kernel(handle,
+                        256,
+                        256,
+                        naiveMeanSquaredError<T>,
+                        params.len,
+                        a.data(),
+                        b.data(),
+                        params.weight,
+                        refoutput.data());
     resource::sync_stream(handle);
   }
 

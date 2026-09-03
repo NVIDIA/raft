@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "../test_utils.cuh"
@@ -8,6 +8,7 @@
 #include <raft/linalg/dot.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 
@@ -62,41 +63,55 @@ class DotTest : public ::testing::TestWithParam<DotInputs<T>> {
     uniform(handle, r, x.data(), x_len, T(-1.0), T(1.0));
     uniform(handle, r, y.data(), y_len, T(-1.0), T(1.0));
 
-    rmm::device_scalar<T> ref(0, resource::get_cuda_stream(handle));
-    naiveDot<<<256, 256, 0, stream>>>(
-      params.len, x.data(), params.incx, y.data(), params.incy, ref.data());
+    T zero = 0;
+    rmm::device_scalar<T> ref(zero, resource::get_cuda_stream(handle));
+    raft::launch_kernel(handle,
+                        256,
+                        256,
+                        naiveDot<T>,
+                        params.len,
+                        x.data(),
+                        params.incx,
+                        y.data(),
+                        params.incy,
+                        ref.data());
     raft::update_host(&ref_output, ref.data(), 1, stream);
 
     // Test out both the device and host api's
-    rmm::device_scalar<T> out(0, resource::get_cuda_stream(handle));
+    rmm::device_scalar<T> out(zero, resource::get_cuda_stream(handle));
     auto device_out_view = make_device_scalar_view<T, IndexType>(out.data());
     auto host_out_view   = make_host_scalar_view<T, IndexType>(&host_output);
 
-    if ((params.incx > 1) && (params.incy > 1)) {
-      auto x_view = make_device_vector_view<const T, IndexType, layout_stride>(
-        x.data(), make_vector_strided_layout(params.len, params.incx));
-      auto y_view = make_device_vector_view<const T, IndexType, layout_stride>(
-        y.data(), make_vector_strided_layout(params.len, params.incy));
-      dot(handle, x_view, y_view, device_out_view);
-      dot(handle, x_view, y_view, host_out_view);
-    } else if (params.incx > 1) {
-      auto x_view = make_device_vector_view<const T, IndexType, layout_stride>(
-        x.data(), make_vector_strided_layout(params.len, params.incx));
-      auto y_view = make_device_vector_view<const T>(y.data(), params.len);
-      dot(handle, x_view, y_view, device_out_view);
-      dot(handle, x_view, y_view, host_out_view);
-    } else if (params.incy > 1) {
-      auto x_view = make_device_vector_view<const T>(x.data(), params.len);
-      auto y_view = make_device_vector_view<const T, IndexType, layout_stride>(
-        y.data(), make_vector_strided_layout(params.len, params.incy));
-      dot(handle, x_view, y_view, device_out_view);
-      dot(handle, x_view, y_view, host_out_view);
-    } else {
-      auto x_view = make_device_vector_view<const T>(x.data(), params.len);
-      auto y_view = make_device_vector_view<const T>(y.data(), params.len);
-      dot(handle, x_view, y_view, device_out_view);
-      dot(handle, x_view, y_view, host_out_view);
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if ((params.incx > 1) && (params.incy > 1)) {
+          auto x_view = make_device_vector_view<const T, IndexType, layout_stride>(
+            x.data(), make_vector_strided_layout(params.len, params.incx));
+          auto y_view = make_device_vector_view<const T, IndexType, layout_stride>(
+            y.data(), make_vector_strided_layout(params.len, params.incy));
+          dot(h, x_view, y_view, device_out_view);
+          dot(h, x_view, y_view, host_out_view);
+        } else if (params.incx > 1) {
+          auto x_view = make_device_vector_view<const T, IndexType, layout_stride>(
+            x.data(), make_vector_strided_layout(params.len, params.incx));
+          auto y_view = make_device_vector_view<const T>(y.data(), params.len);
+          dot(h, x_view, y_view, device_out_view);
+          dot(h, x_view, y_view, host_out_view);
+        } else if (params.incy > 1) {
+          auto x_view = make_device_vector_view<const T>(x.data(), params.len);
+          auto y_view = make_device_vector_view<const T, IndexType, layout_stride>(
+            y.data(), make_vector_strided_layout(params.len, params.incy));
+          dot(h, x_view, y_view, device_out_view);
+          dot(h, x_view, y_view, host_out_view);
+        } else {
+          auto x_view = make_device_vector_view<const T>(x.data(), params.len);
+          auto y_view = make_device_vector_view<const T>(y.data(), params.len);
+          dot(h, x_view, y_view, device_out_view);
+          dot(h, x_view, y_view, host_out_view);
+        }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     raft::update_host(&device_output, out.data(), 1, stream);
     resource::sync_stream(handle);
   }

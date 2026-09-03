@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,6 +10,7 @@
 #include <raft/linalg/binary_op.cuh>
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 namespace raft {
 namespace linalg {
@@ -48,9 +49,8 @@ void subtractDevScalar(math_t* outDev,
   // Just for the note - there is no way to express such operation with cuBLAS in effective way
   // https://stackoverflow.com/questions/14051064/add-scalar-to-vector-in-blas-cublas-cuda
   const IdxType nblks = raft::ceildiv(len, (IdxType)TPB);
-  subtract_dev_scalar_kernel<math_t>
-    <<<nblks, TPB, 0, stream>>>(outDev, inDev, singleScalarDev, len);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, subtract_dev_scalar_kernel<math_t>, outDev, inDev, singleScalarDev, len);
 }
 
 };  // end namespace detail

@@ -1,11 +1,12 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/device_atomics.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/cuda_stream_pool.hpp>
 #include <rmm/device_scalar.hpp>
@@ -37,13 +38,18 @@ TEST(Raft, AtomicIncWarp)
   rmm::cuda_stream_pool pool{1};
   auto s = pool.get_stream();
 
-  rmm::device_scalar<int> counter{0, s};
+  int zero = 0;
+  rmm::device_scalar<int> counter{zero, s};
   rmm::device_uvector<int> out_device{num_elts, s};
   std::array<int, num_elts> out_host{0};
 
   // Write all 1M thread indices to a unique location in `out_device`
-  test_atomic_inc_warp_kernel<<<num_blocks, threads_per_block, 0, s>>>(counter.data(),
-                                                                       out_device.data());
+  raft::launch_kernel(s,
+                      num_blocks,
+                      threads_per_block,
+                      test_atomic_inc_warp_kernel,
+                      counter.data(),
+                      out_device.data());
   // Copy data to host
   RAFT_CUDA_TRY(cudaMemcpyAsync(out_host.data(),
                                 (const void*)out_device.data(),

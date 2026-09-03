@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,22 +10,11 @@
 #include <raft/core/resources.hpp>
 #include <raft/sparse/solver/detail/csr_linear_operator.cuh>
 #include <raft/sparse/solver/detail/randomized_svds.cuh>
+#include <raft/sparse/solver/detail/svds_optional.hpp>
 
 #include <optional>
 
 namespace raft::sparse::solver {
-
-namespace detail {
-// Helper alias used to put the optional U/Vt parameters in a non-deduced context
-// so template argument deduction picks up ValueTypeT from earlier parameters and
-// implicit conversion from `device_matrix_view` to `std::optional<...>` works.
-template <typename T>
-struct nondeduced {
-  using type = T;
-};
-template <typename T>
-using nondeduced_optional_matrix_view_t = std::optional<typename nondeduced<T>::type>;
-}  // namespace detail
 
 /**
  * @defgroup sparse_randomized_svd Sparse Randomized SVD
@@ -48,7 +37,7 @@ using nondeduced_optional_matrix_view_t = std::optional<typename nondeduced<T>::
  * where `X`, `Y`, `Z` are `raft::device_matrix_view<..., uint32_t, raft::col_major>`.
  * This is intentionally a narrow, SVD-specific operator: only the two matrix products
  * above are required, and no other operations (addition, scaling, inverse, eigensolves,
- * etc.) are assumed or supported — it is not a general-purpose linear operator like
+ * etc.) are assumed or supported; it is not a general-purpose linear operator like
  * `scipy.sparse.linalg.LinearOperator`.
  *
  * @tparam ValueTypeT Data type (float or double)

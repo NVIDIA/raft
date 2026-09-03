@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/sparse/convert/csr.cuh>
 #include <raft/sparse/coo.hpp>
@@ -16,9 +17,11 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/device_atomics.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
+#include <cub/device/device_scan.cuh>
 #include <cuda_runtime.h>
 #include <thrust/device_ptr.h>
 #include <thrust/scan.h>
@@ -94,8 +97,14 @@ void compute_duplicates_mask(
 {
   RAFT_CUDA_TRY(cudaMemsetAsync(mask, 0, nnz * sizeof(value_idx), stream));
 
-  compute_duplicates_diffs_kernel<<<raft::ceildiv(nnz, (nnz_t)256), 256, 0, stream>>>(
-    rows, cols, mask, nnz);
+  raft::launch_kernel(stream,
+                      raft::ceildiv(nnz, (nnz_t)256),
+                      256,
+                      compute_duplicates_diffs_kernel,
+                      rows,
+                      cols,
+                      mask,
+                      nnz);
 }
 
 /**
@@ -130,9 +139,21 @@ void max_duplicates(raft::resources const& handle,
   // compute diffs & take exclusive scan
   rmm::device_uvector<value_idx> diff(nnz + 1, stream);
 
+  size_t scan_ws_bytes = 0;
+  cub::DeviceScan::ExclusiveSum(
+    nullptr, scan_ws_bytes, diff.data(), diff.data(), static_cast<int>(diff.size()), stream);
+  rmm::device_uvector<char> scan_ws(scan_ws_bytes, stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound: at most nnz unique entries (no duplicates removed).
+    out.allocate(nnz, m, n, false, stream);
+    return;
+  }
+
   compute_duplicates_mask(diff.data(), rows, cols, nnz, stream);
 
-  thrust::exclusive_scan(thrust_policy, diff.data(), diff.data() + diff.size(), diff.data());
+  cub::DeviceScan::ExclusiveSum(
+    scan_ws.data(), scan_ws_bytes, diff.data(), diff.data(), static_cast<int>(diff.size()), stream);
 
   // compute final size
   value_idx size = 0;
@@ -143,8 +164,18 @@ void max_duplicates(raft::resources const& handle,
   out.allocate(size, m, n, true, stream);
 
   // perform reduce
-  max_duplicates_kernel<<<raft::ceildiv(nnz, (nnz_t)256), 256, 0, stream>>>(
-    rows, cols, vals, diff.data() + 1, out.rows(), out.cols(), out.vals(), nnz);
+  raft::launch_kernel(handle,
+                      raft::ceildiv(nnz, (nnz_t)256),
+                      256,
+                      max_duplicates_kernel<value_idx, value_t>,
+                      rows,
+                      cols,
+                      vals,
+                      diff.data() + 1,
+                      out.rows(),
+                      out.cols(),
+                      out.vals(),
+                      nnz);
 }
 
 };  // END namespace detail

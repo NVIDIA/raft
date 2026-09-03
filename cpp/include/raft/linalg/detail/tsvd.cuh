@@ -6,10 +6,12 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/mdspan_types.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/types.hpp>
 #include <raft/linalg/add.cuh>
 #include <raft/linalg/eig.cuh>
@@ -143,17 +145,17 @@ void cal_eig(raft::resources const& handle,
                         explained_var.data_handle(),
                         stream);
   }
-  raft::resources handle_stream_zero;
-  raft::resource::set_cuda_stream(handle_stream_zero, stream);
-
-  raft::matrix::col_reverse(handle_stream_zero,
+  raft::matrix::col_reverse(handle,
                             raft::make_device_matrix_view<math_t, idx_t, raft::col_major>(
                               components.data_handle(), n_cols, n_cols));
   if constexpr (!is_row_major) {
-    raft::linalg::transpose(components.data_handle(), n_cols, stream);
+    // The in-place square transpose has no overload taking raft::resources to carry the flag.
+    if (!resource::get_dry_run_flag(handle)) {
+      raft::linalg::transpose(components.data_handle(), n_cols, stream);
+    }
   }
 
-  raft::matrix::row_reverse(handle_stream_zero,
+  raft::matrix::row_reverse(handle,
                             raft::make_device_matrix_view<math_t, idx_t, raft::row_major>(
                               explained_var.data_handle(), n_cols, idx_t(1)));
 }
@@ -193,11 +195,10 @@ void sign_flip_components(raft::resources const& handle,
 
   if (flip_signs_based_on_U) {
     if (center) {
-      rmm::device_uvector<math_t> col_means(static_cast<std::size_t>(n_features), stream);
-      raft::stats::mean<is_row_major>(
-        col_means.data(), input.data_handle(), n_features, n_samples, stream);
-      raft::stats::meanCenter<is_row_major, true>(
-        input.data_handle(), input.data_handle(), col_means.data(), n_features, n_samples, stream);
+      auto col_means = raft::make_device_vector<math_t, idx_t>(handle, n_features);
+      raft::stats::mean(handle, raft::make_const_mdspan(input), col_means.view());
+      raft::stats::mean_center<raft::Apply::ALONG_ROWS>(
+        handle, raft::make_const_mdspan(input), raft::make_const_mdspan(col_means.view()), input);
     }
     rmm::device_uvector<math_t> US(static_cast<std::size_t>(n_samples * n_components), stream);
     raft::linalg::gemm(handle,
@@ -210,13 +211,12 @@ void sign_flip_components(raft::resources const& handle,
                        raft::make_device_matrix_view<math_t, idx_t, LayoutPolicy>(
                          US.data(), n_samples, n_components));
 
-    raft::linalg::reduce<is_row_major, false>(
-      max_vals.data(),
-      US.data(),
-      n_components,
-      n_samples,
+    raft::linalg::reduce<raft::Apply::ALONG_COLUMNS>(
+      handle,
+      raft::make_device_matrix_view<const math_t, idx_t, LayoutPolicy>(
+        US.data(), n_samples, n_components),
+      max_vals_view,
       math_t(0),
-      stream,
       false,
       raft::identity_op(),
       [] __device__(math_t a, math_t b) {
@@ -226,13 +226,11 @@ void sign_flip_components(raft::resources const& handle,
       },
       raft::identity_op());
   } else {
-    raft::linalg::reduce<is_row_major, true>(
-      max_vals.data(),
-      components.data_handle(),
-      n_features,
-      n_components,
+    raft::linalg::reduce<raft::Apply::ALONG_ROWS>(
+      handle,
+      raft::make_const_mdspan(components_view),
+      max_vals_view,
       math_t(0),
-      stream,
       false,
       raft::identity_op(),
       [] __device__(math_t a, math_t b) {
@@ -281,6 +279,8 @@ void sign_flip(raft::resources const& handle,
   auto* components_ptr = components.data_handle();
   auto counting        = thrust::make_counting_iterator(0);
   auto m               = n_rows;
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   thrust::for_each(
     rmm::exec_policy(stream), counting, counting + n_cols, [=] __device__(idx_t idx) {
@@ -487,34 +487,34 @@ void tsvd_fit_transform(raft::resources const& handle,
 {
   auto stream = resource::get_cuda_stream(handle);
 
-  auto n_rows       = input.extent(0);
   auto n_cols       = input.extent(1);
   auto n_components = components.extent(0);
 
   detail::tsvd_fit(handle, prms, input, components, singular_vals, flip_signs_based_on_U);
   detail::tsvd_transform(handle, prms, input, components, trans_input);
 
-  rmm::device_uvector<math_t> mu_trans(static_cast<std::size_t>(n_components), stream);
-  raft::stats::mean<false>(
-    mu_trans.data(), trans_input.data_handle(), n_components, n_rows, false, stream);
-  raft::stats::vars<false>(explained_var.data_handle(),
-                           trans_input.data_handle(),
-                           mu_trans.data(),
-                           n_components,
-                           n_rows,
-                           false,
-                           stream);
+  auto mu_trans = raft::make_device_vector<math_t, idx_t>(handle, n_components);
+  raft::stats::mean(handle, raft::make_const_mdspan(trans_input), mu_trans.view());
+  raft::stats::vars(handle,
+                    raft::make_const_mdspan(trans_input),
+                    raft::make_const_mdspan(mu_trans.view()),
+                    explained_var,
+                    false);
 
-  rmm::device_uvector<math_t> mu(static_cast<std::size_t>(n_cols), stream);
-  rmm::device_uvector<math_t> vars(static_cast<std::size_t>(n_cols), stream);
+  auto mu   = raft::make_device_vector<math_t, idx_t>(handle, n_cols);
+  auto vars = raft::make_device_vector<math_t, idx_t>(handle, n_cols);
 
-  raft::stats::mean<false>(mu.data(), input.data_handle(), n_cols, n_rows, false, stream);
-  raft::stats::vars<false>(
-    vars.data(), input.data_handle(), mu.data(), n_cols, n_rows, false, stream);
+  raft::stats::mean(handle, raft::make_const_mdspan(input), mu.view());
+  raft::stats::vars(
+    handle, raft::make_const_mdspan(input), raft::make_const_mdspan(mu.view()), vars.view(), false);
 
   rmm::device_scalar<math_t> total_vars(stream);
-  raft::stats::sum<false>(
-    total_vars.data(), vars.data(), std::size_t(1), static_cast<std::size_t>(n_cols), stream);
+  raft::stats::sum(handle,
+                   raft::make_device_matrix_view<const math_t, idx_t, raft::col_major>(
+                     vars.data_handle(), n_cols, idx_t(1)),
+                   raft::make_device_vector_view<math_t, idx_t>(total_vars.data(), idx_t(1)));
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   math_t total_vars_h;
   raft::update_host(&total_vars_h, total_vars.data(), 1, stream);

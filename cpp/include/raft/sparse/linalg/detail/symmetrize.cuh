@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/core/device_coo_matrix.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/init.cuh>
 #include <raft/sparse/convert/csr.cuh>
 #include <raft/sparse/coo.hpp>
@@ -19,6 +20,7 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/device_atomics.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 #include <rmm/exec_policy.hpp>
@@ -31,6 +33,7 @@
 #include <stdio.h>
 
 #include <algorithm>
+#include <cstddef>
 #include <iostream>
 
 namespace raft {
@@ -141,17 +144,20 @@ void coo_symmetrize(COO<T, IdxT, nnz_t>* in,
 
   out->allocate(in->nnz * 2, in->n_rows, in->n_cols, true, stream);
 
-  coo_symmetrize_kernel<TPB_X, T><<<grid, blk, 0, stream>>>(in_row_ind.data(),
-                                                            in->rows(),
-                                                            in->cols(),
-                                                            in->vals(),
-                                                            out->rows(),
-                                                            out->cols(),
-                                                            out->vals(),
-                                                            in->n_rows,
-                                                            in->nnz,
-                                                            reduction_op);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      grid,
+                      blk,
+                      coo_symmetrize_kernel<TPB_X, T, Lambda, IdxT, nnz_t>,
+                      in_row_ind.data(),
+                      in->rows(),
+                      in->cols(),
+                      in->vals(),
+                      out->rows(),
+                      out->cols(),
+                      out->vals(),
+                      in->n_rows,
+                      in->nnz,
+                      reduction_op);
 }
 
 /**
@@ -187,7 +193,18 @@ void coo_symmetrize(raft::resources const& handle,
 
   rmm::device_uvector<nnz_t> in_row_ind(in_n_rows, stream);
 
-  convert::sorted_coo_to_csr(in_rows, in_nnz, in_row_ind.data(), in_n_rows, stream);
+  if (resource::get_dry_run_flag(handle)) {
+    // `sorted_coo_to_csr` takes a bare stream, so it cannot skip its own device work and would
+    // memset/scan `in_n_rows` elements of probe memory. Mirror its allocations instead: one
+    // row-count array plus the workspace of a thrust exclusive scan over that array, bounded by
+    // the size of the scanned data (the scan's real temp storage is proportional to the number of
+    // tiles, and the constant covers per-allocation alignment overhead for small inputs).
+    rmm::device_uvector<nnz_t> row_counts_est(in_n_rows, stream);
+    rmm::device_uvector<char> scan_ws_est(
+      static_cast<std::size_t>(in_n_rows) * sizeof(nnz_t) + 4096, stream);
+  } else {
+    convert::sorted_coo_to_csr(in_rows, in_nnz, in_row_ind.data(), in_n_rows, stream);
+  }
 
   out.initialize_sparsity(in_nnz * 2);
 
@@ -207,18 +224,20 @@ void coo_symmetrize(raft::resources const& handle,
     handle, raft::make_device_vector_view(out_cols, out_nnz), static_cast<IdxT>(0));
   raft::matrix::fill(handle, raft::make_device_vector_view(out_vals, out_nnz), static_cast<T>(0.0));
 
-  coo_symmetrize_kernel<TPB_X, T, Lambda, IdxT, nnz_t><<<grid, blk, 0, stream>>>(in_row_ind.data(),
-                                                                                 in_rows,
-                                                                                 in_cols,
-                                                                                 in_vals,
-                                                                                 out_rows,
-                                                                                 out_cols,
-                                                                                 out_vals,
-                                                                                 in_n_rows,
-                                                                                 in_nnz,
-                                                                                 reduction_op);
-
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(handle,
+                      grid,
+                      blk,
+                      coo_symmetrize_kernel<TPB_X, T, Lambda, IdxT, nnz_t>,
+                      in_row_ind.data(),
+                      in_rows,
+                      in_cols,
+                      in_vals,
+                      out_rows,
+                      out_cols,
+                      out_vals,
+                      in_n_rows,
+                      in_nnz,
+                      reduction_op);
 }
 
 /**
@@ -349,13 +368,25 @@ void from_knn_symmetrize_matrix(const value_idx* __restrict__ knn_indices,
   rmm::device_uvector<value_idx> row_sizes2(n, stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(row_sizes2.data(), 0, sizeof(value_idx) * n, stream));
 
-  symmetric_find_size<<<numBlocks, threadsPerBlock, 0, stream>>>(
-    knn_dists, knn_indices, n, k, row_sizes.data(), row_sizes2.data());
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      threadsPerBlock,
+                      symmetric_find_size<value_idx, value_t>,
+                      knn_dists,
+                      knn_indices,
+                      n,
+                      k,
+                      row_sizes.data(),
+                      row_sizes2.data());
 
-  reduce_find_size<<<raft::ceildiv(n, (value_idx)1024), 1024, 0, stream>>>(
-    n, k, row_sizes.data(), row_sizes2.data());
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      raft::ceildiv(n, (value_idx)1024),
+                      1024,
+                      reduce_find_size<value_idx>,
+                      n,
+                      k,
+                      row_sizes.data(),
+                      row_sizes2.data());
 
   // (2) Compute final space needed (n*k + sum(row_sizes)) == 2*n*k
   // Notice we don't do any merging and leave the result as 2*NNZ
@@ -376,9 +407,18 @@ void from_knn_symmetrize_matrix(const value_idx* __restrict__ knn_indices,
   thrust::exclusive_scan(rmm::exec_policy(stream), __row_sizes, __row_sizes + n, __edges);
 
   // (5) Perform final data + data.T operation in tandem with memcpying
-  symmetric_sum<<<numBlocks, threadsPerBlock, 0, stream>>>(
-    edges, knn_dists, knn_indices, out->vals(), out->cols(), out->rows(), n, k);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      numBlocks,
+                      threadsPerBlock,
+                      symmetric_sum<value_idx, value_t>,
+                      edges,
+                      knn_dists,
+                      knn_indices,
+                      out->vals(),
+                      out->cols(),
+                      out->rows(),
+                      n,
+                      k);
 }
 
 /**
@@ -401,22 +441,23 @@ void symmetrize(raft::resources const& handle,
   rmm::device_uvector<value_idx> symm_cols(nnz * 2, stream);
   rmm::device_uvector<value_t> symm_vals(nnz * 2, stream);
 
-  raft::copy_async(symm_rows.data(), rows, nnz, stream);
-  raft::copy_async(symm_rows.data() + nnz, cols, nnz, stream);
-  raft::copy_async(symm_cols.data(), cols, nnz, stream);
-  raft::copy_async(symm_cols.data() + nnz, rows, nnz, stream);
+  if (!resource::get_dry_run_flag(handle)) {
+    raft::copy_async(symm_rows.data(), rows, nnz, stream);
+    raft::copy_async(symm_rows.data() + nnz, cols, nnz, stream);
+    raft::copy_async(symm_cols.data(), cols, nnz, stream);
+    raft::copy_async(symm_cols.data() + nnz, rows, nnz, stream);
 
-  raft::copy_async(symm_vals.data(), vals, nnz, stream);
-  raft::copy_async(symm_vals.data() + nnz, vals, nnz, stream);
+    raft::copy_async(symm_vals.data(), vals, nnz, stream);
+    raft::copy_async(symm_vals.data() + nnz, vals, nnz, stream);
+  }
 
-  // sort COO
-  raft::sparse::op::coo_sort((value_idx)m,
+  raft::sparse::op::coo_sort(handle,
+                             (value_idx)m,
                              (value_idx)n,
                              static_cast<nnz_t>(nnz) * 2,
                              symm_rows.data(),
                              symm_cols.data(),
-                             symm_vals.data(),
-                             stream);
+                             symm_vals.data());
 
   raft::sparse::op::max_duplicates(
     handle, out, symm_rows.data(), symm_cols.data(), symm_vals.data(), nnz * 2, m, n);

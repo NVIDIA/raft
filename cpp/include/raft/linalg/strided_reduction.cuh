@@ -14,6 +14,7 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 
 #include <type_traits>
@@ -128,6 +129,7 @@ void strided_reduction(raft::resources const& handle,
                        ReduceLambda reduce_op = raft::add_op(),
                        FinalLambda final_op   = raft::identity_op())
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   if constexpr (std::is_same_v<LayoutPolicy, raft::row_major>) {
     RAFT_EXPECTS(static_cast<IndexType>(dots.size()) == data.extent(1),
                  "Output should be equal to number of columns in Input");

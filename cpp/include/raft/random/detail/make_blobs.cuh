@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,6 +14,7 @@
 #include <raft/random/rng_device.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 
@@ -137,6 +138,36 @@ RAFT_KERNEL generate_data_kernel(raft::random::DeviceState<GenType> rng_state,
   }
 }
 
+template <typename DataT, typename IdxT, typename GenType>
+void call_generate_data_kernel(raft::random::DeviceState<GenType> const& rng_state,
+                               DataT* out,
+                               const IdxT* labels,
+                               IdxT n_rows,
+                               IdxT n_cols,
+                               IdxT n_clusters,
+                               bool row_major,
+                               const DataT* centers,
+                               const DataT* cluster_std,
+                               const DataT cluster_std_scalar,
+                               int64_t n_blocks,
+                               cudaStream_t stream)
+{
+  raft::launch_kernel(stream,
+                      n_blocks,
+                      128,
+                      generate_data_kernel<DataT, IdxT, GenType>,
+                      rng_state,
+                      out,
+                      labels,
+                      n_rows,
+                      n_cols,
+                      n_clusters,
+                      row_major,
+                      centers,
+                      cluster_std,
+                      cluster_std_scalar);
+}
+
 template <typename DataT, typename IdxT>
 void generate_data(DataT* out,
                    const IdxT* labels,
@@ -154,10 +185,8 @@ void generate_data(DataT* out,
   int64_t items             = static_cast<int64_t>(n_rows) * n_cols;
   // Choose a grid size so that each thread can write two output values.
   int64_t nBlocks = ceildiv<int64_t>(items, 2 * block_size);
-  // parentheses needed here for kernel, otherwise macro interprets the arguments
-  // of triple chevron notation as macro arguments
   RAFT_CALL_RNG_FUNC(rng_state,
-                     (generate_data_kernel<<<nBlocks, 128, 0, stream>>>),
+                     call_generate_data_kernel,
                      out,
                      labels,
                      n_rows,
@@ -166,7 +195,9 @@ void generate_data(DataT* out,
                      row_major,
                      centers,
                      cluster_std,
-                     cluster_std_scalar);
+                     cluster_std_scalar,
+                     nBlocks,
+                     stream);
 }
 
 /**
@@ -204,7 +235,8 @@ void generate_data(DataT* out,
  * @param[in]  type               RNG type
  */
 template <typename DataT, typename IdxT>
-void make_blobs_caller(DataT* out,
+void make_blobs_caller(bool dry_run,
+                       DataT* out,
                        IdxT* labels,
                        IdxT n_rows,
                        IdxT n_cols,
@@ -222,15 +254,17 @@ void make_blobs_caller(DataT* out,
 {
   raft::random::RngState r(seed, type);
   // use the right centers buffer for data generation
-  rmm::device_uvector<DataT> rand_centers(0, stream);
+  rmm::device_uvector<DataT> rand_centers(centers == nullptr ? n_clusters * n_cols : 0, stream);
   const DataT* _centers;
   if (centers == nullptr) {
-    rand_centers.resize(n_clusters * n_cols, stream);
-    detail::uniform(
-      r, rand_centers.data(), n_clusters * n_cols, center_box_min, center_box_max, stream);
     _centers = rand_centers.data();
   } else {
     _centers = centers;
+  }
+  if (dry_run) { return; }
+  if (centers == nullptr) {
+    detail::uniform(
+      r, rand_centers.data(), n_clusters * n_cols, center_box_min, center_box_max, stream);
   }
   generate_labels(labels, n_rows, n_clusters, shuffle, r, stream);
   generate_data(out,

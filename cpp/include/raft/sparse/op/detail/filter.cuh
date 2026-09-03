@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,12 +9,14 @@
 #include <raft/core/device_coo_matrix.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/host_mdspan.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/sparse/coo.hpp>
 #include <raft/sparse/detail/cusparse_wrappers.h>
 #include <raft/sparse/detail/utils.h>
 #include <raft/sparse/linalg/degree.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
 #include <rmm/exec_policy.hpp>
@@ -116,18 +118,21 @@ void coo_remove_scalar(const idx_t* rows,
   dim3 grid(raft::ceildiv(n, static_cast<idx_t>(TPB_X)), 1, 1);
   dim3 blk(TPB_X, 1, 1);
 
-  coo_remove_scalar_kernel<TPB_X, T, idx_t, nnz_t><<<grid, blk, 0, stream>>>(rows,
-                                                                             cols,
-                                                                             vals,
-                                                                             nnz,
-                                                                             crows,
-                                                                             ccols,
-                                                                             cvals,
-                                                                             dev_ex_scan.get(),
-                                                                             dev_cur_ex_scan.get(),
-                                                                             n,
-                                                                             scalar);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      grid,
+                      blk,
+                      coo_remove_scalar_kernel<TPB_X, T, idx_t, nnz_t>,
+                      rows,
+                      cols,
+                      vals,
+                      nnz,
+                      crows,
+                      ccols,
+                      cvals,
+                      dev_ex_scan.get(),
+                      dev_cur_ex_scan.get(),
+                      n,
+                      scalar);
 }
 
 /**
@@ -153,7 +158,6 @@ void coo_remove_scalar(COO<T, idx_t, nnz_t>* in,
     cudaMemsetAsync(row_count.data(), 0, static_cast<nnz_t>(in->n_rows) * sizeof(nnz_t), stream));
 
   linalg::coo_degree(in->rows(), in->nnz, row_count.data(), stream);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
 
   using nnz_cast_t = std::conditional_t<std::is_same_v<nnz_t, uint64_t>, unsigned long long, nnz_t>;
   linalg::coo_degree_scalar(in->rows(),
@@ -213,6 +217,18 @@ void coo_remove_scalar(raft::resources const& handle,
 
   rmm::device_uvector<nnz_t> row_count_nz(in_n_rows, stream);
   rmm::device_uvector<nnz_t> row_count(in_n_rows, stream);
+
+  if (resource::get_dry_run_flag(handle)) {
+    // Upper bound on non-dry-run compliant and data-dependent code below (thrust calls, unknown
+    // out_nnz <= in_nnz)
+    out.initialize_sparsity(in_nnz);
+    rmm::device_uvector<nnz_t> ex_scan(in_n_rows, stream);
+    rmm::device_uvector<nnz_t> cur_ex_scan(in_n_rows, stream);
+    // Upper bound for thrust workspace (reduce + 2x exclusive_scan)
+    rmm::device_uvector<char> thrust_ws(3 * (static_cast<size_t>(in_n_rows) * sizeof(nnz_t) + 4096),
+                                        stream);
+    return;
+  }
 
   RAFT_CUDA_TRY(
     cudaMemsetAsync(row_count_nz.data(), 0, static_cast<nnz_t>(in_n_rows) * sizeof(nnz_t), stream));

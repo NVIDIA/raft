@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,6 +9,7 @@
 #include <raft/linalg/init.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
+#include <raft/util/kernel_launch.hpp>
 
 #include <math.h>
 
@@ -129,18 +130,31 @@ void merge_labels(value_idx* labels_a,
   do {
     RAFT_CUDA_TRY(cudaMemsetAsync(m, false, sizeof(bool), stream));
 
-    propagate_label_kernel<value_idx, TPB_X>
-      <<<blocks, threads, 0, stream>>>(labels_a, labels_b, R, mask, m, N);
-    RAFT_CUDA_TRY(cudaPeekAtLastError());
+    raft::launch_kernel(stream,
+                        blocks,
+                        threads,
+                        propagate_label_kernel<value_idx, TPB_X>,
+                        labels_a,
+                        labels_b,
+                        R,
+                        mask,
+                        m,
+                        N);
 
     raft::update_host(&host_m, m, 1, stream);
     RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
   } while (host_m);
 
   // Step 2: re-assign minimum equivalent label
-  reassign_label_kernel<value_idx, TPB_X>
-    <<<blocks, threads, 0, stream>>>(labels_a, labels_b, R, N, MAX_LABEL);
-  RAFT_CUDA_TRY(cudaPeekAtLastError());
+  raft::launch_kernel(stream,
+                      blocks,
+                      threads,
+                      reassign_label_kernel<value_idx, TPB_X>,
+                      labels_a,
+                      labels_b,
+                      R,
+                      N,
+                      MAX_LABEL);
 }
 
 }  // namespace detail

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/vectorized.cuh>
 
 namespace raft {
@@ -36,8 +37,8 @@ void scatterImpl(
   DataT* out, const DataT* in, const IdxT* idx, IdxT len, Lambda op, cudaStream_t stream)
 {
   const IdxT nblks = raft::ceildiv(VecLen ? len / VecLen : len, (IdxT)TPB);
-  scatterKernel<DataT, VecLen, Lambda, IdxT><<<nblks, TPB, 0, stream>>>(out, in, idx, len, op);
-  RAFT_CUDA_TRY(cudaGetLastError());
+  raft::launch_kernel(
+    stream, nblks, TPB, scatterKernel<DataT, VecLen, Lambda, IdxT>, out, in, idx, len, op);
 }
 
 }  // namespace detail

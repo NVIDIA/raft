@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,11 +10,13 @@
 #include <raft/core/device_container_policy.hpp>
 #include <raft/core/device_mdarray.hpp>
 #include <raft/core/operators.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/map.cuh>
 #include <raft/linalg/reduce.cuh>
 #include <raft/sparse/convert/csr.cuh>
 #include <raft/util/device_atomics.cuh>
+#include <raft/util/kernel_launch.hpp>
 #include <raft/util/popc.cuh>
 
 #include <rmm/device_scalar.hpp>
@@ -147,7 +149,6 @@ void bitset_repeat(raft::resources const& handle,
                    index_t repeat_times)
 {
   if (src_bit_len == 0 || repeat_times == 0) return;
-  auto stream = resource::get_cuda_stream(handle);
 
   constexpr index_t bits_per_element = sizeof(bitset_t) * 8;
   const index_t total_bits           = src_bit_len * repeat_times;
@@ -155,8 +156,14 @@ void bitset_repeat(raft::resources const& handle,
 
   int threadsPerBlock = 128;
   int blocksPerGrid   = (output_size + threadsPerBlock - 1) / threadsPerBlock;
-  bitset_repeat_kernel<<<blocksPerGrid, threadsPerBlock, 0, stream>>>(
-    d_src, d_output, src_bit_len, repeat_times);
+  raft::launch_kernel(handle,
+                      blocksPerGrid,
+                      threadsPerBlock,
+                      bitset_repeat_kernel,
+                      d_src,
+                      d_output,
+                      src_bit_len,
+                      repeat_times);
 
   return;
 }
@@ -166,6 +173,8 @@ void bitset_view<bitset_t, index_t>::repeat(const raft::resources& res,
                                             index_t times,
                                             bitset_t* output_device_ptr) const
 {
+  // Only a copy and kernel run below this point.
+  if (resource::get_dry_run_flag(res)) { return; }
   constexpr index_t bits_per_element = sizeof(bitset_t) * 8;
 
   if (bitset_len_ % bits_per_element == 0) {

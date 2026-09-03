@@ -1,8 +1,9 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
+#include <raft/core/copy.hpp>
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_csr_matrix.hpp>
 #include <raft/core/device_mdarray.hpp>
@@ -11,6 +12,7 @@
 #include <raft/core/resources.hpp>
 #include <raft/sparse/matrix/diagonal.cuh>
 #include <raft/sparse/op/sort.cuh>
+#include <raft/util/kernel_launch.hpp>
 
 #include <cuda/iterator>
 #include <thrust/reduce.h>
@@ -104,15 +106,19 @@ auto compute_graph_laplacian(
   auto result_structure                         = result.structure_view();
   auto static constexpr const threads_per_block = 256;
   auto blocks = std::min(int((dim + threads_per_block - 1) / threads_per_block), 65535);
-  auto stream = resource::get_cuda_stream(res);
-  detail::compute_graph_laplacian_kernel<<<blocks, threads_per_block, 0, stream>>>(
-    result.get_elements().data(),
-    result_structure.get_indices().data(),
-    result_structure.get_indptr().data(),
-    dim,
-    input.get_elements().data(),
-    input_structure.get_indices().data(),
-    input_structure.get_indptr().data());
+  raft::launch_kernel(res,
+                      blocks,
+                      threads_per_block,
+                      detail::compute_graph_laplacian_kernel<std::remove_const_t<ElementType>,
+                                                             std::remove_const_t<IndptrType>,
+                                                             std::remove_const_t<IndicesType>>,
+                      result.get_elements().data(),
+                      result_structure.get_indices().data(),
+                      result_structure.get_indptr().data(),
+                      dim,
+                      input.get_elements().data(),
+                      input_structure.get_indices().data(),
+                      input_structure.get_indptr().data());
   return result;
 }
 
@@ -149,10 +155,11 @@ device_coo_matrix<ElementType, RowType, ColType, NZType> compute_graph_laplacian
       return values_ptr[idx];
     });
 
-  auto host_diagonal_count = raft::make_host_scalar<RowType>(RowType(0));
-  raft::copy(host_diagonal_count.data_handle(), diagonal_count_ptr, 1, stream);
+  auto host_diagonal_count = raft::make_host_scalar<RowType>(res, RowType(0));
+  raft::copy(res, host_diagonal_count.view(), diagonal_count.view());
   resource::sync_stream(res);
-  RowType extra_diagonal_space = dim - host_diagonal_count(0);
+  RowType extra_diagonal_space =
+    resource::get_dry_run_flag(res) ? dim : (dim - host_diagonal_count(0));
 
   auto result = make_device_coo_matrix<std::remove_const_t<ElementType>,
                                        std::remove_const_t<RowType>,
@@ -164,18 +171,25 @@ device_coo_matrix<ElementType, RowType, ColType, NZType> compute_graph_laplacian
   auto result_cols_ptr   = result.structure_view().get_cols().data();
   auto result_values_ptr = result.get_elements().data();
 
-  raft::copy(result_values_ptr, values_ptr, input_structure.get_nnz(), stream);
-  raft::copy(result_cols_ptr, cols_ptr, input_structure.get_nnz(), stream);
-  raft::copy(result_rows_ptr, rows_ptr, input_structure.get_nnz(), stream);
+  // Raw device->device copies (not resource-aware) write onto the result buffers,
+  // which alias the probe in dry-run; skip them there.
+  if (!resource::get_dry_run_flag(res)) {
+    raft::copy(result_values_ptr, values_ptr, input_structure.get_nnz(), stream);
+    raft::copy(result_cols_ptr, cols_ptr, input_structure.get_nnz(), stream);
+    raft::copy(result_rows_ptr, rows_ptr, input_structure.get_nnz(), stream);
+  }
 
   auto scan_diagonal     = raft::make_device_vector<NZType, NZType>(res, dim);
   auto scan_diagonal_ptr = scan_diagonal.data_handle();
   auto input_nnz         = input_structure.get_nnz();
 
-  thrust::exclusive_scan(raft::resource::get_thrust_policy(res),
-                         marked_diagonal_ptr,
-                         marked_diagonal_ptr + dim,
-                         scan_diagonal_ptr);
+  // Raw thrust scan over probe-aliased buffers; skip the compute in dry-run.
+  if (!resource::get_dry_run_flag(res)) {
+    thrust::exclusive_scan(raft::resource::get_thrust_policy(res),
+                           marked_diagonal_ptr,
+                           marked_diagonal_ptr + dim,
+                           scan_diagonal_ptr);
+  }
 
   // populate the extra diagonal indexes and initialize the values to 0
   raft::linalg::map_offset(res,
@@ -195,26 +209,28 @@ device_coo_matrix<ElementType, RowType, ColType, NZType> compute_graph_laplacian
                            });
 
   raft::sparse::op::coo_sort<ElementType, RowType, NZType>(
+    res,
     dim,
     dim,
     result.structure_view().get_nnz(),
     result.structure_view().get_rows().data(),
     result.structure_view().get_cols().data(),
-    result.get_elements().data(),
-    raft::resource::get_cuda_stream(res));
+    result.get_elements().data());
 
   auto result_nnz = result.structure_view().get_nnz();
   auto degrees    = raft::make_device_vector<ElementType, RowType>(res, dim);
   raft::matrix::fill(res, degrees.view(), ElementType(0));
   auto degrees_ptr = degrees.data_handle();
 
-  // D
-  thrust::reduce_by_key(raft::resource::get_thrust_policy(res),
-                        result_rows_ptr,                // keys_first
-                        result_rows_ptr + result_nnz,   // keys_last
-                        result_values_ptr,              // values_first
-                        cuda::make_discard_iterator(),  // keys_output (discarded)
-                        degrees_ptr);                   // values_output (row sums)
+  // D  (raw thrust reduce over probe-aliased buffers; skip the compute in dry-run)
+  if (!resource::get_dry_run_flag(res)) {
+    thrust::reduce_by_key(raft::resource::get_thrust_policy(res),
+                          result_rows_ptr,                // keys_first
+                          result_rows_ptr + result_nnz,   // keys_last
+                          result_values_ptr,              // values_first
+                          cuda::make_discard_iterator(),  // keys_output (discarded)
+                          degrees_ptr);                   // values_output (row sums)
+  }
 
   // D - A
   raft::linalg::map_offset(
