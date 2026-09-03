@@ -303,12 +303,10 @@ __device__ auto increment_indices(IdxType* indices,
       }
     }(i);
 
-    auto cur_index = IdxType{};
-
-    while (cur_index < md.extent(real_index) - 1 && increment >= index_strides[real_index]) {
-      increment -= index_strides[real_index];
-      ++cur_index;
-    }
+    auto const max_index = md.extent(real_index) - IdxType{1};
+    auto const quotient  = increment / index_strides[real_index];
+    auto const cur_index = quotient < max_index ? quotient : max_index;
+    increment -= cur_index * index_strides[real_index];
     indices[real_index] = cur_index;
   }
 

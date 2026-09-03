@@ -16,6 +16,28 @@
 #include <cstdint>
 
 namespace raft {
+TEST(MDSpanCopy, Mdspan1DDeviceDeviceCuda)
+{
+  auto res            = device_resources{};
+  auto constexpr cols = std::int64_t{4096};
+  auto input = make_device_vector<std::int64_t, std::int64_t, layout_c_contiguous>(res, cols);
+  auto output = make_device_vector<int, std::int64_t, layout_c_contiguous>(res, cols);
+
+  for (auto i = std::int64_t{}; i < cols; ++i) {
+    input(i) = i;
+  }
+
+  static_assert(detail::mdspan_copyable_with_kernel_v<decltype(output.view()), decltype(input.view())>,
+                "Current implementation should use kernel for this copy");
+  execute_with_dry_run_check(
+    res, [&](raft::resources const& r) { copy(r, output.view(), input.view()); }, alloc_behavior::NO_ALLOCATIONS);
+  res.sync_stream();
+
+  for (auto i = std::int64_t{}; i < cols; ++i) {
+    ASSERT_EQ(output(i), static_cast<int>(i));
+  }
+}
+
 TEST(MDSpanCopy, Mdspan3DDeviceDeviceCuda)
 {
   auto res                   = device_resources{};
