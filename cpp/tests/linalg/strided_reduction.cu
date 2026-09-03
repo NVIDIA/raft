@@ -155,12 +155,12 @@ TEST(stridedReductionTest, LargeReducedDimension)
                           sums_same_type.data_handle(),
                           kCols,
                           raft::CompareApprox<float>(1e-6f),
-                          stream));
+                          stream.get()));
   ASSERT_TRUE(devArrMatch(static_cast<double>(kRows),
                           sums_wider_type.data_handle(),
                           kCols,
                           raft::CompareApprox<double>(1e-12),
-                          stream));
+                          stream.get()));
 }
 
 }  // end namespace linalg
