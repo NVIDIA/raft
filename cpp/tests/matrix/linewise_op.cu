@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -175,7 +175,7 @@ struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Par
   {
     rmm::device_uvector<T> blob_val(params.checkCorrectness ? blob.size() / 2 : 0, stream);
 
-    stream.synchronize();
+    stream.sync();
     cudaProfilerStart();
     testing::AssertionResult r = testing::AssertionSuccess();
     for (auto [n, m] : dims) {
@@ -233,7 +233,7 @@ struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Par
   {
     rmm::device_uvector<T> blob_val(params.checkCorrectness ? blob.size() / 2 : 0, stream);
 
-    stream.synchronize();
+    stream.sync();
     cudaProfilerStart();
     testing::AssertionResult r = testing::AssertionSuccess();
     for (auto alongRows : ::testing::Bool()) {

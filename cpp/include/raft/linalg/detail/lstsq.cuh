@@ -74,15 +74,15 @@ struct DeviceEvent {
 bool are_implicitly_synchronized(rmm::cuda_stream_view a, rmm::cuda_stream_view b)
 {
   // any stream is "synchronized" with itself
-  if (a.value() == b.value()) return true;
+  if (a.get() == b.get()) return true;
   // legacy + blocking streams
   unsigned int flags = 0;
   if (a.is_default()) {
-    RAFT_CUDA_TRY(cudaStreamGetFlags(b.value(), &flags));
+    RAFT_CUDA_TRY(cudaStreamGetFlags(b.get(), &flags));
     if ((flags & cudaStreamNonBlocking) == 0) return true;
   }
   if (b.is_default()) {
-    RAFT_CUDA_TRY(cudaStreamGetFlags(a.value(), &flags));
+    RAFT_CUDA_TRY(cudaStreamGetFlags(a.get(), &flags));
     if ((flags & cudaStreamNonBlocking) == 0) return true;
   }
   return false;

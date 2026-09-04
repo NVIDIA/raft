@@ -169,16 +169,16 @@ class mock_comms : public comms_iface {
 void assert_handles_equal(raft::handle_t& handle_one, raft::handle_t& handle_two)
 {
   // Assert shallow copied state
-  ASSERT_EQ(handle_one.get_stream().value(), handle_two.get_stream().value());
+  ASSERT_EQ(handle_one.get_stream().get(), handle_two.get_stream().get());
   ASSERT_EQ(handle_one.get_stream_pool_size(), handle_two.get_stream_pool_size());
 
   // Sanity check to make sure non-corresponding streams are not equal
-  ASSERT_NE(handle_one.get_stream_pool().get_stream(0).value(),
-            handle_two.get_stream_pool().get_stream(1).value());
+  ASSERT_NE(handle_one.get_stream_pool().get_stream(0).get(),
+            handle_two.get_stream_pool().get_stream(1).get());
 
   for (size_t i = 0; i < handle_one.get_stream_pool_size(); ++i) {
-    ASSERT_EQ(handle_one.get_stream_pool().get_stream(i).value(),
-              handle_two.get_stream_pool().get_stream(i).value());
+    ASSERT_EQ(handle_one.get_stream_pool().get_stream(i).get(),
+              handle_two.get_stream_pool().get_stream(i).get());
   }
 }
 

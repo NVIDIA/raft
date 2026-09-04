@@ -70,7 +70,7 @@ class GemvTest : public ::testing::TestWithParam<GemvInputs<T>> {
       refy(0, rmm::cuda_stream_default),
       y(0, rmm::cuda_stream_default)
   {
-    rmm::cuda_stream_default.synchronize();
+    rmm::cuda_stream_default.sync();
   }
 
  protected:

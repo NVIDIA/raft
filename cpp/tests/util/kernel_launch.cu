@@ -172,7 +172,7 @@ TEST(KernelLaunch, StreamOverload)
 TEST(KernelLaunch, RawStreamHandleOverload)
 {
   raft::resources res;
-  cudaStream_t stream = resource::get_cuda_stream(res).value();
+  cudaStream_t stream = resource::get_cuda_stream(res).get();
   EXPECT_NO_THROW(raft::launch_kernel(stream, 1, 1, noop_kernel));
   resource::sync_stream(res);
 }
