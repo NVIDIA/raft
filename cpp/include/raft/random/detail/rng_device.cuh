@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -243,17 +243,24 @@ HDI void custom_next(GenType& gen,
                      LenType idx    = 0,
                      LenType stride = 0)
 {
-  double res1, res2;
+  // Draw a zero-mean deviate in the narrowest type that can carry it, then shift by mu in the
+  // output type. Folding mu into the transform would round mu itself and, worse, quantize the
+  // deviate away entirely once |mu| exceeds the mantissa of the compute type (2^24 for float,
+  // 2^53 for double): at mu = 2e9 the float spacing is 128, so a sigma of 10 vanishes.
+  // With mu applied separately, float carries any deviate an integer output can represent, and
+  // double is only needed for the wider deviates of 64-bit outputs. Double is 1/64 rate on
+  // consumer GPUs, so this matters.
+  using compute_t = std::conditional_t<(sizeof(IntType) > 4), double, float>;
+  compute_t res1, res2;
   do {
     gen.next(res1);
-  } while (res1 == double(0.0));
+  } while (res1 == compute_t(0.0));
 
   gen.next(res2);
-  double mu    = static_cast<double>(params.mu);
-  double sigma = static_cast<double>(params.sigma);
-  box_muller_transform<double>(res1, res2, sigma, mu);
-  *val       = static_cast<IntType>(res1);
-  *(val + 1) = static_cast<IntType>(res2);
+  compute_t sigma = static_cast<compute_t>(params.sigma);
+  box_muller_transform<compute_t>(res1, res2, sigma, compute_t(0));
+  *val       = static_cast<IntType>(res1) + params.mu;
+  *(val + 1) = static_cast<IntType>(res2) + params.mu;
 }
 
 template <typename GenType, typename OutType, typename LenType>
