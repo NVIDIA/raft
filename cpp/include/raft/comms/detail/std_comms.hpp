@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -195,8 +195,9 @@ class std_comms : public comms_iface {
       ucxx::Endpoint* ep_ptr = (*std::get<ucxx_endpoint_array_t>(ucx_objects_.endpoints))[source];
 
       ucp_tag_t ucp_tag = build_message_tag(source, tag);
-      auto ucxx_req = ep_ptr->tagRecvBuilder(buf, size, ucxx::Tag(ucp_tag), ucxx::TagMask(default_tag_mask))
-                        .build();
+      auto ucxx_req =
+        ep_ptr->tagRecvBuilder(buf, size, ucxx::Tag(ucp_tag), ucxx::TagMask(default_tag_mask))
+          .build();
 
       requests_in_flight_.insert(std::make_pair(*request, ucxx_req));
     } else {
