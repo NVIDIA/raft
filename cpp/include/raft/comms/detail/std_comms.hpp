@@ -168,7 +168,8 @@ class std_comms : public comms_iface {
       ucxx::Endpoint* ep_ptr = (*std::get<ucxx_endpoint_array_t>(ucx_objects_.endpoints))[dest];
 
       ucp_tag_t ucp_tag = build_message_tag(get_rank(), tag);
-      auto ucxx_req     = ep_ptr->tagSend(const_cast<void*>(buf), size, ucxx::Tag(ucp_tag));
+      auto ucxx_req =
+        ep_ptr->tagSendBuilder(const_cast<void*>(buf), size, ucxx::Tag(ucp_tag)).build();
 
       requests_in_flight_.insert(std::make_pair(*request, ucxx_req));
     } else {
@@ -194,8 +195,8 @@ class std_comms : public comms_iface {
       ucxx::Endpoint* ep_ptr = (*std::get<ucxx_endpoint_array_t>(ucx_objects_.endpoints))[source];
 
       ucp_tag_t ucp_tag = build_message_tag(source, tag);
-      auto ucxx_req =
-        ep_ptr->tagRecv(buf, size, ucxx::Tag(ucp_tag), ucxx::TagMask(default_tag_mask));
+      auto ucxx_req = ep_ptr->tagRecvBuilder(buf, size, ucxx::Tag(ucp_tag), ucxx::TagMask(default_tag_mask))
+                        .build();
 
       requests_in_flight_.insert(std::make_pair(*request, ucxx_req));
     } else {
