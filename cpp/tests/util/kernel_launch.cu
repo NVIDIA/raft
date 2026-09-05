@@ -268,7 +268,7 @@ TEST(KernelLaunch, CooperativeLaunch)
 {
   raft::resources res;
   rmm::device_uvector<int> out(1, resource::get_cuda_stream(res));
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res)));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res).get()));
 
   raft::launch_kernel({res, 0, {raft::cooperative()}}, 1, 32, write_one_kernel, out.data());
   resource::sync_stream(res);
@@ -299,7 +299,7 @@ TEST(KernelLaunch, SharedMemoryCarveout)
   raft::resources res;
   auto stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
 
   raft::launch_kernel(
     {res, sizeof(int), {raft::shmem_carveout(100)}}, 1, 32, smem_kernel, out.data());
@@ -315,7 +315,7 @@ TEST(KernelLaunch, MultipleAttributes)
   raft::resources res;
   auto stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
 
   raft::launch_kernel({res, sizeof(int), {raft::cooperative(), raft::shmem_carveout(50)}},
                       1,
@@ -334,7 +334,7 @@ TEST(KernelLaunch, AttributesInDryRunAreSkipped)
   raft::resources res;
   auto stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
   resource::sync_stream(res);
 
   auto launch = [&](raft::resources const& h) {
@@ -361,7 +361,7 @@ TEST(KernelLaunch, RuntimeKernelLaunch)
 {
   raft::resources res;
   rmm::device_uvector<int> out(1, resource::get_cuda_stream(res));
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res)));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res).get()));
 
   raft::launch_kernel(
     res, 1, 32, raft::kernel_ref<void(int*)>{handle_of(write_one_kernel)}, out.data());
@@ -377,7 +377,7 @@ TEST(KernelLaunch, RuntimeKernelConvertsArguments)
   raft::resources res;
   auto stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
 
   // A std::size_t into a std::uint32_t parameter: the conversion is what lets a call site drop the
   // casts that a launch taking the addresses of its arguments would need for the sizes to match.
@@ -402,7 +402,7 @@ TEST(KernelLaunch, RuntimeKernelConvertsPointerArgument)
   rmm::device_uvector<int> in(1, stream);
   rmm::device_uvector<int> out(1, stream);
   int host_in = 1;
-  RAFT_CUDA_TRY(cudaMemcpyAsync(in.data(), &host_in, sizeof(int), cudaMemcpyHostToDevice, stream));
+  RAFT_CUDA_TRY(cudaMemcpyAsync(in.data(), &host_in, sizeof(int), cudaMemcpyHostToDevice, stream.get()));
 
   // `int*` into a `int const*` parameter.
   raft::launch_kernel(res,
@@ -422,7 +422,7 @@ TEST(KernelLaunch, CooperativeRuntimeKernel)
 {
   raft::resources res;
   rmm::device_uvector<int> out(1, resource::get_cuda_stream(res));
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res)));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), resource::get_cuda_stream(res).get()));
 
   // The two features are independent: a runtime kernel takes its attributes from `launch_on` just
   // like a statically compiled one.
@@ -443,7 +443,7 @@ TEST(KernelLaunch, RuntimeKernelDryRunSkipsLaunch)
   raft::resources res;
   auto stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
-  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
   resource::sync_stream(res);
 
   auto handle = handle_of(write_one_kernel);
