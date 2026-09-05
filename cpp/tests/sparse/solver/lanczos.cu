@@ -337,7 +337,7 @@ std::vector<ValueType> compute_full_spectrum(
   IndexType n    = structure.get_n_rows();
 
   auto dense = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, n, n);
-  RAFT_CUDA_TRY(cudaMemsetAsync(dense.data_handle(), 0, dense.size() * sizeof(ValueType), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(dense.data_handle(), 0, dense.size() * sizeof(ValueType), stream.get()));
   raft::sparse::convert::csr_to_dense<IndexType, ValueType>(
     resource::get_cusparse_handle(handle),
     n,
@@ -348,7 +348,7 @@ std::vector<ValueType> compute_full_spectrum(
     A.get_elements().data(),
     n,
     dense.data_handle(),
-    stream,
+    stream.get(),
     false);  // column-major output; A is symmetric so row/col-major coincide anyway
 
   auto ref_vectors = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, n, n);
