@@ -34,7 +34,7 @@ template <typename T>
 class ContingencyMatrixTest : public ::testing::TestWithParam<ContingencyMatrixParam> {
  protected:
   ContingencyMatrixTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       dY(0, stream),
       dYHat(0, stream),
       dComputedOutput(0, stream),

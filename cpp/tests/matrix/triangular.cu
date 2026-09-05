@@ -47,7 +47,7 @@ class TriangularTest : public ::testing::TestWithParam<TriangularInputs<T>> {
  public:
   TriangularTest()
     : params(::testing::TestWithParam<TriangularInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream)
   {
   }

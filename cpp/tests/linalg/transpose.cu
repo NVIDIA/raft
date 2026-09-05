@@ -88,7 +88,7 @@ class TransposeTest : public ::testing::TestWithParam<TransposeInputs<T>> {
  public:
   TransposeTest()
     : params(::testing::TestWithParam<TransposeInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.n_row * params.n_col, stream),
       data_trans_ref(params.n_row * params.n_col, stream),
       data_trans(params.n_row * params.n_col, stream)
@@ -117,7 +117,7 @@ class TransposeTest : public ::testing::TestWithParam<TransposeInputs<T>> {
                   data_trans.data(),
                   params.n_row,
                   params.n_col,
-                  resource::get_cuda_stream(h));
+                  resource::get_cuda_stream(h).get());
       },
       raft::alloc_behavior::NO_ALLOCATIONS);
     if (params.n_row == params.n_col) { transpose(data.data(), params.n_col, stream); }

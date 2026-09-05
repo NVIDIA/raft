@@ -222,7 +222,7 @@ void svd_qr(
         false,
         U.has_value(),
         V.has_value(),
-        resource::get_cuda_stream(handle));
+        resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -291,7 +291,7 @@ void svd_qr_transpose_right_vec(
         true,
         U.has_value(),
         V.has_value(),
-        resource::get_cuda_stream(handle));
+        resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -352,7 +352,7 @@ void svd_eig(
          left_sing_vecs_ptr,
          V.data_handle(),
          U.has_value(),
-         resource::get_cuda_stream(handle));
+         resource::get_cuda_stream(handle).get());
 }
 
 template <typename ValueType, typename IndexType, typename UType>
@@ -402,7 +402,7 @@ void svd_reconstruction(raft::resources const& handle,
                     out.extent(0),
                     out.extent(1),
                     S.extent(0),
-                    resource::get_cuda_stream(handle));
+                    resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group svd

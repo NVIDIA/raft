@@ -122,7 +122,7 @@ void get_input_class_cardinality(raft::resources const& handle,
   RAFT_EXPECTS(maxLabel.data_handle() != nullptr, "Invalid maxLabel pointer");
   detail::getInputClassCardinality(groundTruth.data_handle(),
                                    groundTruth.extent(0),
-                                   resource::get_cuda_stream(handle),
+                                   resource::get_cuda_stream(handle).get(),
                                    *minLabel.data_handle(),
                                    *maxLabel.data_handle());
 }
@@ -174,7 +174,7 @@ void contingency_matrix(raft::resources const& handle,
   auto workspace_sz = detail::getContingencyMatrixWorkspaceSize(resource::get_dry_run_flag(handle),
                                                                 ground_truth.extent(0),
                                                                 ground_truth.data_handle(),
-                                                                resource::get_cuda_stream(handle),
+                                                                resource::get_cuda_stream(handle).get(),
                                                                 min_label_value,
                                                                 max_label_value);
   auto workspace    = raft::make_device_vector<char>(handle, workspace_sz);
@@ -185,7 +185,7 @@ void contingency_matrix(raft::resources const& handle,
                                             predicted_label.data_handle(),
                                             ground_truth.extent(0),
                                             out_mat.data_handle(),
-                                            resource::get_cuda_stream(handle),
+                                            resource::get_cuda_stream(handle).get(),
                                             workspace.data_handle(),
                                             workspace_sz,
                                             min_label_value,

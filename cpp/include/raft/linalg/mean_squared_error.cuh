@@ -67,7 +67,7 @@ void mean_squared_error(raft::resources const& handle,
                    B.data_handle(),
                    A.extent(0),
                    weight,
-                   resource::get_cuda_stream(handle));
+                   resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group mean_squared_error

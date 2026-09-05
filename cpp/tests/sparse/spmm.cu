@@ -88,7 +88,7 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
   {
     params = ::testing::TestWithParam<SpmmInputs<T>>::GetParam();
 
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     // We compute Z = X * Y and compare against reference result
     // Dimensions of X : M x K
@@ -138,7 +138,7 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
 
   void runTest()
   {
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
 
     auto [ldx, ldy, ldz, x_size, y_size, z_size] = getXYZStrides();
 
@@ -225,7 +225,7 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
   {
     double eps = 1e-4;
 
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     size_t dense_size = n_rows * n_cols;
     std::vector<T> dense_host(dense_size);

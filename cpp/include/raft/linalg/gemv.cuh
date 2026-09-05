@@ -291,7 +291,7 @@ void gemv(raft::resources const& handle,
                                beta.value().data_handle(),
                                y.data_handle(),
                                1,
-                               resource::get_cuda_stream(handle));
+                               resource::get_cuda_stream(handle).get());
 }
 /** @} */  // end of gemv
 

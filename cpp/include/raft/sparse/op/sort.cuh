@@ -58,7 +58,7 @@ void coo_sort(
                    rows,
                    cols,
                    vals,
-                   resource::get_cuda_stream(handle));
+                   resource::get_cuda_stream(handle).get());
 }
 
 /**

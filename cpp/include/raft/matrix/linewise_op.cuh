@@ -82,7 +82,7 @@ void linewise_op(raft::resources const& handle,
     lineLen,
     nLines,
     op,
-    resource::get_cuda_stream(handle),
+    resource::get_cuda_stream(handle).get(),
     vecs.data_handle()...);
 }
 
@@ -113,7 +113,7 @@ void linewise_op(raft::resources const& handle,
                "Input and output must have the same shape.");
 
   detail::MatrixLinewiseOp<16, 256>::runPadded<apply == raft::Apply::ALONG_ROWS, m_t, idx_t>(
-    out, in, lineLen, nLines, op, resource::get_cuda_stream(handle), vecs.data_handle()...);
+    out, in, lineLen, nLines, op, resource::get_cuda_stream(handle).get(), vecs.data_handle()...);
 }
 
 /** @} */  // end of group linewise_op

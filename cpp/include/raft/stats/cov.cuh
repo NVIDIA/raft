@@ -98,7 +98,7 @@ void cov(raft::resources const& handle,
                                                          data.extent(0),
                                                          sample,
                                                          stable,
-                                                         resource::get_cuda_stream(handle));
+                                                         resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_cov

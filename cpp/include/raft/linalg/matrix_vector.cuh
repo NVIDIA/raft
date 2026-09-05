@@ -46,7 +46,7 @@ void binary_mult(raft::resources const& handle,
     vec.data_handle(),
     data.extent(0),
     data.extent(1),
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -75,7 +75,7 @@ void binary_mult_skip_zero(raft::resources const& handle,
     vec.data_handle(),
     data.extent(0),
     data.extent(1),
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -104,7 +104,7 @@ void binary_div(raft::resources const& handle,
     vec.data_handle(),
     data.extent(0),
     data.extent(1),
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -136,7 +136,7 @@ void binary_div_skip_zero(raft::resources const& handle,
     vec.data_handle(),
     data.extent(0),
     data.extent(1),
-    resource::get_cuda_stream(handle),
+    resource::get_cuda_stream(handle).get(),
     return_zero);
 }
 
@@ -166,7 +166,7 @@ void binary_add(raft::resources const& handle,
     vec.data_handle(),
     data.extent(0),
     data.extent(1),
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -195,7 +195,7 @@ void binary_sub(raft::resources const& handle,
     vec.data_handle(),
     data.extent(0),
     data.extent(1),
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of matrix_vector

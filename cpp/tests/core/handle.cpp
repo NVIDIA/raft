@@ -224,8 +224,8 @@ TEST(Raft, DefaultConstructor)
   auto s2 = resource::get_cuda_stream(handle);
   auto s3 = resource::get_next_usable_stream(handle, 5);
 
-  ASSERT_EQ(s1, s2);
-  ASSERT_EQ(s2, s3);
+  ASSERT_EQ(s1.get(), s2.get());
+  ASSERT_EQ(s2.get(), s3.get());
   ASSERT_EQ(0, resource::get_stream_pool_size(handle));
 }
 
@@ -238,7 +238,7 @@ TEST(Raft, GetHandleFromPool)
   for (std::size_t i = 0; i < n_streams; i++) {
     auto worker_stream = parent.get_stream_from_stream_pool(i);
     raft::handle_t child(worker_stream);
-    ASSERT_EQ(parent.get_stream_from_stream_pool(i), child.get_stream());
+    ASSERT_EQ(parent.get_stream_from_stream_pool(i).get(), child.get_stream().get());
   }
 
   parent.wait_stream_pool_on_stream();

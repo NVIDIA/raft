@@ -65,7 +65,7 @@ class ReverseTest : public ::testing::TestWithParam<ReverseInputs<T>> {
  public:
   ReverseTest()
     : params(::testing::TestWithParam<ReverseInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream)
   {
   }

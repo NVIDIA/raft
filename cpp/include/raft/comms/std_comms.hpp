@@ -59,7 +59,7 @@ using std_comms = detail::std_comms;
  */
 void build_comms_nccl_only(resources* handle, ncclComm_t nccl_comm, int num_ranks, int rank)
 {
-  cudaStream_t stream = resource::get_cuda_stream(*handle);
+  cudaStream_t stream = resource::get_cuda_stream(*handle).get();
 
   auto communicator = std::make_shared<comms_t>(
     std::unique_ptr<comms_iface>(new raft::comms::std_comms(nccl_comm, num_ranks, rank, stream)));
@@ -150,7 +150,7 @@ void build_comms_nccl_ucx(resources* handle,
     }
   }
 
-  cudaStream_t stream = resource::get_cuda_stream(*handle);
+  cudaStream_t stream = resource::get_cuda_stream(*handle).get();
 
   auto communicator = std::make_shared<comms_t>(std::unique_ptr<comms_iface>(
     new raft::comms::std_comms(nccl_comm, ucx_objects, num_ranks, rank, stream)));

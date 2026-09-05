@@ -34,7 +34,7 @@ void preproc(raft::resources& handle,
              int num_cols,
              bool tf_idf)
 {
-  cudaStream_t stream = raft::resource::get_cuda_stream(handle);
+  cudaStream_t stream = raft::resource::get_cuda_stream(handle).get();
 
   // create matrix and copy to device
   auto host_dense_vals = raft::make_host_vector<T2, int64_t>(handle, dense_values.size());
@@ -132,7 +132,7 @@ void calc_tfidf_bm25(raft::resources& handle,
                      ResultVectorView results,
                      bool tf_idf = false)
 {
-  cudaStream_t stream = raft::resource::get_cuda_stream(handle);
+  cudaStream_t stream = raft::resource::get_cuda_stream(handle).get();
   int num_rows        = csr_in.structure_view().get_n_rows();
   int num_cols        = csr_in.structure_view().get_n_cols();
   int rows_size       = csr_in.structure_view().get_indptr().size();
@@ -176,7 +176,7 @@ void create_dataset(raft::resources& handle,
                     int num_cols_unique        = 7,
                     int seed                   = 12345)
 {
-  cudaStream_t stream = raft::resource::get_cuda_stream(handle);
+  cudaStream_t stream = raft::resource::get_cuda_stream(handle).get();
   raft::random::RngState rng(seed);
 
   auto d_out = raft::make_device_vector<T1, int64_t>(handle, rows.size() * 2);

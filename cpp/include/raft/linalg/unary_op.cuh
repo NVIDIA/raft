@@ -112,7 +112,7 @@ template <typename OutType,
 void write_only_unary_op(const raft::resources& handle, OutType out, Lambda op)
 {
   if (resource::get_dry_run_flag(handle)) { return; }
-  return writeOnlyUnaryOp(out.data_handle(), out.size(), op, resource::get_cuda_stream(handle));
+  return writeOnlyUnaryOp(out.data_handle(), out.size(), op, resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group unary_op

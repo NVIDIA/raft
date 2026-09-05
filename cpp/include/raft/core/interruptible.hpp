@@ -79,7 +79,7 @@ class interruptible {
   static inline void synchronize(rmm::cuda_stream_view stream,
                                  std::source_location location = std::source_location::current())
   {
-    get_token()->synchronize_impl(cudaStreamQuery, stream, "cudaStreamQuery", location);
+    get_token()->synchronize_impl(cudaStreamQuery, stream.get(), "cudaStreamQuery", location);
   }
 
   /**

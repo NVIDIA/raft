@@ -41,7 +41,7 @@ bool cholesky_qr_pass(raft::resources const& handle,
                       int workspace_size,
                       int* dev_info)
 {
-  auto stream     = raft::resource::get_cuda_stream(handle);
+  auto stream     = raft::resource::get_cuda_stream(handle).get();
   auto cublas_h   = raft::resource::get_cublas_handle(handle);
   auto cusolver_h = raft::resource::get_cusolver_dn_handle(handle);
 
@@ -122,7 +122,7 @@ bool cholesky_qr2(raft::resources const& handle,
   int m = Q.extent(0);
   int k = Q.extent(1);
 
-  auto stream     = raft::resource::get_cuda_stream(handle);
+  auto stream     = raft::resource::get_cuda_stream(handle).get();
   auto cusolver_h = raft::resource::get_cusolver_dn_handle(handle);
 
   // Allocate workspace for Gram matrix and Cholesky

@@ -26,7 +26,7 @@ class cusolver_dn_resource : public resource {
   cusolver_dn_resource(rmm::cuda_stream_view stream)
   {
     RAFT_CUSOLVER_TRY_NO_THROW(cusolverDnCreate(&cusolver_res));
-    RAFT_CUSOLVER_TRY_NO_THROW(cusolverDnSetStream(cusolver_res, stream));
+    RAFT_CUSOLVER_TRY_NO_THROW(cusolverDnSetStream(cusolver_res, stream.get()));
   }
 
   void* get_resource() override { return &cusolver_res; }

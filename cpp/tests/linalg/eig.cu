@@ -37,7 +37,7 @@ class EigTest : public ::testing::TestWithParam<EigInputs<T>> {
  public:
   EigTest()
     : params(::testing::TestWithParam<EigInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       cov_matrix(params.len, stream),
       eig_vectors(params.len, stream),
       eig_vectors_jacobi(params.len, stream),

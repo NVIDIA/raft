@@ -19,7 +19,7 @@ class cusparse_resource : public resource {
   cusparse_resource(rmm::cuda_stream_view stream)
   {
     RAFT_CUSPARSE_TRY_NO_THROW(cusparseCreate(&cusparse_res));
-    RAFT_CUSPARSE_TRY_NO_THROW(cusparseSetStream(cusparse_res, stream));
+    RAFT_CUSPARSE_TRY_NO_THROW(cusparseSetStream(cusparse_res, stream.get()));
   }
 
   ~cusparse_resource() { RAFT_CUSPARSE_TRY_NO_THROW(cusparseDestroy(cusparse_res)); }

@@ -54,7 +54,7 @@ void cal_comp_exp_vars_svd(raft::resources const& handle,
                            raft::device_vector_view<math_t, idx_t> explained_vars,
                            raft::device_vector_view<math_t, idx_t> explained_var_ratio)
 {
-  auto stream          = resource::get_cuda_stream(handle);
+  auto stream          = resource::get_cuda_stream(handle).get();
   auto cusolver_handle = raft::resource::get_cusolver_dn_handle(handle);
   auto cublas_handle   = raft::resource::get_cublas_handle(handle);
 
@@ -121,7 +121,7 @@ void cal_eig(raft::resources const& handle,
 
   constexpr bool is_row_major = std::is_same_v<LayoutPolicy, raft::row_major>;
 
-  auto stream          = resource::get_cuda_stream(handle);
+  auto stream          = resource::get_cuda_stream(handle).get();
   auto cusolver_handle = raft::resource::get_cusolver_dn_handle(handle);
 
   auto n_cols = in.extent(0);
@@ -183,7 +183,7 @@ void sign_flip_components(raft::resources const& handle,
     "sign_flip_components: layout must be raft::row_major or raft::col_major");
   constexpr bool is_row_major = std::is_same_v<LayoutPolicy, raft::row_major>;
 
-  auto stream       = resource::get_cuda_stream(handle);
+  auto stream       = resource::get_cuda_stream(handle).get();
   auto n_samples    = input.extent(0);
   auto n_features   = input.extent(1);
   auto n_components = components.extent(0);
@@ -270,7 +270,7 @@ void sign_flip(raft::resources const& handle,
                raft::device_matrix_view<math_t, idx_t, raft::col_major> input,
                raft::device_matrix_view<math_t, idx_t, raft::col_major> components)
 {
-  auto stream      = resource::get_cuda_stream(handle);
+  auto stream      = resource::get_cuda_stream(handle).get();
   auto n_rows      = input.extent(0);
   auto n_cols      = input.extent(1);
   auto n_cols_comp = components.extent(1);
@@ -328,7 +328,7 @@ void tsvd_fit(raft::resources const& handle,
               raft::device_vector_view<math_t, idx_t> singular_vals,
               bool flip_signs_based_on_U = false)
 {
-  auto stream        = resource::get_cuda_stream(handle);
+  auto stream        = resource::get_cuda_stream(handle).get();
   auto cublas_handle = raft::resource::get_cublas_handle(handle);
 
   auto n_rows = input.extent(0);
@@ -485,7 +485,7 @@ void tsvd_fit_transform(raft::resources const& handle,
                         raft::device_vector_view<math_t, idx_t> singular_vals,
                         bool flip_signs_based_on_U = false)
 {
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   auto n_cols       = input.extent(1);
   auto n_components = components.extent(0);

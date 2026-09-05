@@ -36,7 +36,7 @@ class MeanCenterTest : public ::testing::TestWithParam<MeanCenterInputs<T, IdxTy
  public:
   MeanCenterTest()
     : params(::testing::TestWithParam<MeanCenterInputs<T, IdxType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       rows(params.rows),
       cols(params.cols),
       out(rows * cols, stream),

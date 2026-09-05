@@ -97,7 +97,7 @@ value_t cluster_dispersion(
                                             centroids.extent(0),
                                             n_points,
                                             centroids.extent(1),
-                                            resource::get_cuda_stream(handle));
+                                            resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_cluster_dispersion

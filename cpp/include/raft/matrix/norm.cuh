@@ -29,7 +29,7 @@ template <typename m_t, typename idx_t>
 m_t l2_norm(raft::resources const& handle, raft::device_mdspan<const m_t, idx_t> in)
 {
   if (resource::get_dry_run_flag(handle)) { return {}; }
-  return detail::getL2Norm(handle, in.data_handle(), in.size(), resource::get_cuda_stream(handle));
+  return detail::getL2Norm(handle, in.data_handle(), in.size(), resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group matrix_norm

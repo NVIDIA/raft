@@ -61,7 +61,7 @@ template <typename value_t, typename index_t>
 class SelectKCsrTest : public ::testing::TestWithParam<SelectKCsrInputs<index_t>> {
  public:
   SelectKCsrTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<SelectKCsrInputs<index_t>>::GetParam()),
       indices_d(0, stream),
       customized_indices_d(0, stream),

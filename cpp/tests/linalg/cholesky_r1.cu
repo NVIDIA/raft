@@ -49,7 +49,7 @@ class CholeskyR1Test : public ::testing::Test {
                                       nullptr,
                                       &n_bytes,
                                       CUBLAS_FILL_MODE_LOWER,
-                                      resource::get_cuda_stream(handle));
+                                      resource::get_cuda_stream(handle).get());
     Lwork = std::max(Lwork * sizeof(math_t), (size_t)n_bytes);
     workspace.resize(Lwork, resource::get_cuda_stream(handle));
   }
@@ -76,7 +76,7 @@ class CholeskyR1Test : public ::testing::Test {
                                                                 (math_t*)workspace.data(),
                                                                 Lwork,
                                                                 devInfo.data(),
-                                                                resource::get_cuda_stream(handle)));
+                                                                resource::get_cuda_stream(handle).get()));
 
         // Incremental Cholesky factorization using rank one updates.
         raft::linalg::choleskyRank1Update(handle,
@@ -86,13 +86,13 @@ class CholeskyR1Test : public ::testing::Test {
                                           workspace.data(),
                                           &Lwork,
                                           uplo,
-                                          resource::get_cuda_stream(handle));
+                                          resource::get_cuda_stream(handle).get());
 
         ASSERT_TRUE(raft::devArrMatch(L_exp.data(),
                                       L.data(),
                                       n_rows * rank,
                                       raft::CompareApprox<math_t>(3e-3),
-                                      resource::get_cuda_stream(handle)));
+                                      resource::get_cuda_stream(handle).get()));
       }
     }
   }
@@ -104,7 +104,7 @@ class CholeskyR1Test : public ::testing::Test {
     for (auto uplo : fillmode) {
       raft::copy(L.data(), G.data(), 4, resource::get_cuda_stream(handle));
       ASSERT_NO_THROW(raft::linalg::choleskyRank1Update(
-        handle, L.data(), 1, 2, workspace.data(), &Lwork, uplo, resource::get_cuda_stream(handle)));
+        handle, L.data(), 1, 2, workspace.data(), &Lwork, uplo, resource::get_cuda_stream(handle).get()));
       ASSERT_THROW(raft::linalg::choleskyRank1Update(handle,
                                                      L.data(),
                                                      2,
@@ -112,7 +112,7 @@ class CholeskyR1Test : public ::testing::Test {
                                                      workspace.data(),
                                                      &Lwork,
                                                      uplo,
-                                                     resource::get_cuda_stream(handle)),
+                                                     resource::get_cuda_stream(handle).get()),
                    raft::exception);
 
       math_t eps = std::numeric_limits<math_t>::epsilon();
@@ -123,7 +123,7 @@ class CholeskyR1Test : public ::testing::Test {
                                                         workspace.data(),
                                                         &Lwork,
                                                         uplo,
-                                                        resource::get_cuda_stream(handle),
+                                                        resource::get_cuda_stream(handle).get(),
                                                         eps));
     }
   }

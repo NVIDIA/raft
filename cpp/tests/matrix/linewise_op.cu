@@ -197,7 +197,7 @@ struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Par
           }
           if (params.checkCorrectness) {
             linalg::naiveMatVec(
-              blob_val.data(), in, vec1, lineLen, nLines, true, alongRows, T(1), stream);
+              blob_val.data(), in, vec1, lineLen, nLines, true, alongRows, T(1), stream.get());
             r = devArrMatch(blob_val.data(), out, n * m, CompareApprox<T>(params.tolerance))
                 << " " << (alongRows ? "alongRows" : "acrossRows")
                 << " with one vec; lineLen: " << lineLen << "; nLines " << nLines;
@@ -214,7 +214,7 @@ struct LinewiseTest : public ::testing::TestWithParam<typename ParamsReader::Par
           }
           if (params.checkCorrectness) {
             linalg::naiveMatVec(
-              blob_val.data(), in, vec1, vec2, lineLen, nLines, true, alongRows, T(1), stream);
+              blob_val.data(), in, vec1, vec2, lineLen, nLines, true, alongRows, T(1), stream.get());
             r = devArrMatch(blob_val.data(), out, n * m, CompareApprox<T>(params.tolerance))
                 << " " << (alongRows ? "alongRows" : "acrossRows")
                 << " with two vecs;  lineLen: " << lineLen << "; nLines " << nLines;

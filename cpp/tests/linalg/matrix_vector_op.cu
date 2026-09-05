@@ -116,7 +116,7 @@ template <typename OpT,
 class MatVecOpTest : public ::testing::TestWithParam<MatVecOpInputs<IdxType>> {
  public:
   MatVecOpTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<MatVecOpInputs<IdxType>>::GetParam()),
       vec_size(params.bcastAlongRows ? params.cols : params.rows),
       in(params.rows * params.cols + params.inAlignOffset, stream),

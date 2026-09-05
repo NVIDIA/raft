@@ -34,7 +34,7 @@ template <typename T, typename MathT = int>
 class adjustedRandIndexTest : public ::testing::TestWithParam<adjustedRandIndexParam> {
  protected:
   adjustedRandIndexTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       firstClusterArray(0, stream),
       secondClusterArray(0, stream)
   {

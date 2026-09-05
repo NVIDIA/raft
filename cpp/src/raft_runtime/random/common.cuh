@@ -26,6 +26,6 @@
                                                     r_scale,                           \
                                                     c_scale,                           \
                                                     n_edges,                           \
-                                                    resource::get_cuda_stream(handle), \
+                                                    resource::get_cuda_stream(handle).get(), \
                                                     r);                                \
   }

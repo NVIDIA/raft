@@ -38,7 +38,7 @@ class BinaryOpTest : public ::testing::TestWithParam<BinaryOpInputs<InType, IdxT
  public:
   BinaryOpTest()
     : params(::testing::TestWithParam<BinaryOpInputs<InType, IdxType, OutType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in1(params.len, stream),
       in2(params.len, stream),
       out_ref(params.len, stream),
@@ -125,7 +125,7 @@ class BinaryOpAlignment : public ::testing::Test {
  public:
   void Misaligned()
   {
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     // Test to trigger cudaErrorMisalignedAddress if veclen is incorrectly
     // chosen.
     int n = 1024;
@@ -139,7 +139,7 @@ class BinaryOpAlignment : public ::testing::Test {
                            y.data() + 19,
                            256,
                            raft::add_op{},
-                           resource::get_cuda_stream(handle));
+                           resource::get_cuda_stream(handle).get());
   }
 
   raft::resources handle;

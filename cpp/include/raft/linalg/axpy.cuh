@@ -78,7 +78,7 @@ void axpy(raft::resources const& handle,
                           x.stride(0),
                           y.data_handle(),
                           y.stride(0),
-                          resource::get_cuda_stream(handle));
+                          resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -108,7 +108,7 @@ void axpy(raft::resources const& handle,
                            x.stride(0),
                            y.data_handle(),
                            y.stride(0),
-                           resource::get_cuda_stream(handle));
+                           resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group axpy

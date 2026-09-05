@@ -267,7 +267,7 @@ TEST(Raft, ComputeGraphLaplacianNormalizedCOO)
   raft::copy(adjacency_structure_csr.get_indptr().data(),
              &(indptr[0]),
              indptr.size(),
-             raft::resource::get_cuda_stream(res));
+             raft::resource::get_cuda_stream(res).get());
 
   // Convert CSR to COO
   auto adjacency_matrix_coo =
@@ -280,7 +280,7 @@ TEST(Raft, ComputeGraphLaplacianNormalizedCOO)
                                          adjacency_structure_csr.get_n_rows(),
                                          adjacency_matrix_coo.structure_view().get_rows().data(),
                                          adjacency_structure_csr.get_nnz(),
-                                         raft::resource::get_cuda_stream(res));
+                                         raft::resource::get_cuda_stream(res).get());
 
   raft::copy(adjacency_matrix_coo.structure_view().get_cols().data(),
              adjacency_structure_csr.get_indices().data(),
@@ -290,7 +290,7 @@ TEST(Raft, ComputeGraphLaplacianNormalizedCOO)
   raft::copy(adjacency_matrix_coo.get_elements().data(),
              adjacency_matrix_csr.get_elements().data(),
              adjacency_structure_csr.get_nnz(),
-             raft::resource::get_cuda_stream(res));
+             raft::resource::get_cuda_stream(res).get());
 
   // Create diagonal output vector
   auto diagonal_out =
@@ -308,7 +308,7 @@ TEST(Raft, ComputeGraphLaplacianNormalizedCOO)
                                               normalized_laplacian_coo_structure.get_rows().data(),
                                               normalized_laplacian_coo_structure.get_cols().data(),
                                               normalized_laplacian_coo.get_elements().data(),
-                                              raft::resource::get_cuda_stream(res));
+                                              raft::resource::get_cuda_stream(res).get());
 
   // Convert COO result to CSR for comparison
   auto normalized_laplacian_csr =
@@ -331,7 +331,7 @@ TEST(Raft, ComputeGraphLaplacianNormalizedCOO)
     normalized_laplacian_coo_structure.get_nnz(),
     normalized_laplacian_csr_structure.get_indptr().data(),
     normalized_laplacian_coo_structure.get_n_rows(),
-    raft::resource::get_cuda_stream(res));
+    raft::resource::get_cuda_stream(res).get());
 
   // Manually set the last element of indptr to nnz (workaround for potential bug)
   int nnz = normalized_laplacian_coo_structure.get_nnz();

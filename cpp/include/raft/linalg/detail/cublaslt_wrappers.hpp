@@ -358,14 +358,14 @@ struct coef_wrapper<true, S> {
   {
     if (alpha != nullptr && beta != nullptr) { return; }
     S defaults[2] = {1, 0};
-    RAFT_CUDA_TRY(cudaMallocAsync(&store, 2 * sizeof(S), stream));
-    RAFT_CUDA_TRY(cudaMemcpyAsync(store, defaults, 2 * sizeof(S), cudaMemcpyHostToDevice, stream));
+    RAFT_CUDA_TRY(cudaMallocAsync(&store, 2 * sizeof(S), stream.get()));
+    RAFT_CUDA_TRY(cudaMemcpyAsync(store, defaults, 2 * sizeof(S), cudaMemcpyHostToDevice, stream.get()));
     if (alpha == nullptr) { alpha = &store[0]; }
     if (beta == nullptr) { beta = &store[1]; }
   }
   ~coef_wrapper() noexcept
   {
-    if (store != nullptr) { RAFT_CUDA_TRY_NO_THROW(cudaFreeAsync(store, stream)); }
+    if (store != nullptr) { RAFT_CUDA_TRY_NO_THROW(cudaFreeAsync(store, stream.get())); }
   }
 };
 
@@ -431,7 +431,7 @@ void matmul_strided_batched(raft::resources const& res,
                                  nullptr,
                                  nullptr,
                                  0,
-                                 stream));
+                                 stream.get()));
 }
 
 /**
@@ -547,7 +547,7 @@ void matmul(raft::resources const& res,
                                           beta,
                                           c_ptr,
                                           ldc,
-                                          resource::get_cuda_stream(res));
+                                          resource::get_cuda_stream(res).get());
 }
 
 }  // namespace linalg::detail

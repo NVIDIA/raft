@@ -49,7 +49,7 @@ class ArgMaxTest : public ::testing::TestWithParam<ArgMaxInputs<T, IdxT>> {
     raft::update_device(expected.data_handle(),
                         params.output_matrix.data(),
                         params.output_matrix.size(),
-                        resource::get_cuda_stream(handle));
+                        resource::get_cuda_stream(handle).get());
 
     auto input_const_view = raft::make_device_matrix_view<const T, std::uint32_t, row_major>(
       input.data_handle(), input.extent(0), input.extent(1));
@@ -81,7 +81,7 @@ TEST_P(ArgMaxTestF, Result)
                           output.data_handle(),
                           params.n_rows,
                           Compare<int>(),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef ArgMaxTest<double, int> ArgMaxTestD;
@@ -91,7 +91,7 @@ TEST_P(ArgMaxTestD, Result)
                           output.data_handle(),
                           params.n_rows,
                           Compare<int>(),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 INSTANTIATE_TEST_SUITE_P(ArgMaxTest, ArgMaxTestF, ::testing::ValuesIn(inputsf));
