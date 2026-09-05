@@ -99,7 +99,7 @@ void mean_center(raft::resources const& handle,
                             mu.data_handle(),
                             data.extent(1),
                             data.extent(0),
-                            resource::get_cuda_stream(handle));
+                            resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -137,7 +137,7 @@ void mean_add(raft::resources const& handle,
       mu.data_handle(),
       data.extent(1),
       data.extent(0),
-      resource::get_cuda_stream(handle));
+      resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_mean_center

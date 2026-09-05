@@ -64,7 +64,7 @@ class MeanTest : public ::testing::TestWithParam<MeanInputs<InputT, OutputT>> {
  public:
   MeanTest()
     : params(::testing::TestWithParam<MeanInputs<InputT, OutputT>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       rows(params.rows),
       cols(params.cols),
       data(raft::make_device_matrix<InputT, int>(handle, rows, cols)),

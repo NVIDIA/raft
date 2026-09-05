@@ -140,7 +140,7 @@ void sample_without_replacement(raft::resources const& handle,
                                    wts_ptr,
                                    sampledLen,
                                    len,
-                                   resource::get_cuda_stream(handle));
+                                   resource::get_cuda_stream(handle).get());
 }
 
 /**

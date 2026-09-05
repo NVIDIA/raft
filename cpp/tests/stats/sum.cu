@@ -38,7 +38,7 @@ class SumTest : public ::testing::TestWithParam<SumInputs<T>> {
  public:
   SumTest()
     : params(::testing::TestWithParam<SumInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       rows(params.rows),
       cols(params.cols),
       data(rows * cols, stream),

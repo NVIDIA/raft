@@ -131,7 +131,7 @@ void permute(raft::resources const& handle,
                                                             D,
                                                             N,
                                                             is_row_major,
-                                                            resource::get_cuda_stream(handle),
+                                                            resource::get_cuda_stream(handle).get(),
                                                             key);
   }
 }

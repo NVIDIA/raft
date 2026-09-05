@@ -32,7 +32,7 @@ class klDivergenceTest : public ::testing::TestWithParam<klDivergenceParam> {
   {
     // getting the parameters
     params = ::testing::TestWithParam<klDivergenceParam>::GetParam();
-    stream = resource::get_cuda_stream(handle);
+    stream = resource::get_cuda_stream(handle).get();
 
     nElements = params.nElements;
 

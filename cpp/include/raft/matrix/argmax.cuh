@@ -37,7 +37,7 @@ void argmax(raft::resources const& handle,
                  in.extent(1),
                  in.extent(0),
                  out.data_handle(),
-                 resource::get_cuda_stream(handle));
+                 resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group argmax

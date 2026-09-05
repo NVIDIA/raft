@@ -337,7 +337,7 @@ std::vector<ValueType> compute_full_spectrum(
   IndexType n    = structure.get_n_rows();
 
   auto dense = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, n, n);
-  RAFT_CUDA_TRY(cudaMemsetAsync(dense.data_handle(), 0, dense.size() * sizeof(ValueType), stream));
+  RAFT_CUDA_TRY(cudaMemsetAsync(dense.data_handle(), 0, dense.size() * sizeof(ValueType), stream.get()));
   raft::sparse::convert::csr_to_dense<IndexType, ValueType>(
     resource::get_cusparse_handle(handle),
     n,
@@ -348,7 +348,7 @@ std::vector<ValueType> compute_full_spectrum(
     A.get_elements().data(),
     n,
     dense.data_handle(),
-    stream,
+    stream.get(),
     false);  // column-major output; A is symmetric so row/col-major coincide anyway
 
   auto ref_vectors = raft::make_device_matrix<ValueType, uint32_t, raft::col_major>(handle, n, n);
@@ -435,7 +435,7 @@ class rmat_lanczos_tests
  public:
   rmat_lanczos_tests()
     : params(::testing::TestWithParam<rmat_lanczos_inputs<IndexType, ValueType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       rng(params.seed),
       r_scale(params.r_scale),
       c_scale(params.c_scale),
@@ -642,7 +642,7 @@ class lanczos_tests : public ::testing::TestWithParam<lanczos_inputs<IndexType, 
  public:
   lanczos_tests()
     : params(::testing::TestWithParam<lanczos_inputs<IndexType, ValueType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       n(params.rows.size() - 1),
       nnz(params.vals.size()),
       rng(params.seed),

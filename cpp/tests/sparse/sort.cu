@@ -43,7 +43,7 @@ TEST_P(COOSort, Result)
   params = ::testing::TestWithParam<SparseSortInput<float>>::GetParam();
   raft::random::RngState r(params.seed);
   raft::resources h;
-  auto stream = resource::get_cuda_stream(h);
+  auto stream = resource::get_cuda_stream(h).get();
 
   rmm::device_uvector<int> in_rows(params.nnz, stream);
   rmm::device_uvector<int> in_cols(params.nnz, stream);

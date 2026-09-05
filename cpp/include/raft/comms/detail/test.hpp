@@ -34,7 +34,7 @@ bool test_collective_allreduce(raft::resources const& handle, int root)
 
   int const send = 1;
 
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_scalar<int> temp_d(stream);
   RAFT_CUDA_TRY(cudaMemcpyAsync(temp_d.data(), &send, 1, cudaMemcpyHostToDevice, stream));
@@ -65,7 +65,7 @@ bool test_collective_broadcast(raft::resources const& handle, int root)
 
   int const send = root;
 
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_scalar<int> temp_d(stream);
 
@@ -100,7 +100,7 @@ bool test_collective_reduce(raft::resources const& handle, int root)
 
   int const send = root;
 
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_scalar<int> temp_d(stream);
 
@@ -136,7 +136,7 @@ bool test_collective_allgather(raft::resources const& handle, int root)
 
   int const send = communicator.get_rank();
 
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_scalar<int> temp_d(stream);
   rmm::device_uvector<int> recv_d(communicator.get_size(), stream);
@@ -173,7 +173,7 @@ bool test_collective_gather(raft::resources const& handle, int root)
 
   int const send = communicator.get_rank();
 
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_scalar<int> temp_d(stream);
   rmm::device_uvector<int> recv_d(communicator.get_rank() == root ? communicator.get_size() : 0,
@@ -217,7 +217,7 @@ bool test_collective_gatherv(raft::resources const& handle, int root)
     displacements[communicator.get_rank() + 1] - displacements[communicator.get_rank()],
     communicator.get_rank());
 
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_uvector<int> temp_d(sends.size(), stream);
   rmm::device_uvector<int> recv_d(communicator.get_rank() == root ? displacements.back() : 0,
@@ -269,7 +269,7 @@ bool test_collective_reducescatter(raft::resources const& handle, int root)
 
   std::vector<int> sends(communicator.get_size(), 1);
 
-  cudaStream_t stream = resource::get_cuda_stream(handle);
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_uvector<int> temp_d(sends.size(), stream);
   rmm::device_scalar<int> recv_d(stream);
@@ -367,7 +367,7 @@ bool test_pointToPoint_device_send_or_recv(raft::resources const& h, int numTria
 {
   comms_t const& communicator = resource::get_comms(h);
   int const rank              = communicator.get_rank();
-  cudaStream_t stream         = resource::get_cuda_stream(h);
+  cudaStream_t stream         = resource::get_cuda_stream(h).get();
 
   bool ret = true;
   for (int i = 0; i < numTrials; i++) {
@@ -410,7 +410,7 @@ bool test_pointToPoint_device_sendrecv(raft::resources const& h, int numTrials)
 {
   comms_t const& communicator = resource::get_comms(h);
   int const rank              = communicator.get_rank();
-  cudaStream_t stream         = resource::get_cuda_stream(h);
+  cudaStream_t stream         = resource::get_cuda_stream(h).get();
 
   bool ret = true;
   for (int i = 0; i < numTrials; i++) {
@@ -457,7 +457,7 @@ bool test_pointToPoint_device_multicast_sendrecv(raft::resources const& h, int n
 {
   comms_t const& communicator = resource::get_comms(h);
   int const rank              = communicator.get_rank();
-  cudaStream_t stream         = resource::get_cuda_stream(h);
+  cudaStream_t stream         = resource::get_cuda_stream(h).get();
 
   bool ret = true;
   for (int i = 0; i < numTrials; i++) {

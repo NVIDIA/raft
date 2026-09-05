@@ -59,7 +59,7 @@ double rand_index(raft::resources const& handle,
                                     first_cluster_array.data_handle(),
                                     second_cluster_array.data_handle(),
                                     second_cluster_array.extent(0),
-                                    resource::get_cuda_stream(handle));
+                                    resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_rand_index

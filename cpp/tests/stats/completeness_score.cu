@@ -33,7 +33,7 @@ template <typename T>
 class completenessTest : public ::testing::TestWithParam<completenessParam> {
  protected:
   // the constructor
-  completenessTest() : stream(resource::get_cuda_stream(handle)) {}
+  completenessTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void SetUp() override
   {

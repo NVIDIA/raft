@@ -109,7 +109,7 @@ class ColumnSort : public ::testing::TestWithParam<columnSort<T>> {
     raft::matrix::sort_cols_per_row(
       handle, key_in_view, value_out_view, std::make_optional(key_sorted_view));
 
-    RAFT_CUDA_TRY(cudaStreamSynchronize(resource::get_cuda_stream(handle)));
+    RAFT_CUDA_TRY(cudaStreamSynchronize(resource::get_cuda_stream(handle).get()));
   }
 
  protected:

@@ -165,7 +165,7 @@ void make_blobs(
                             (IdxT)out.extent(0),
                             (IdxT)out.extent(1),
                             n_clusters,
-                            resource::get_cuda_stream(handle),
+                            resource::get_cuda_stream(handle).get(),
                             row_major,
                             prm_centers,
                             prm_cluster_std,

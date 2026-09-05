@@ -58,7 +58,7 @@ class RsvdTest : public ::testing::TestWithParam<RsvdInputs<T>> {
   void SetUp() override
   {
     raft::resources handle;
-    stream = resource::get_cuda_stream(handle);
+    stream = resource::get_cuda_stream(handle).get();
 
     params = ::testing::TestWithParam<RsvdInputs<T>>::GetParam();
     // rSVD seems to be very sensitive to the random number sequence as well!
@@ -282,7 +282,7 @@ TEST_P(RsvdTestSquareMatrixNormF, Result)
                                                 params.n_col,
                                                 params.k,
                                                 4 * params.tolerance,
-                                                resource::get_cuda_stream(handle)));
+                                                resource::get_cuda_stream(handle).get()));
 }
 
 typedef RsvdTest<double> RsvdTestSquareMatrixNormD;
@@ -299,7 +299,7 @@ TEST_P(RsvdTestSquareMatrixNormD, Result)
                                                 params.n_col,
                                                 params.k,
                                                 4 * params.tolerance,
-                                                resource::get_cuda_stream(handle)));
+                                                resource::get_cuda_stream(handle).get()));
 }
 
 INSTANTIATE_TEST_CASE_P(RsvdTests, RsvdSanityCheckValF, ::testing::ValuesIn(sanity_inputs_fx));

@@ -133,7 +133,7 @@ void print(const m_t* in,
            idx_t n_cols,
            char h_separator    = ' ',
            char v_separator    = '\n',
-           cudaStream_t stream = rmm::cuda_stream_default)
+           cudaStream_t stream = rmm::cuda_stream_default.get())
 {
   std::vector<m_t> h_matrix = std::vector<m_t>(n_cols * n_rows);
   raft::update_host(h_matrix.data(), in, n_cols * n_rows, stream);

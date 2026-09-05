@@ -39,7 +39,7 @@ template <typename T>
 template <typename T>
 class AccuracyTest : public ::testing::TestWithParam<AccuracyInputs<T>> {
  protected:
-  AccuracyTest() : stream(resource::get_cuda_stream(handle)) {}
+  AccuracyTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void SetUp() override
   {

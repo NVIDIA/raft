@@ -34,10 +34,10 @@ void col_reverse(raft::resources const& handle,
   RAFT_EXPECTS(raft::is_row_or_column_major(inout), "Unsupported matrix layout");
   if (raft::is_col_major(inout)) {
     detail::colReverse(
-      inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle));
+      inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle).get());
   } else {
     detail::rowReverse(
-      inout.data_handle(), inout.extent(1), inout.extent(0), resource::get_cuda_stream(handle));
+      inout.data_handle(), inout.extent(1), inout.extent(0), resource::get_cuda_stream(handle).get());
   }
 }
 
@@ -55,10 +55,10 @@ void row_reverse(raft::resources const& handle,
   RAFT_EXPECTS(raft::is_row_or_column_major(inout), "Unsupported matrix layout");
   if (raft::is_col_major(inout)) {
     detail::rowReverse(
-      inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle));
+      inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle).get());
   } else {
     detail::colReverse(
-      inout.data_handle(), inout.extent(1), inout.extent(0), resource::get_cuda_stream(handle));
+      inout.data_handle(), inout.extent(1), inout.extent(0), resource::get_cuda_stream(handle).get());
   }
 }
 /** @} */  // end group matrix_reverse

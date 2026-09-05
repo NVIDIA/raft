@@ -99,7 +99,7 @@ void cgs2_orthogonalize(raft::resources const& handle,
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::cgs2_orthogonalize");
   if (n_valid <= 0) { return; }
 
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   ValueTypeT one     = ValueTypeT(1);
   ValueTypeT zero    = ValueTypeT(0);
@@ -364,7 +364,7 @@ void compute_ritz_vectors(raft::resources const& handle,
                           std::vector<ValueTypeT>& locked_singular_values)
 {
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::compute_ritz_vectors");
-  auto stream   = resource::get_cuda_stream(handle);
+  auto stream   = resource::get_cuda_stream(handle).get();
   int num_found = static_cast<int>(indices.size());
   if (num_found == 0) { return; }
 
@@ -469,7 +469,7 @@ void compute_restart_vector(raft::resources const& handle,
                             ValueTypeT* v_start)
 {
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::compute_restart_vector");
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
   auto d_coeffs =
     raft::make_device_vector<ValueTypeT, uint32_t>(handle, static_cast<uint32_t>(n_cols));
   raft::copy(handle,
@@ -599,7 +599,7 @@ void sparse_lanczos_svd(
   ncv = std::min(ncv, min_dim - 1);
   RAFT_EXPECTS(ncv >= k, "ncv must be at least n_components after clamping");
 
-  auto stream   = resource::get_cuda_stream(handle);
+  auto stream   = resource::get_cuda_stream(handle).get();
   uint64_t seed = config.seed.value_or(std::random_device{}());
   raft::random::RngState rng_state(seed);
 

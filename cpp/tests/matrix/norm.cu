@@ -48,7 +48,7 @@ class NormTest : public ::testing::TestWithParam<NormInputs<T>> {
  public:
   NormTest()
     : params(::testing::TestWithParam<NormInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream)
   {
   }

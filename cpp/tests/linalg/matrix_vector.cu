@@ -153,7 +153,7 @@ void naive_matrix_vector_op_launch(const raft::resources& handle,
                                    bool bcast_along_rows,
                                    int operation_type)
 {
-  auto stream                       = resource::get_cuda_stream(handle);
+  auto stream                       = resource::get_cuda_stream(handle).get();
   auto operation_bin_mult_skip_zero = [] __device__(T mat_element, T vec_element) {
     if (vec_element != T(0)) {
       return mat_element * vec_element;
@@ -192,7 +192,7 @@ class MatrixVectorTest : public ::testing::TestWithParam<MatrixVectorInputs<T, I
  public:
   MatrixVectorTest()
     : params(::testing::TestWithParam<MatrixVectorInputs<T, IdxType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in(params.rows * params.cols, stream),
       out_ref(params.rows * params.cols, stream),
       out(params.rows * params.cols, stream),

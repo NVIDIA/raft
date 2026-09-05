@@ -49,7 +49,7 @@ class ArgMinTest : public ::testing::TestWithParam<ArgMinInputs<T, IdxT>> {
     raft::update_device(expected.data_handle(),
                         params.output_matrix.data(),
                         params.output_matrix.size(),
-                        resource::get_cuda_stream(handle));
+                        resource::get_cuda_stream(handle).get());
 
     auto input_const_view = raft::make_device_matrix_view<const T, std::uint32_t, row_major>(
       input.data_handle(), input.extent(0), input.extent(1));
@@ -81,7 +81,7 @@ TEST_P(ArgMinTestF, Result)
                           output.data_handle(),
                           params.n_rows,
                           Compare<int>(),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef ArgMinTest<double, int> ArgMinTestD;
@@ -91,7 +91,7 @@ TEST_P(ArgMinTestD, Result)
                           output.data_handle(),
                           params.n_rows,
                           Compare<int>(),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 INSTANTIATE_TEST_SUITE_P(ArgMinTest, ArgMinTestF, ::testing::ValuesIn(inputsf));

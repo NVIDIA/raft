@@ -8,7 +8,7 @@
 
 #include <cuda/memory_resource>
 #include <cuda/std/atomic>
-#include <cuda/stream_ref>
+#include <cuda/stream>
 
 #include <cstddef>
 #include <memory>

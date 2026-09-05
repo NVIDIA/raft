@@ -74,15 +74,15 @@ struct DeviceEvent {
 bool are_implicitly_synchronized(rmm::cuda_stream_view a, rmm::cuda_stream_view b)
 {
   // any stream is "synchronized" with itself
-  if (a.value() == b.value()) return true;
+  if (a.get() == b.get()) return true;
   // legacy + blocking streams
   unsigned int flags = 0;
   if (a.is_default()) {
-    RAFT_CUDA_TRY(cudaStreamGetFlags(b.value(), &flags));
+    RAFT_CUDA_TRY(cudaStreamGetFlags(b.get(), &flags));
     if ((flags & cudaStreamNonBlocking) == 0) return true;
   }
   if (b.is_default()) {
-    RAFT_CUDA_TRY(cudaStreamGetFlags(a.value(), &flags));
+    RAFT_CUDA_TRY(cudaStreamGetFlags(a.get(), &flags));
     if ((flags & cudaStreamNonBlocking) == 0) return true;
   }
   return false;
@@ -283,7 +283,7 @@ void lstsqEig(raft::resources const& handle,
   // the event is created only if the given raft handle is capable of running
   // at least two CUDA streams without implicit synchronization.
   DeviceEvent worksetDone(concurrent);
-  worksetDone.record(mainStream);
+  worksetDone.record(mainStream.get());
   math_t* Q    = workset.data();
   math_t* QS   = Q + n_cols * n_cols;
   math_t* covA = QS + n_cols * n_cols;
@@ -305,22 +305,22 @@ void lstsqEig(raft::resources const& handle,
                      CUBLAS_OP_N,
                      alpha,
                      beta,
-                     mainStream);
+                     mainStream.get());
 
   // Ab <- A* b
-  worksetDone.wait_by(multAbStream);
-  raft::linalg::gemv(handle, A, n_rows, n_cols, b, Ab, true, multAbStream);
+  worksetDone.wait_by(multAbStream.get());
+  raft::linalg::gemv(handle, A, n_rows, n_cols, b, Ab, true, multAbStream.get());
   DeviceEvent multAbDone(concurrent);
-  multAbDone.record(multAbStream);
+  multAbDone.record(multAbStream.get());
 
   // Q S Q* <- covA
   raft::common::nvtx::push_range("raft::linalg::eigDC");
-  raft::linalg::eigDC(handle, covA, n_cols, n_cols, Q, S, mainStream);
+  raft::linalg::eigDC(handle, covA, n_cols, n_cols, Q, S, mainStream.get());
   raft::common::nvtx::pop_range();
 
   // QS  <- Q invS
   raft::linalg::detail::matrixVectorOp<false, true>(
-    dry_run, QS, Q, S, n_cols, n_cols, DivideByNonZero<math_t>(), mainStream);
+    dry_run, QS, Q, S, n_cols, n_cols, DivideByNonZero<math_t>(), mainStream.get());
   // covA <- QS Q* == Q invS Q* == inv(A* A)
   raft::linalg::gemm(handle,
                      QS,
@@ -334,18 +334,18 @@ void lstsqEig(raft::resources const& handle,
                      CUBLAS_OP_T,
                      alpha,
                      beta,
-                     mainStream);
+                     mainStream.get());
 
-  multAbDone.wait_by(mainStream);
+  multAbDone.wait_by(mainStream.get());
   // w <- covA Ab == Q invS Q* A b == inv(A* A) A b
-  raft::linalg::gemv(handle, covA, n_cols, n_cols, Ab, w, false, mainStream);
+  raft::linalg::gemv(handle, covA, n_cols, n_cols, Ab, w, false, mainStream.get());
 
   // This event is created only if we use two worker streams, and `stream` is not the legacy stream,
   // and `mainStream` is not a non-blocking stream. In fact, with the current logic these conditions
   // are impossible together, but it still makes sense to put this construct here to emphasize that
   // `stream` must wait till the work here is done (for future refactorings).
   DeviceEvent mainDone(!are_implicitly_synchronized(mainStream, stream));
-  mainDone.record(mainStream);
+  mainDone.record(mainStream.get());
   mainDone.wait_by(stream);
 }
 

@@ -94,7 +94,7 @@ class MinMaxTest : public ::testing::TestWithParam<MinMaxInputs<T>> {
 
   void SetUp() override
   {
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     params      = ::testing::TestWithParam<MinMaxInputs<T>>::GetParam();
     raft::random::RngState r(params.seed);
     int len = params.rows * params.cols;

@@ -70,7 +70,7 @@ class GemvTest : public ::testing::TestWithParam<GemvInputs<T>> {
       refy(0, rmm::cuda_stream_default),
       y(0, rmm::cuda_stream_default)
   {
-    rmm::cuda_stream_default.synchronize();
+    rmm::cuda_stream_default.sync();
   }
 
  protected:
@@ -79,7 +79,7 @@ class GemvTest : public ::testing::TestWithParam<GemvInputs<T>> {
     params = ::testing::TestWithParam<GemvInputs<T>>::GetParam();
 
     raft::resources handle;
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     raft::random::RngState r(params.seed);
 

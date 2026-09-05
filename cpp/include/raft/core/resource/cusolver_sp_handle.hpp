@@ -23,7 +23,7 @@ class cusolver_sp_resource : public resource {
   cusolver_sp_resource(rmm::cuda_stream_view stream)
   {
     RAFT_CUSOLVER_TRY_NO_THROW(cusolverSpCreate(&cusolver_res));
-    RAFT_CUSOLVER_TRY_NO_THROW(cusolverSpSetStream(cusolver_res, stream));
+    RAFT_CUSOLVER_TRY_NO_THROW(cusolverSpSetStream(cusolver_res, stream.get()));
   }
 
   void* get_resource() override { return &cusolver_res; }

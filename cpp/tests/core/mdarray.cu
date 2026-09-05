@@ -45,7 +45,7 @@
 namespace {
 void check_status(int32_t* d_status, rmm::cuda_stream_view stream)
 {
-  stream.synchronize();
+  stream.sync();
   int32_t h_status{1};
   raft::update_host(&h_status, d_status, 1, stream);
   ASSERT_EQ(h_status, 0);

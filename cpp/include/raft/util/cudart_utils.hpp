@@ -136,7 +136,7 @@ class grid_1d_block_t {
 template <typename Type>
 void copy(Type* dst, const Type* src, size_t len, rmm::cuda_stream_view stream)
 {
-  RAFT_CUDA_TRY(cudaMemcpyAsync(dst, src, len * sizeof(Type), cudaMemcpyDefault, stream));
+  RAFT_CUDA_TRY(cudaMemcpyAsync(dst, src, len * sizeof(Type), cudaMemcpyDefault, stream.get()));
 }
 
 /**
@@ -172,7 +172,7 @@ void copy_matrix(Type* dst,
                                   width * elem_size,
                                   height,
                                   cudaMemcpyDefault,
-                                  stream));
+                                  stream.get()));
 }
 
 /**
@@ -199,7 +199,7 @@ template <typename Type>
 void copy_async(Type* d_ptr1, const Type* d_ptr2, size_t len, rmm::cuda_stream_view stream)
 {
   RAFT_CUDA_TRY(
-    cudaMemcpyAsync(d_ptr1, d_ptr2, len * sizeof(Type), cudaMemcpyDeviceToDevice, stream));
+    cudaMemcpyAsync(d_ptr1, d_ptr2, len * sizeof(Type), cudaMemcpyDeviceToDevice, stream.get()));
 }
 /** @} */
 

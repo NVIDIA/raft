@@ -93,7 +93,7 @@ class mutualInfoTest : public ::testing::TestWithParam<mutualInfoParam> {
     truthmutualInfo /= nElements;
 
     // allocating and initializing memory to the GPU
-    stream = resource::get_cuda_stream(handle);
+    stream = resource::get_cuda_stream(handle).get();
 
     rmm::device_uvector<T> firstClusterArray(nElements, stream);
     rmm::device_uvector<T> secondClusterArray(nElements, stream);

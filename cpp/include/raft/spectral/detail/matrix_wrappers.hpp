@@ -223,7 +223,7 @@ struct sparse_matrix_t {
     RAFT_EXPECTS(y != nullptr, "Null y buffer.");
 
     auto cusparse_h = resource::get_cusparse_handle(handle_);
-    auto stream     = resource::get_cuda_stream(handle_);
+    auto stream     = resource::get_cuda_stream(handle_).get();
     bool is_dry_run = resource::get_dry_run_flag(handle_);
 
     cusparseOperation_t trans = transpose ? CUSPARSE_OPERATION_TRANSPOSE :  // transpose
@@ -393,7 +393,7 @@ struct laplacian_matrix_t : sparse_matrix_t<index_type, value_type, nnz_type> {
 
     auto handle     = sparse_matrix_t<index_type, value_type, nnz_type>::get_handle();
     auto cublas_h   = resource::get_cublas_handle(handle);
-    auto stream     = resource::get_cuda_stream(handle);
+    auto stream     = resource::get_cuda_stream(handle).get();
     bool is_dry_run = resource::get_dry_run_flag(handle);
 
     // scales y by beta:
@@ -459,7 +459,7 @@ struct modularity_matrix_t : laplacian_matrix_t<index_type, value_type, nnz_type
 
     auto handle     = sparse_matrix_t<index_type, value_type, nnz_type>::get_handle();
     auto cublas_h   = resource::get_cublas_handle(handle);
-    auto stream     = resource::get_cuda_stream(handle);
+    auto stream     = resource::get_cuda_stream(handle).get();
     bool is_dry_run = resource::get_dry_run_flag(handle);
 
     // y = A*x

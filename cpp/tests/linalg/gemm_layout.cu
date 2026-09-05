@@ -57,7 +57,7 @@ class GemmLayoutTest : public ::testing::TestWithParam<GemmLayoutInputs<T>> {
     params = ::testing::TestWithParam<GemmLayoutInputs<T>>::GetParam();
 
     raft::resources handle;
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     raft::random::RngState r(params.seed);
 

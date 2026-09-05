@@ -45,7 +45,7 @@ class SampleRowsTest : public ::testing::TestWithParam<inputs> {
   SampleRowsTest()
     : params(::testing::TestWithParam<inputs>::GetParam()),
       ld(params.dim + params.dim_margin),
-      stream(resource::get_cuda_stream(res)),
+      stream(resource::get_cuda_stream(res).get()),
       state{137ULL},
       in(make_device_matrix<T, int64_t>(res, params.N, ld)),
       out(make_device_matrix<T, int64_t>(res, 0, 0)),

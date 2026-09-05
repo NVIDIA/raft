@@ -20,7 +20,7 @@ class cublas_resource : public resource {
   cublas_resource(rmm::cuda_stream_view stream)
   {
     RAFT_CUBLAS_TRY_NO_THROW(cublasCreate(&cublas_res));
-    RAFT_CUBLAS_TRY_NO_THROW(cublasSetStream(cublas_res, stream));
+    RAFT_CUBLAS_TRY_NO_THROW(cublasSetStream(cublas_res, stream.get()));
   }
 
   ~cublas_resource() override { RAFT_CUBLAS_TRY_NO_THROW(cublasDestroy(cublas_res)); }
@@ -60,10 +60,10 @@ class cublas_resource_factory : public resource_factory {
 inline cublasHandle_t get_cublas_handle(resources const& res)
 {
   if (!res.has_resource_factory(resource_type::CUBLAS_HANDLE)) {
-    res.ensure_default_factory(std::make_shared<cublas_resource_factory>(get_cuda_stream(res)));
+    res.ensure_default_factory(std::make_shared<cublas_resource_factory>(get_cuda_stream(res).get()));
   }
   auto ret = *res.get_resource<cublasHandle_t>(resource_type::CUBLAS_HANDLE);
-  RAFT_CUBLAS_TRY(cublasSetStream(ret, get_cuda_stream(res)));
+  RAFT_CUBLAS_TRY(cublasSetStream(ret, get_cuda_stream(res).get()));
   return ret;
 };
 

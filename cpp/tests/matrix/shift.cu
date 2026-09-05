@@ -90,7 +90,7 @@ class ShiftTest : public ::testing::TestWithParam<ShiftInputs<T>> {
         raft::update_device(values.data_handle(),
                             params.values.data(),
                             values_rows * values_cols,
-                            resource::get_cuda_stream(handle));
+                            resource::get_cuda_stream(handle).get());
         raft::matrix::shift<T, std::uint32_t>(handle,
                                               in_out.view(),
                                               raft::make_const_mdspan(values.view()),
@@ -264,7 +264,7 @@ TEST_P(ShiftTestF, Result)
                           in_out.data_handle(),
                           params.n_rows * params.n_cols,
                           Compare<float>(),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 INSTANTIATE_TEST_SUITE_P(ShiftTestConstant, ShiftTestF, ::testing::ValuesIn(inputs_constant));

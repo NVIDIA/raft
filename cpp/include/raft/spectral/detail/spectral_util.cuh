@@ -41,7 +41,7 @@ void transform_eigen_matrix(raft::resources const& handle,
 
   if (resource::get_dry_run_flag(handle)) { return; }
 
-  auto stream             = resource::get_cuda_stream(handle);
+  auto stream             = resource::get_cuda_stream(handle).get();
   auto cublas_h           = resource::get_cublas_handle(handle);
   auto thrust_exec_policy = resource::get_thrust_policy(handle);
 
@@ -141,7 +141,7 @@ bool construct_indicator(
   raft::spectral::matrix::laplacian_matrix_t<vertex_t, weight_t, nnz_t> const& B)
 {
   if (resource::get_dry_run_flag(handle)) { return {}; }
-  auto stream             = resource::get_cuda_stream(handle);
+  auto stream             = resource::get_cuda_stream(handle).get();
   auto cublas_h           = resource::get_cublas_handle(handle);
   auto thrust_exec_policy = resource::get_thrust_policy(handle);
 

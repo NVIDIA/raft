@@ -66,7 +66,7 @@ class HistTest : public ::testing::TestWithParam<HistInputs> {
   {
     params = ::testing::TestWithParam<HistInputs>::GetParam();
     raft::random::RngState r(params.seed);
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     int len     = params.nrows * params.ncols;
     in.resize(len, stream);
     if (params.isNormal) {
@@ -107,7 +107,7 @@ class HistMdspanTest : public ::testing::TestWithParam<HistInputs> {
   {
     params = ::testing::TestWithParam<HistInputs>::GetParam();
     raft::random::RngState r(params.seed);
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     int len     = params.nrows * params.ncols;
     in.resize(len, stream);
 

@@ -81,7 +81,7 @@ class RowNormTest : public ::testing::TestWithParam<NormInputs<OutT, IdxT>> {
  public:
   RowNormTest()
     : params(::testing::TestWithParam<NormInputs<OutT, IdxT>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream),
       dots_exp(params.rows, stream),
       dots_act(params.rows, stream)
@@ -177,7 +177,7 @@ class ColNormTest : public ::testing::TestWithParam<NormInputs<OutT, IdxT>> {
  public:
   ColNormTest()
     : params(::testing::TestWithParam<NormInputs<OutT, IdxT>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream),
       dots_exp(params.cols, stream),
       dots_act(params.cols, stream)

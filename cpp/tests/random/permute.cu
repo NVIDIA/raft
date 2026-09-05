@@ -56,7 +56,7 @@ class PermTest : public ::testing::TestWithParam<PermInputs<T>> {
   /** @brief Allocate test inputs and run the keyed raw-pointer overload. */
   void SetUp() override
   {
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     params      = ::testing::TestWithParam<PermInputs<T>>::GetParam();
     // forcefully set needPerms, since we need it for unit-testing!
     if (params.needShuffle) { params.needPerms = true; }
@@ -453,9 +453,10 @@ TEST(PermTest, SeedDiversity)
   rmm::device_uvector<uint32_t> d_ref(N, stream);
   rmm::device_uvector<int> d_matches(total_threads, stream);
   detail::permute<float, uint32_t, uint32_t>(
-    d_ref.data(), nullptr, nullptr, 0, N, true, stream, base_seed);
+    d_ref.data(), nullptr, nullptr, 0, N, true, stream.get(), base_seed);
 
-  seed_diversity_kernel<<<nblocks, TPB, 0, stream>>>(d_ref.data(), N, base_seed, d_matches.data());
+  seed_diversity_kernel<<<nblocks, TPB, 0, stream.get()>>>(
+    d_ref.data(), N, base_seed, d_matches.data());
   RAFT_CUDA_TRY(cudaPeekAtLastError());
 
   std::vector<int> h_matches(total_threads);

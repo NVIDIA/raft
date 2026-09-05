@@ -107,7 +107,7 @@ class RngDiscreteTest : public ::testing::TestWithParam<RngDiscreteInputs<IdxT>>
  public:
   RngDiscreteTest()
     : params(::testing::TestWithParam<RngDiscreteInputs<IdxT>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       out(params.sampled_len, stream),
       weights(params.len, stream),
       histogram(params.len, stream),

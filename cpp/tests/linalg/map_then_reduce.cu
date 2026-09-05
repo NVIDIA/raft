@@ -71,7 +71,7 @@ class MapReduceTest : public ::testing::TestWithParam<MapReduceInputs<InType>> {
  public:
   MapReduceTest()
     : params(::testing::TestWithParam<MapReduceInputs<InType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in(params.len, stream),
       out_ref(params.len, stream),
       out(params.len, stream)
@@ -133,7 +133,7 @@ class MapGenericReduceTest : public ::testing::Test {
   MapGenericReduceTest()
     : input(n, resource::get_cuda_stream(handle)), output(resource::get_cuda_stream(handle))
   {
-    initInput(input.data(), input.size(), resource::get_cuda_stream(handle));
+    initInput(input.data(), input.size(), resource::get_cuda_stream(handle).get());
   }
 
  public:
@@ -155,7 +155,7 @@ class MapGenericReduceTest : public ::testing::Test {
       input.data(), static_cast<std::uint32_t>(input.size()));
     map_reduce(handle, input_view, output_view, neutral, raft::identity_op{}, cuda::minimum{});
     EXPECT_TRUE(raft::devArrMatch(
-      OutType(1), output.data(), 1, raft::Compare<OutType>(), resource::get_cuda_stream(handle)));
+      OutType(1), output.data(), 1, raft::Compare<OutType>(), resource::get_cuda_stream(handle).get()));
   }
   void testMax()
   {
@@ -165,7 +165,7 @@ class MapGenericReduceTest : public ::testing::Test {
       input.data(), static_cast<std::uint32_t>(input.size()));
     map_reduce(handle, input_view, output_view, neutral, raft::identity_op{}, cuda::maximum{});
     EXPECT_TRUE(raft::devArrMatch(
-      OutType(5), output.data(), 1, raft::Compare<OutType>(), resource::get_cuda_stream(handle)));
+      OutType(5), output.data(), 1, raft::Compare<OutType>(), resource::get_cuda_stream(handle).get()));
   }
 
  protected:

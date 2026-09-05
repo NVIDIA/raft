@@ -103,7 +103,7 @@ class MVGTest : public ::testing::TestWithParam<MVGInputs<T>> {
     tolerance = params.tolerance;
 
     auto cusolverH = resource::get_cusolver_dn_handle(handle);
-    auto stream    = resource::get_cuda_stream(handle);
+    auto stream    = resource::get_cuda_stream(handle).get();
 
     // preparing to store stuff
     P.resize(dim * dim);
@@ -241,7 +241,7 @@ class MVGMdspanTest : public ::testing::TestWithParam<MVGInputs<T>> {
     tolerance   = params.tolerance;
 
     auto cusolverH = resource::get_cusolver_dn_handle(handle);
-    auto stream    = resource::get_cuda_stream(handle);
+    auto stream    = resource::get_cuda_stream(handle).get();
 
     P.resize(dim * dim);
     x.resize(dim);
@@ -409,7 +409,7 @@ TEST_P(MVGTestF, MeanIsCorrectF)
                                 Rand_mean.data(),
                                 dim,
                                 raft::CompareApprox<float>(tolerance),
-                                resource::get_cuda_stream(handle)))
+                                resource::get_cuda_stream(handle).get()))
     << " in MeanIsCorrect";
 }
 TEST_P(MVGTestF, CovIsCorrectF)
@@ -419,7 +419,7 @@ TEST_P(MVGTestF, CovIsCorrectF)
                                 dim,
                                 dim,
                                 raft::CompareApprox<float>(tolerance),
-                                resource::get_cuda_stream(handle)))
+                                resource::get_cuda_stream(handle).get()))
     << " in CovIsCorrect";
 }
 TEST_P(MVGTestD, MeanIsCorrectD)
@@ -428,7 +428,7 @@ TEST_P(MVGTestD, MeanIsCorrectD)
                                 Rand_mean.data(),
                                 dim,
                                 raft::CompareApprox<double>(tolerance),
-                                resource::get_cuda_stream(handle)))
+                                resource::get_cuda_stream(handle).get()))
     << " in MeanIsCorrect";
 }
 TEST_P(MVGTestD, CovIsCorrectD)
@@ -438,7 +438,7 @@ TEST_P(MVGTestD, CovIsCorrectD)
                                 dim,
                                 dim,
                                 raft::CompareApprox<double>(tolerance),
-                                resource::get_cuda_stream(handle)))
+                                resource::get_cuda_stream(handle).get()))
     << " in CovIsCorrect";
 }
 
@@ -450,7 +450,7 @@ TEST_P(MVGMdspanTestF, MeanIsCorrectF)
                                 Rand_mean.data(),
                                 dim,
                                 raft::CompareApprox<float>(tolerance),
-                                resource::get_cuda_stream(handle)))
+                                resource::get_cuda_stream(handle).get()))
     << " in MeanIsCorrect";
 }
 TEST_P(MVGMdspanTestF, CovIsCorrectF)
@@ -460,7 +460,7 @@ TEST_P(MVGMdspanTestF, CovIsCorrectF)
                                 dim,
                                 dim,
                                 raft::CompareApprox<float>(tolerance),
-                                resource::get_cuda_stream(handle)))
+                                resource::get_cuda_stream(handle).get()))
     << " in CovIsCorrect";
 }
 TEST_P(MVGMdspanTestD, MeanIsCorrectD)
@@ -469,7 +469,7 @@ TEST_P(MVGMdspanTestD, MeanIsCorrectD)
                                 Rand_mean.data(),
                                 dim,
                                 raft::CompareApprox<double>(tolerance),
-                                resource::get_cuda_stream(handle)))
+                                resource::get_cuda_stream(handle).get()))
     << " in MeanIsCorrect";
 }
 TEST_P(MVGMdspanTestD, CovIsCorrectD)
@@ -479,7 +479,7 @@ TEST_P(MVGMdspanTestD, CovIsCorrectD)
                                 dim,
                                 dim,
                                 raft::CompareApprox<double>(tolerance),
-                                resource::get_cuda_stream(handle)))
+                                resource::get_cuda_stream(handle).get()))
     << " in CovIsCorrect";
 }
 

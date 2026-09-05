@@ -73,7 +73,7 @@ double mutual_info_score(raft::resources const& handle,
                                    first_cluster_array.extent(0),
                                    lower_label_range,
                                    upper_label_range,
-                                   resource::get_cuda_stream(handle));
+                                   resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_mutual_info

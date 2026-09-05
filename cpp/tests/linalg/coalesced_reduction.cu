@@ -49,7 +49,7 @@ class coalescedReductionTest : public ::testing::TestWithParam<coalescedReductio
  public:
   coalescedReductionTest()
     : params(::testing::TestWithParam<coalescedReductionInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream),
       dots_exp(params.rows * params.cols, stream),
       dots_act(params.rows * params.cols, stream)

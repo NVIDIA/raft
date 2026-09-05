@@ -87,7 +87,7 @@ TEST_P(DiagonalTestF, Result)
                           diag_actual.data_handle(),
                           diag_size,
                           Compare<float>(),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef DiagonalTest<double> DiagonalTestD;
@@ -97,7 +97,7 @@ TEST_P(DiagonalTestD, Result)
                           diag_actual.data_handle(),
                           diag_size,
                           Compare<double>(),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 INSTANTIATE_TEST_SUITE_P(DiagonalTest, DiagonalTestF, ::testing::ValuesIn(inputsf));

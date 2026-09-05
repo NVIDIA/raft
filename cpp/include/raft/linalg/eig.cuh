@@ -132,7 +132,7 @@ void eig_dc(raft::resources const& handle,
         in.extent(1),
         eig_vectors.data_handle(),
         eig_vals.data_handle(),
-        resource::get_cuda_stream(handle));
+        resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -168,7 +168,7 @@ void eig_dc_selective(raft::resources const& handle,
                          eig_vectors.data_handle(),
                          eig_vals.data_handle(),
                          memUsage,
-                         resource::get_cuda_stream(handle));
+                         resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -203,7 +203,7 @@ void eig_jacobi(raft::resources const& handle,
             in.extent(1),
             eig_vectors.data_handle(),
             eig_vals.data_handle(),
-            resource::get_cuda_stream(handle),
+            resource::get_cuda_stream(handle).get(),
             tol,
             sweeps);
 }

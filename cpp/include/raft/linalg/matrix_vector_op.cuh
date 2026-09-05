@@ -166,7 +166,7 @@ void matrix_vector_op(raft::resources const& handle,
                                                    out.extent(1),
                                                    out.extent(0),
                                                    op,
-                                                   resource::get_cuda_stream(handle));
+                                                   resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -233,7 +233,7 @@ void matrix_vector_op(raft::resources const& handle,
                                                    out.extent(1),
                                                    out.extent(0),
                                                    op,
-                                                   resource::get_cuda_stream(handle));
+                                                   resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group matrix_vector_op

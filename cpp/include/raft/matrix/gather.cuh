@@ -224,7 +224,7 @@ void gather(const raft::resources& handle,
     map.extent(0),
     out.data_handle(),
     transform_op,
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -271,7 +271,7 @@ void gather(
     map.extent(0),
     out.data_handle(),
     transform_op,
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -329,7 +329,7 @@ void gather_if(const raft::resources& handle,
                     out.data_handle(),
                     pred_op,
                     transform_op,
-                    resource::get_cuda_stream(handle));
+                    resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -386,7 +386,7 @@ void gather_if(const raft::resources& handle,
                     out.data_handle(),
                     pred_op,
                     transform_op,
-                    resource::get_cuda_stream(handle));
+                    resource::get_cuda_stream(handle).get());
 }
 
 /**

@@ -42,7 +42,7 @@ void set_diagonal(raft::resources const& handle,
                                    matrix.extent(0),
                                    matrix.extent(1),
                                    is_row_major,
-                                   resource::get_cuda_stream(handle));
+                                   resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -65,7 +65,7 @@ void get_diagonal(raft::resources const& handle,
                             matrix.extent(0),
                             matrix.extent(1),
                             is_row_major,
-                            resource::get_cuda_stream(handle));
+                            resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -81,7 +81,7 @@ void invert_diagonal(raft::resources const& handle,
   // TODO: Use get_diagonal for this to support rectangular
   RAFT_EXPECTS(inout.extent(0) == inout.extent(1), "Matrix must be square.");
   detail::getDiagonalInverseMatrix(
-    inout.data_handle(), inout.extent(0), resource::get_cuda_stream(handle));
+    inout.data_handle(), inout.extent(0), resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -100,7 +100,7 @@ void eye(const raft::resources& handle, raft::device_matrix_view<math_t, idx_t, 
   auto diag = raft::make_device_vector<math_t, idx_t>(handle, min(out.extent(0), out.extent(1)));
   if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_CUDA_TRY(cudaMemsetAsync(
-    out.data_handle(), 0, out.size() * sizeof(math_t), resource::get_cuda_stream(handle)));
+    out.data_handle(), 0, out.size() * sizeof(math_t), resource::get_cuda_stream(handle).get()));
   raft::matrix::fill(handle, diag.view(), math_t(1));
   set_diagonal(handle, raft::make_const_mdspan(diag.view()), out);
 }

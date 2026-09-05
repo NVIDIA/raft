@@ -166,7 +166,7 @@ void reduce_rows_by_key(
                        d_A.extent(0),
                        n_unique_keys,
                        d_sums.data_handle(),
-                       resource::get_cuda_stream(handle),
+                       resource::get_cuda_stream(handle).get(),
                        reset_sums);
   } else {
     reduce_rows_by_key(d_A.data_handle(),
@@ -177,7 +177,7 @@ void reduce_rows_by_key(
                        d_A.extent(0),
                        n_unique_keys,
                        d_sums.data_handle(),
-                       resource::get_cuda_stream(handle),
+                       resource::get_cuda_stream(handle).get(),
                        reset_sums);
   }
 }

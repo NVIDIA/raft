@@ -100,7 +100,7 @@ void information_criterion_batched(raft::resources const& handle,
                                          n_params,
                                          d_ic.extent(0),
                                          n_samples,
-                                         resource::get_cuda_stream(handle));
+                                         resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_information_criterion
