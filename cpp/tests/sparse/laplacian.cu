@@ -425,4 +425,92 @@ TEST(Raft, ComputeGraphLaplacianNormalizedCOO)
   EXPECT_EQ(expected_indptr, normalized_laplacian_indptr);
 }
 
+/**
+ * @brief Regression test for laplacian.cuh type mismatch fix (aarch64 + CCCL 3.4.0)
+ *
+ * Before the fix, `marked_diagonal` was `device_vector<int>` but `thrust::exclusive_scan`
+ * expected `device_vector<NZType>`. With NZType=long (64-bit), the type mismatch caused
+ * writes to incorrect memory addresses on SM_121a (Grace Hopper) with CCCL 3.4.0's
+ * "warpspeed scan" optimization, corrupting the CUDA context.
+ *
+ * This test uses NZType=long to ensure the fix holds: marked_diagonal must be
+ * device_vector<NZType> so the exclusive_scan output type is consistent.
+ */
+TEST(Raft, ComputeGraphLaplacianCOOLongNZType)
+{
+  // Adjacency matrix (COO format, NZType=long):
+  // [[0 1 1 1]
+  //  [1 0 0 1]
+  //  [1 0 0 0]
+  //  [1 1 0 0]]
+  auto rows   = std::vector<int>{0, 0, 0, 1, 1, 2, 3, 3};
+  auto cols   = std::vector<int>{1, 2, 3, 0, 3, 0, 0, 1};
+  auto data   = std::vector<float>{1, 1, 1, 1, 1, 1, 1, 1};
+  int n_rows  = 4;
+  int n_cols  = 4;
+  long nnz    = static_cast<long>(data.size());
+
+  auto res = raft::resources{};
+
+  auto adjacency_matrix =
+    make_device_coo_matrix<float, int, int, long>(res, n_rows, n_cols, nnz);
+
+  raft::copy(adjacency_matrix.get_elements().data(),
+             data.data(),
+             data.size(),
+             raft::resource::get_cuda_stream(res));
+  raft::copy(adjacency_matrix.structure_view().get_rows().data(),
+             rows.data(),
+             rows.size(),
+             raft::resource::get_cuda_stream(res));
+  raft::copy(adjacency_matrix.structure_view().get_cols().data(),
+             cols.data(),
+             cols.size(),
+             raft::resource::get_cuda_stream(res));
+
+  // This call exercises the fixed code path: marked_diagonal must be NZType=long,
+  // not int, to avoid type mismatch in thrust::exclusive_scan on aarch64 + CCCL 3.4.0.
+  auto laplacian = compute_graph_laplacian(res, adjacency_matrix.view());
+  raft::resource::sync_stream(res);
+
+  // Sort COO output for deterministic comparison
+  auto lap_struct = laplacian.structure_view();
+  raft::sparse::op::coo_sort<float, int, int>(lap_struct.get_n_rows(),
+                                              lap_struct.get_n_cols(),
+                                              lap_struct.get_nnz(),
+                                              lap_struct.get_rows().data(),
+                                              lap_struct.get_cols().data(),
+                                              laplacian.get_elements().data(),
+                                              raft::resource::get_cuda_stream(res));
+  raft::resource::sync_stream(res);
+
+  auto out_rows   = std::vector<int>(lap_struct.get_nnz());
+  auto out_cols   = std::vector<int>(lap_struct.get_nnz());
+  auto out_data   = std::vector<float>(lap_struct.get_nnz());
+
+  raft::copy(out_rows.data(), lap_struct.get_rows().data(), lap_struct.get_nnz(),
+             raft::resource::get_cuda_stream(res));
+  raft::copy(out_cols.data(), lap_struct.get_cols().data(), lap_struct.get_nnz(),
+             raft::resource::get_cuda_stream(res));
+  raft::copy(out_data.data(), laplacian.get_elements().data(), lap_struct.get_nnz(),
+             raft::resource::get_cuda_stream(res));
+  raft::resource::sync_stream(res);
+
+  // Expected Laplacian L = D - A:
+  // [[ 3 -1 -1 -1]
+  //  [-1  2  0 -1]
+  //  [-1  0  1  0]
+  //  [-1 -1  0  2]]
+  // Expected nnz = 8 (off-diag) + 4 (diag) = 12
+  ASSERT_EQ(lap_struct.get_nnz(), 12);
+
+  auto expected_rows = std::vector<int>{0, 0, 0, 0, 1, 1, 1, 2, 2, 3, 3, 3};
+  auto expected_cols = std::vector<int>{0, 1, 2, 3, 0, 1, 3, 0, 2, 0, 1, 3};
+  auto expected_data = std::vector<float>{3, -1, -1, -1, -1, 2, -1, -1, 1, -1, -1, 2};
+
+  EXPECT_EQ(expected_rows, out_rows);
+  EXPECT_EQ(expected_cols, out_cols);
+  EXPECT_EQ(expected_data, out_data);
+}
+
 }  // namespace raft::sparse::linalg

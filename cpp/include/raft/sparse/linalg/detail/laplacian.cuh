@@ -133,8 +133,8 @@ device_coo_matrix<ElementType, RowType, ColType, NZType> compute_graph_laplacian
 
   auto stream = resource::get_cuda_stream(res);
 
-  auto marked_diagonal = raft::make_device_vector<int, RowType>(res, dim);
-  raft::matrix::fill(res, marked_diagonal.view(), int(1));
+  auto marked_diagonal = raft::make_device_vector<NZType, RowType>(res, dim);
+  raft::matrix::fill(res, marked_diagonal.view(), NZType(1));
   auto marked_diagonal_ptr = marked_diagonal.data_handle();
   auto rows_ptr            = input_structure.get_rows().data();
   auto cols_ptr            = input_structure.get_cols().data();
