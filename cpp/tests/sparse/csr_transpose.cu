@@ -45,7 +45,7 @@ class CSRTransposeTest : public ::testing::TestWithParam<CSRTransposeInputs<valu
  public:
   CSRTransposeTest()
     : params(::testing::TestWithParam<CSRTransposeInputs<value_idx, value_t>>::GetParam()),
-      stream(resource::get_cuda_stream(raft_handle)),
+      stream(resource::get_cuda_stream(raft_handle).get()),
       indptr(0, stream),
       indices(0, stream),
       data(0, stream),
@@ -105,7 +105,7 @@ class CSRTransposeTest : public ::testing::TestWithParam<CSRTransposeInputs<valu
                                             params.nrows,
                                             params.ncols,
                                             params.nnz,
-                                            resource::get_cuda_stream(h));
+                                            resource::get_cuda_stream(h).get());
       },
       raft::alloc_behavior::ARGUMENT_DRIVEN,
       1);

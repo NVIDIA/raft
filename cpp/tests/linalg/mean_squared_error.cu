@@ -61,7 +61,7 @@ class MeanSquaredErrorTest : public ::testing::TestWithParam<MeanSquaredErrorInp
   {
     params = ::testing::TestWithParam<MeanSquaredErrorInputs<T>>::GetParam();
 
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     raft::random::RngState r(params.seed);
 

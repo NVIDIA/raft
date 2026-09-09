@@ -71,7 +71,7 @@ template <typename math_t, typename idx_t, typename layout>
 void power(raft::resources const& handle, raft::device_matrix_view<math_t, idx_t, layout> inout)
 {
   if (resource::get_dry_run_flag(handle)) { return; }
-  detail::power<math_t>(inout.data_handle(), inout.size(), resource::get_cuda_stream(handle));
+  detail::power<math_t>(inout.data_handle(), inout.size(), resource::get_cuda_stream(handle).get());
 }
 
 /**

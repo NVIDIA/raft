@@ -48,7 +48,7 @@ class CovTest : public ::testing::TestWithParam<CovInputs<T>> {
   void SetUp() override
   {
     raft::resources handle;
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     params = ::testing::TestWithParam<CovInputs<T>>::GetParam();
     params.tolerance *= 2;
@@ -116,7 +116,7 @@ class CovTest : public ::testing::TestWithParam<CovInputs<T>> {
                    3,
                    true,
                    true,
-                   resource::get_cuda_stream(h));
+                   resource::get_cuda_stream(h).get());
       },
       raft::alloc_behavior::NO_ALLOCATIONS);
   }

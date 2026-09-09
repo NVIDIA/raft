@@ -11,6 +11,8 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/kernel_launch.hpp>
 
+#include <cuda/stream>
+
 #include <gtest/gtest.h>
 
 namespace raft {
@@ -67,10 +69,10 @@ class GemvTest : public ::testing::TestWithParam<GemvInputs<T>> {
  public:
   GemvTest()
     : testing::TestWithParam<GemvInputs<T>>(),
-      refy(0, rmm::cuda_stream_default),
-      y(0, rmm::cuda_stream_default)
+      refy(0, cuda::stream_ref{cudaStream_t{cudaStreamDefault}}),
+      y(0, cuda::stream_ref{cudaStream_t{cudaStreamDefault}})
   {
-    rmm::cuda_stream_default.synchronize();
+    cuda::stream_ref{cudaStream_t{cudaStreamDefault}}.sync();
   }
 
  protected:
@@ -79,7 +81,7 @@ class GemvTest : public ::testing::TestWithParam<GemvInputs<T>> {
     params = ::testing::TestWithParam<GemvInputs<T>>::GetParam();
 
     raft::resources handle;
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     raft::random::RngState r(params.seed);
 

@@ -72,7 +72,7 @@ class std_comms : public comms_iface {
             rmm::cuda_stream_view stream,
             bool subcomms_ucp = true)
     : nccl_comm_(nccl_comm),
-      stream_(stream),
+      stream_(stream.get()),
       status_(stream),
       num_ranks_(num_ranks),
       rank_(rank),
@@ -97,7 +97,7 @@ class std_comms : public comms_iface {
             rmm::cuda_stream_view stream,
             bool own_nccl_comm = false)
     : nccl_comm_(nccl_comm),
-      stream_(stream),
+      stream_(stream.get()),
       status_(stream),
       num_ranks_(num_ranks),
       rank_(rank),

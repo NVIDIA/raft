@@ -45,7 +45,7 @@ struct permute : public fixture {
                             params.cols,
                             params.rows,
                             params.rowMajor,
-                            stream,
+                            stream.get(),
                             123456ULL);
     });
   }
@@ -97,7 +97,7 @@ struct permute_perms_only : public fixture {
                             IntType(0),
                             IntType(n_rows),
                             true,
-                            stream,
+                            stream.get(),
                             123456ULL);
       bytes_processed += size_t(n_rows) * sizeof(IntType);
     });

@@ -192,7 +192,7 @@ class multi_variable_gaussian_impl {
   {
     if (resource::get_dry_run_flag(handle)) { return; }
     auto cusolverHandle = resource::get_cusolver_dn_handle(handle);
-    auto cudaStream     = resource::get_cuda_stream(handle);
+    auto cudaStream     = resource::get_cuda_stream(handle).get();
     if (method == chol_decomp) {
       // lower part will contains chol_decomp
       RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDnpotrf(

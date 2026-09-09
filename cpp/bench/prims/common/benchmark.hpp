@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -74,7 +74,7 @@ struct cuda_event_timer {
     RAFT_CUDA_TRY(cudaEventCreate(&start_));
     RAFT_CUDA_TRY(cudaEventCreate(&stop_));
     raft::interruptible::synchronize(stream_);
-    RAFT_CUDA_TRY(cudaEventRecord(start_, stream_));
+    RAFT_CUDA_TRY(cudaEventRecord(start_, stream_.get()));
   }
   cuda_event_timer() = delete;
 
@@ -85,7 +85,7 @@ struct cuda_event_timer {
    */
   ~cuda_event_timer()
   {
-    RAFT_CUDA_TRY_NO_THROW(cudaEventRecord(stop_, stream_));
+    RAFT_CUDA_TRY_NO_THROW(cudaEventRecord(stop_, stream_.get()));
     raft::interruptible::synchronize(stop_);
     float milliseconds = 0.0f;
     RAFT_CUDA_TRY_NO_THROW(cudaEventElapsedTime(&milliseconds, start_, stop_));
@@ -137,7 +137,7 @@ class fixture {
   /** The helper that writes zeroes to some buffer in GPU memory to flush the L2 cache.  */
   void flush_L2_cache()
   {
-    RAFT_CUDA_TRY(cudaMemsetAsync(scratch_buf_.data(), 0, scratch_buf_.size(), stream));
+    RAFT_CUDA_TRY(cudaMemsetAsync(scratch_buf_.data(), 0, scratch_buf_.size(), stream.get()));
   }
 
   /**

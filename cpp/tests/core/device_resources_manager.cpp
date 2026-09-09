@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <raft/core/device_resources_manager.hpp>
@@ -72,7 +72,7 @@ TEST(DeviceResourcesManager, ObeysSetters)
     auto device                    = devices[i % devices.size()];
     auto const& res                = device_resources_manager::get_device_resources(device);
 
-    auto primary_stream  = res.get_stream().value();
+    auto primary_stream  = res.get_stream().get();
     prev_streams[device] = prev_streams[device].value_or(primary_stream);
     // Expect to receive the same stream every time for a given thread
     EXPECT_EQ(*prev_streams[device], primary_stream);
@@ -82,7 +82,7 @@ TEST(DeviceResourcesManager, ObeysSetters)
     auto scoped_device = device_setter{device};
     auto const& res2   = device_resources_manager::get_device_resources();
     // Expect device_resources to default to current device
-    EXPECT_EQ(primary_stream, res2.get_stream().value());
+    EXPECT_EQ(primary_stream, res2.get_stream().get());
 
     auto const& pool = res.get_stream_pool();
     EXPECT_EQ(streams_per_pool, pool.get_pool_size());

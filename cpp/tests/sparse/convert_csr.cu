@@ -87,7 +87,7 @@ typedef SparseConvertCSRTest<float> COOToCSRTest;
 TEST_P(COOToCSRTest, Result)
 {
   raft::resources handle;
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   int nnz = 8;
   int m   = 4;
@@ -181,7 +181,7 @@ template <typename index_t>
 class CSRAdjGraphTest : public ::testing::TestWithParam<CSRAdjGraphInputs<index_t>> {
  public:
   CSRAdjGraphTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<CSRAdjGraphInputs<index_t>>::GetParam()),
       adj(params.n_rows * params.n_cols, stream),
       row_ind(params.n_rows, stream),
@@ -293,7 +293,7 @@ template <typename bitmap_t, typename index_t, typename value_t>
 class BitmapToCSRTest : public ::testing::TestWithParam<BitmapToCSRInputs<index_t>> {
  public:
   BitmapToCSRTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<BitmapToCSRInputs<index_t>>::GetParam()),
       bitmap_d(0, stream),
       indices_d(0, stream),
@@ -559,7 +559,7 @@ template <typename bitset_t, typename index_t, typename value_t>
 class BitsetToCSRTest : public ::testing::TestWithParam<BitsetToCSRInputs<index_t>> {
  public:
   BitsetToCSRTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<BitsetToCSRInputs<index_t>>::GetParam()),
       bitset_d(0, stream),
       indices_d(0, stream),

@@ -127,7 +127,7 @@ void fit_bm25(raft::resources const& handle,
               int& fullFeatCount,
               raft::device_vector_view<IndexType, int64_t> rowFeatCnts)
 {
-  cudaStream_t stream = raft::resource::get_cuda_stream(handle);
+  cudaStream_t stream = raft::resource::get_cuda_stream(handle).get();
 
   rmm::device_uvector<IndexType> temp_unique_rows(0, stream);
   int uniq_cnt   = raft::label::getUniquelabels(handle, temp_unique_rows, rows, nnz);

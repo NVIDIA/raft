@@ -37,7 +37,7 @@ class DivideTest : public ::testing::TestWithParam<raft::linalg::UnaryOpInputs<T
  public:
   DivideTest()
     : params(::testing::TestWithParam<raft::linalg::UnaryOpInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in(params.len, stream),
       out_ref(params.len, stream),
       out(params.len, stream)

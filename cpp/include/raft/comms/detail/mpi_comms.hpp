@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -103,7 +103,7 @@ class mpi_comms : public comms_iface {
       rank_(1),
       status_(stream),
       next_request_id_(0),
-      stream_(stream)
+      stream_(stream.get())
   {
     int mpi_is_initialized = 0;
     RAFT_MPI_TRY(MPI_Initialized(&mpi_is_initialized));
@@ -134,7 +134,7 @@ class mpi_comms : public comms_iface {
       rank_(1),
       status_(stream),
       next_request_id_(0),
-      stream_(stream)
+      stream_(stream.get())
   {
     int mpi_is_initialized = 0;
     RAFT_MPI_TRY(MPI_Initialized(&mpi_is_initialized));

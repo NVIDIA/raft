@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -27,7 +27,8 @@ struct map_then_reduce : public fixture {
   void run_benchmark(::benchmark::State& state) override
   {
     loop_on_state(state, [this]() {
-      raft::linalg::mapThenSumReduce(out.data(), params.len, Identity<T>(), stream, in.data());
+      raft::linalg::mapThenSumReduce(
+        out.data(), params.len, Identity<T>(), stream.get(), in.data());
     });
   }
 

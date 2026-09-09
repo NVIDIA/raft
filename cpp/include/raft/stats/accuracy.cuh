@@ -59,7 +59,7 @@ float accuracy(raft::resources const& handle,
                                 predictions.data_handle(),
                                 ref_predictions.data_handle(),
                                 predictions.extent(0),
-                                resource::get_cuda_stream(handle));
+                                resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_accuracy

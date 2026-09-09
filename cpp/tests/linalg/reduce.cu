@@ -92,7 +92,7 @@ class ReduceTest : public ::testing::TestWithParam<ReduceInputs<InType, OutType,
  public:
   ReduceTest()
     : params(::testing::TestWithParam<ReduceInputs<InType, OutType, IdxType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream),
       dots_exp(params.alongRows ? params.rows : params.cols, stream),
       dots_act(params.alongRows ? params.rows : params.cols, stream)

@@ -93,7 +93,7 @@ class ReduceRowTest : public ::testing::TestWithParam<ReduceRowsInputs<T>> {
  public:
   ReduceRowTest()
     : params(::testing::TestWithParam<ReduceRowsInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in(params.nobs * params.cols, stream),
       out(params.nkeys * params.cols, stream),
       out_ref(params.nkeys * params.cols, stream),

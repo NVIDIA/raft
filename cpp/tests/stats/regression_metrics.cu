@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -69,7 +69,7 @@ void naive_reg_metrics(std::vector<T>& predictions,
 template <typename T>
 class RegressionTest : public ::testing::TestWithParam<RegressionInputs<T>> {
  protected:
-  RegressionTest() : stream(resource::get_cuda_stream(handle)) {}
+  RegressionTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void SetUp() override
   {

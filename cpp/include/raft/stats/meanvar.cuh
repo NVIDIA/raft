@@ -95,7 +95,7 @@ void meanvar(raft::resources const& handle,
                   data.extent(0),
                   sample,
                   std::is_same_v<layout_t, raft::row_major>,
-                  resource::get_cuda_stream(handle));
+                  resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_mean_var

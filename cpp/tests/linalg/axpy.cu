@@ -58,7 +58,7 @@ class AxpyTest : public ::testing::TestWithParam<AxpyInputs<T>> {
   {
     params = ::testing::TestWithParam<AxpyInputs<T>>::GetParam();
 
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     raft::random::RngState r(params.seed);
 

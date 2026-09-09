@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -47,7 +47,7 @@ class CSRRowSliceTest : public ::testing::TestWithParam<CSRRowSliceInputs<value_
  public:
   CSRRowSliceTest()
     : params(::testing::TestWithParam<CSRRowSliceInputs<value_idx, value_t>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       indptr(0, stream),
       indices(0, stream),
       data(0, stream),

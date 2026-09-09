@@ -72,7 +72,7 @@ class MakeBlobsTest : public ::testing::TestWithParam<MakeBlobsInputs<T>> {
  public:
   MakeBlobsTest()
     : params(::testing::TestWithParam<MakeBlobsInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       mu_vec(make_device_matrix<T, int, layout>(handle, params.n_clusters, params.cols)),
       mean_var(make_device_vector<T, int>(handle, 2 * params.n_clusters * params.cols))
   {

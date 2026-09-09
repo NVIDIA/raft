@@ -126,7 +126,7 @@ void minmax(raft::resources const& handle,
                           globalmin.data_handle(),
                           globalmax.data_handle(),
                           sampledcols_ptr,
-                          resource::get_cuda_stream(handle));
+                          resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_minmax

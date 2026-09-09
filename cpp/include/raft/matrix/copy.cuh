@@ -48,7 +48,7 @@ void copy_rows(raft::resources const& handle,
                    out.data_handle(),
                    indices.data_handle(),
                    indices.extent(0),
-                   resource::get_cuda_stream(handle),
+                   resource::get_cuda_stream(handle).get(),
                    raft::is_row_major(in));
 }
 
@@ -115,7 +115,7 @@ void trunc_zero_origin(raft::resources const& handle,
                                       out.data_handle(),
                                       out.extent(0),
                                       out.extent(1),
-                                      resource::get_cuda_stream(handle));
+                                      resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group matrix_copy

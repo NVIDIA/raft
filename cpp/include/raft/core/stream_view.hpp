@@ -13,6 +13,8 @@
 #include <rmm/cuda_stream_view.hpp>
 #endif
 
+#include <cuda/stream>
+
 #include <source_location>
 
 namespace RAFT_EXPORT raft {
@@ -27,7 +29,10 @@ struct fail_stream_view {
   constexpr fail_stream_view(fail_stream_view&&)                         = default;
   auto constexpr operator=(fail_stream_view const&) -> fail_stream_view& = default;
   auto constexpr operator=(fail_stream_view&&) -> fail_stream_view&      = default;
-  auto value() { throw non_cuda_build_error{"Attempted to access CUDA stream in non-CUDA build"}; }
+  auto value() const
+  {
+    throw non_cuda_build_error{"Attempted to access CUDA stream in non-CUDA build"};
+  }
   [[nodiscard]] auto is_per_thread_default() const { return false; }
   [[nodiscard]] auto is_default() const { return false; }
   void synchronize() const
@@ -68,7 +73,7 @@ struct stream_view {
   constexpr stream_view(stream_view&&)               = default;
   auto operator=(stream_view const&) -> stream_view& = default;
   auto operator=(stream_view&&) -> stream_view&      = default;
-  auto value() { return base_view_.value(); }
+  auto value() const { return base_view_.value(); }
   operator underlying_view_type() const noexcept { return base_view_; }
   [[nodiscard]] auto is_per_thread_default() const { return base_view_.is_per_thread_default(); }
   [[nodiscard]] auto is_default() const { return base_view_.is_default(); }
@@ -99,7 +104,7 @@ struct stream_view {
   auto static get_underlying_per_thread_default() -> underlying_view_type
   {
 #ifndef RAFT_DISABLE_CUDA
-    return rmm::cuda_stream_per_thread;
+    return cuda::stream_ref{cudaStreamPerThread};
 #else
     auto static constexpr const default_fail_stream = underlying_view_type{};
     return default_fail_stream;

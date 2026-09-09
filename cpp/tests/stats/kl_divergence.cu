@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "../test_utils.cuh"
@@ -32,7 +32,7 @@ class klDivergenceTest : public ::testing::TestWithParam<klDivergenceParam> {
   {
     // getting the parameters
     params = ::testing::TestWithParam<klDivergenceParam>::GetParam();
-    stream = resource::get_cuda_stream(handle);
+    stream = resource::get_cuda_stream(handle).get();
 
     nElements = params.nElements;
 

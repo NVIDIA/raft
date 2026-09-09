@@ -38,7 +38,7 @@ void zero_small_values(raft::resources const& handle,
   if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(in.size() == out.size(), "Input and output matrices must have same size");
   detail::setSmallValuesZero(
-    out.data_handle(), in.data_handle(), in.size(), resource::get_cuda_stream(handle), thres);
+    out.data_handle(), in.data_handle(), in.size(), resource::get_cuda_stream(handle).get(), thres);
 }
 
 /**
@@ -57,7 +57,7 @@ void zero_small_values(raft::resources const& handle,
 {
   if (resource::get_dry_run_flag(handle)) { return; }
   detail::setSmallValuesZero(
-    inout.data_handle(), inout.size(), resource::get_cuda_stream(handle), thres);
+    inout.data_handle(), inout.size(), resource::get_cuda_stream(handle).get(), thres);
 }
 
 /** @} */  // end group matrix_threshold

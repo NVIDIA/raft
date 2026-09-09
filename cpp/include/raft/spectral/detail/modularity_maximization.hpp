@@ -56,7 +56,7 @@ void analyzeModularity(
   weight_t partModularity, clustersize;
 
   auto cublas_h = resource::get_cublas_handle(handle);
-  auto stream   = resource::get_cuda_stream(handle);
+  auto stream   = resource::get_cuda_stream(handle).get();
 
   // Device memory
   raft::spectral::matrix::vector_t<weight_t> part_i(handle, n);

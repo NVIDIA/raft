@@ -134,7 +134,7 @@ void adj_to_csr(raft::resources const& handle,
 {
   if (resource::get_dry_run_flag(handle)) { return; }  // No allocations below
 
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   // Check inputs and return early if possible.
   if (num_rows == 0 || num_cols == 0) { return; }

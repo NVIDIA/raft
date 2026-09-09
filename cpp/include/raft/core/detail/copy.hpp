@@ -466,7 +466,7 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
                                               dst.extent(1),
                                               dst.data_handle(),
                                               dst.extent(1),
-                                              resource::get_cuda_stream(res)));
+                                              resource::get_cuda_stream(res).get()));
       } else {
         CUBLAS_TRY(linalg::detail::cublasgeam(resource::get_cublas_handle(res),
                                               CUBLAS_OP_T,
@@ -481,7 +481,7 @@ mdspan_copyable_t<DstType, SrcType> copy(resources const& res, DstType&& dst, Sr
                                               dst.extent(0),
                                               dst.data_handle(),
                                               dst.extent(0),
-                                              resource::get_cuda_stream(res)));
+                                              resource::get_cuda_stream(res).get()));
       }
     } else {
 #ifdef __CUDACC__

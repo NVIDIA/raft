@@ -46,7 +46,7 @@ class SparseReduceTest : public ::testing::TestWithParam<SparseReduceInputs<valu
   {
     raft::resources handle;
 
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
 
     rmm::device_uvector<value_idx> in_rows(params.in_rows.size(), stream);
     rmm::device_uvector<value_idx> in_cols(params.in_cols.size(), stream);

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -52,7 +52,7 @@ struct TransposeBench : public fixture {
                               output_view.data_handle(),
                               params.rows,
                               params.cols,
-                              handle.get_stream());
+                              handle.get_stream().get());
     });
   }
 

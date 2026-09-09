@@ -59,7 +59,7 @@ template <typename ValueType>
 class LanczosSvdsTest : public ::testing::Test {
  public:
   LanczosSvdsTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       m(12),
       n(8),
       k(3),
@@ -172,7 +172,7 @@ template <typename ValueType>
 class LanczosClusteredSpectrumTest : public ::testing::Test {
  public:
   LanczosClusteredSpectrumTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       m(48),
       n(32),
       k(8),
@@ -881,7 +881,7 @@ struct dense_linear_operator {
                        CUBLAS_OP_N,
                        ValueType(1),
                        ValueType(0),
-                       resource::get_cuda_stream(handle));
+                       resource::get_cuda_stream(handle).get());
   }
 
   void apply_transpose(raft::resources const& handle,
@@ -900,7 +900,7 @@ struct dense_linear_operator {
                        CUBLAS_OP_N,
                        ValueType(1),
                        ValueType(0),
-                       resource::get_cuda_stream(handle));
+                       resource::get_cuda_stream(handle).get());
   }
 };
 

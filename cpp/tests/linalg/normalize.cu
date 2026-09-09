@@ -62,7 +62,7 @@ class RowNormalizeTest : public ::testing::TestWithParam<RowNormalizeInputs<T, I
  public:
   RowNormalizeTest()
     : params(::testing::TestWithParam<RowNormalizeInputs<T, IdxT>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream),
       out_exp(params.rows * params.cols, stream),
       out_act(params.rows * params.cols, stream)

@@ -108,7 +108,7 @@ class MathTest : public ::testing::TestWithParam<MathInputs<T>> {
  public:
   MathTest()
     : params(::testing::TestWithParam<MathInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in_power(params.len, stream),
       out_power_ref(params.len, stream),
       in_sqrt(params.len, stream),

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -31,7 +31,7 @@ class SPGemmiTest : public ::testing::TestWithParam<SPGemmiInputs> {
  public:
   SPGemmiTest()
     : params(::testing::TestWithParam<SPGemmiInputs>::GetParam()),
-      stream(resource::get_cuda_stream(handle))
+      stream(resource::get_cuda_stream(handle).get())
   {
   }
 
@@ -104,7 +104,7 @@ class SPGemmiTest : public ::testing::TestWithParam<SPGemmiInputs> {
                                                           &beta,
                                                           dC.data(),
                                                           ldc,
-                                                          resource::get_cuda_stream(handle)));
+                                                          resource::get_cuda_stream(handle).get()));
 
     //--------------------------------------------------------------------------
     // result check

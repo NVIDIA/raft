@@ -38,7 +38,7 @@ class SvdTest : public ::testing::TestWithParam<SvdInputs<T>> {
  public:
   SvdTest()
     : params(::testing::TestWithParam<SvdInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.len, stream),
       left_eig_vectors_qr(params.n_row * params.n_col, stream),
       right_eig_vectors_trans_qr(params.n_col * params.n_col, stream),

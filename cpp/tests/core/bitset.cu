@@ -177,7 +177,7 @@ class BitsetTest : public testing::TestWithParam<test_spec_bitset> {
 
   void run()
   {
-    auto stream = resource::get_cuda_stream(res);
+    auto stream = resource::get_cuda_stream(res).get();
 
     // generate input and mask
     raft::random::RngState rng(42);

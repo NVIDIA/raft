@@ -74,7 +74,7 @@ value_t r2_score(raft::resources const& handle,
                           const_cast<value_t*>(y.data_handle()),
                           const_cast<value_t*>(y_hat.data_handle()),
                           y.extent(0),
-                          resource::get_cuda_stream(handle));
+                          resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_r2_score

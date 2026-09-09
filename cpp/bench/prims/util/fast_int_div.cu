@@ -75,20 +75,20 @@ struct fast_int_div_bench : public fixture {
                                   h_numerators.data(),
                                   h_numerators.size() * sizeof(IntT),
                                   cudaMemcpyHostToDevice,
-                                  stream));
+                                  stream.get()));
     RAFT_CUDA_TRY(cudaMemcpyAsync(d_divisors.data(),
                                   h_divisors.data(),
                                   h_divisors.size() * sizeof(divisor_t),
                                   cudaMemcpyHostToDevice,
-                                  stream));
-    stream.synchronize();
+                                  stream.get()));
+    stream.sync();
   }
 
   void run_benchmark(::benchmark::State& state) override
   {
     const auto* divisors = static_cast<const divisor_t*>(d_divisors.data());
     loop_on_state(state, [this, divisors]() {
-      divmod_kernel<IntT, divisor_t><<<kBlocks, kThreads, 0, stream>>>(
+      divmod_kernel<IntT, divisor_t><<<kBlocks, kThreads, 0, stream.get()>>>(
         d_numerators.data(), kNumNumerators, divisors, kNumDivisors, out_d.data());
       RAFT_CUDA_TRY(cudaPeekAtLastError());
     });

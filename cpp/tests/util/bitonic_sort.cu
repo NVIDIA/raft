@@ -154,7 +154,7 @@ class BitonicTest : public testing::TestWithParam<test_spec> {  // NOLINT
     update_host(out.data(), arr_d.data(), arr_d.size(), stream);
 
     // make sure the results are available on host
-    stream.synchronize();
+    stream.sync();
 
     // calculate the reference
     std::copy(in.begin(), in.end(), ref.begin());

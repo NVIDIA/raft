@@ -58,7 +58,7 @@ class SparseSymmetrizeTest
  public:
   SparseSymmetrizeTest()
     : params(::testing::TestWithParam<SparseSymmetrizeInputs<value_idx, value_t>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       indptr(0, stream),
       indices(0, stream),
       data(0, stream)
@@ -164,7 +164,7 @@ typedef COOSymmetrizeTest<float> COOSymmetrizeView;
 TEST_P(COOSymmetrizeView, ResultView)
 {
   raft::resources handle;
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_uvector<int> in_rows(params.nnz, stream);
   rmm::device_uvector<int> in_cols(params.nnz, stream);
@@ -226,7 +226,7 @@ TEST_P(COOSymmetrizeView, ResultView)
 TEST_P(COOSymmetrizeView, ResultLegacy)
 {
   raft::resources handle;
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   raft::sparse::COO<float> in(stream, params.nnz, params.n_rows, params.n_cols, false);
   raft::sparse::COO<float> out(stream);
@@ -255,7 +255,7 @@ TEST_P(COOSymmetrizeView, ResultLegacy)
 TEST(FromKnnSymmetrizeTest, RestrictedPointerArguments)
 {
   raft::resources handle;
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   constexpr int n = 2;
   constexpr int k = 1;

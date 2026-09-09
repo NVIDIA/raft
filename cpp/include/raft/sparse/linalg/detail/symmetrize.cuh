@@ -176,7 +176,7 @@ void coo_symmetrize(raft::resources const& handle,
                     raft::device_coo_matrix<T, IdxT, IdxT, nnz_t>& out,
                     Lambda reduction_op)  // two-argument reducer
 {
-  auto stream = raft::resource::get_cuda_stream(handle);
+  auto stream = raft::resource::get_cuda_stream(handle).get();
 
   auto in_structure = in.structure_view();
 
