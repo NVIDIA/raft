@@ -44,7 +44,7 @@ TEST(Raft, AtomicIncWarp)
   std::array<int, num_elts> out_host{0};
 
   // Write all 1M thread indices to a unique location in `out_device`
-  raft::launch_kernel(s,
+  raft::launch_kernel(s.get(),
                       num_blocks,
                       threads_per_block,
                       test_atomic_inc_warp_kernel,
@@ -55,7 +55,7 @@ TEST(Raft, AtomicIncWarp)
                                 (const void*)out_device.data(),
                                 num_elts * sizeof(int),
                                 cudaMemcpyDeviceToHost,
-                                s));
+                                s.get()));
 
   // Check that count is correct and that each thread index is contained in the
   // array exactly once.

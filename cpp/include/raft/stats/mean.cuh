@@ -98,7 +98,7 @@ void mean(raft::resources const& handle,
                                                           data.data_handle(),
                                                           data.extent(1),
                                                           data.extent(0),
-                                                          resource::get_cuda_stream(handle));
+                                                          resource::get_cuda_stream(handle).get());
 }
 
 /**
@@ -155,7 +155,7 @@ template <typename value_t, typename idx_t, typename layout_t>
                                                           data.extent(1),
                                                           data.extent(0),
                                                           sample,
-                                                          resource::get_cuda_stream(handle));
+                                                          resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_mean

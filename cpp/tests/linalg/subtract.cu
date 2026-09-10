@@ -64,7 +64,7 @@ class SubtractTest : public ::testing::TestWithParam<SubtractInputs<T>> {
  public:
   SubtractTest()
     : params(::testing::TestWithParam<SubtractInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in1(params.len, stream),
       in2(params.len, stream),
       out_ref(params.len, stream),

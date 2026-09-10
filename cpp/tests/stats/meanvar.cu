@@ -46,7 +46,7 @@ class MeanVarTest : public ::testing::TestWithParam<MeanVarInputs<T>> {
  public:
   MeanVarTest()
     : params(::testing::TestWithParam<MeanVarInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream),
       mean_act(params.cols, stream),
       vars_act(params.cols, stream)

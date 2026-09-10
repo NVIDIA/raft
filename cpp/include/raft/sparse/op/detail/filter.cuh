@@ -203,7 +203,7 @@ void coo_remove_scalar(raft::resources const& handle,
                        raft::host_scalar_view<const T> scalar,
                        raft::device_coo_matrix<T, idx_t, idx_t, nnz_t>& out)
 {
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   auto in_structure = in.structure_view();
 

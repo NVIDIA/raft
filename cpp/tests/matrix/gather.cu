@@ -79,7 +79,7 @@ template <bool Conditional,
 class GatherTest : public ::testing::TestWithParam<GatherInputs<IdxT>> {
  protected:
   GatherTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<GatherInputs<IdxT>>::GetParam()),
       d_in(0, stream),
       d_out_exp(0, stream),
@@ -204,7 +204,7 @@ class GatherTest : public ::testing::TestWithParam<GatherInputs<IdxT>> {
                                       params.ncols * sizeof(MatrixT),
                                       map_length,
                                       cudaMemcpyDefault,
-                                      raft::resource::get_cuda_stream(handle)));
+                                      raft::resource::get_cuda_stream(handle).get()));
     }
 
     resource::sync_stream(handle, stream);

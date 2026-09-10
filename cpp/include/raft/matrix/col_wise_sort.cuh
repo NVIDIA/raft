@@ -103,7 +103,7 @@ void sort_cols_per_row(raft::resources const& handle,
                                          alloc_workspace,
                                          (void*)nullptr,
                                          workspace_size,
-                                         resource::get_cuda_stream(handle),
+                                         resource::get_cuda_stream(handle).get(),
                                          keys);
 
   if (alloc_workspace) {
@@ -119,7 +119,7 @@ void sort_cols_per_row(raft::resources const& handle,
                                            alloc_workspace,
                                            (void*)workspace.data_handle(),
                                            workspace_size,
-                                           resource::get_cuda_stream(handle),
+                                           resource::get_cuda_stream(handle).get(),
                                            keys);
   }
 }

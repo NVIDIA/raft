@@ -36,7 +36,7 @@ int getUniquelabels(raft::resources const& handle,
                     size_t n)
 {
   return detail::getUniquelabels<value_t>(
-    resource::get_dry_run_flag(handle), unique, y, n, resource::get_cuda_stream(handle));
+    resource::get_dry_run_flag(handle), unique, y, n, resource::get_cuda_stream(handle).get());
 }
 
 /**

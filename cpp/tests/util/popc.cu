@@ -37,7 +37,7 @@ template <typename index_t, typename bits_t = uint32_t>
 class PopcTest : public ::testing::TestWithParam<PopcInputs<index_t>> {
  public:
   PopcTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<PopcInputs<index_t>>::GetParam()),
       bits_d(0, stream)
   {

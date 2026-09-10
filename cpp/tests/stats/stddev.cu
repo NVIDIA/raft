@@ -37,7 +37,7 @@ class StdDevTest : public ::testing::TestWithParam<StdDevInputs<T>> {
  public:
   StdDevTest()
     : params(::testing::TestWithParam<StdDevInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       rows(params.rows),
       cols(params.cols),
       data(rows * cols, stream),

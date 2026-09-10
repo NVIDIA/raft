@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -46,7 +46,7 @@ class CSRToDenseTest : public ::testing::TestWithParam<CSRToDenseInputs<value_id
  public:
   CSRToDenseTest()
     : params(::testing::TestWithParam<CSRToDenseInputs<value_idx, value_t>>::GetParam()),
-      stream(resource::get_cuda_stream(raft_handle)),
+      stream(resource::get_cuda_stream(raft_handle).get()),
       indptr(0, stream),
       indices(0, stream),
       data(0, stream),

@@ -224,7 +224,7 @@ void transpose_row_major_impl(
                         out.stride(0),
                         out.data_handle(),
                         out.stride(0),
-                        resource::get_cuda_stream(handle)));
+                        resource::get_cuda_stream(handle).get()));
 }
 
 template <typename IndexType, typename LayoutPolicy, typename AccessorPolicy>
@@ -267,7 +267,7 @@ void transpose_col_major_impl(
                         out.stride(1),
                         out.data_handle(),
                         out.stride(1),
-                        resource::get_cuda_stream(handle)));
+                        resource::get_cuda_stream(handle).get()));
 }
 
 template <typename IndexType, typename LayoutPolicy, typename AccessorPolicy>

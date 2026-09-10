@@ -21,7 +21,7 @@ class MultiplyTest : public ::testing::TestWithParam<UnaryOpInputs<T>> {
  public:
   MultiplyTest()
     : params(::testing::TestWithParam<UnaryOpInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in(params.len, stream),
       out_ref(params.len, stream),
       out(params.len, stream)

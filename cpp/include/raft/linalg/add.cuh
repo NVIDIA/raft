@@ -119,7 +119,7 @@ void add(raft::resources const& handle, InType in1, InType in2, OutType out)
     in1.data_handle(),
     in2.data_handle(),
     static_cast<typename OutType::index_type>(out.size()),
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /**

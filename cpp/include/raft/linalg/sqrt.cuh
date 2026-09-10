@@ -65,7 +65,7 @@ void sqrt(raft::resources const& handle, InType in, OutType out)
     out.data_handle(),
     in.data_handle(),
     static_cast<typename OutType::index_type>(out.size()),
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group add

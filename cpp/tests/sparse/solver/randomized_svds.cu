@@ -94,7 +94,7 @@ template <typename IndexType, typename ValueType>
 class RandomizedSvdsTest : public ::testing::Test {
  public:
   RandomizedSvdsTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       m(20),
       n(15),
       k(3),
@@ -233,7 +233,7 @@ template <typename IndexType, typename ValueType>
 class OptionalUVtTest : public ::testing::Test {
  public:
   OptionalUVtTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       m(20),
       n(15),
       k(3),
@@ -395,7 +395,7 @@ TEST_F(OptionalUVtTestD, AllModes) { Run(); }
 struct ReconstructionErrorTest : public ::testing::Test {
   raft::resources handle;
   cudaStream_t stream;
-  ReconstructionErrorTest() : stream(resource::get_cuda_stream(handle)) {}
+  ReconstructionErrorTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void Run()
   {
@@ -574,7 +574,7 @@ struct mean_centered_operator {
 
 class MeanCenteredOperatorTest : public ::testing::Test {
  public:
-  MeanCenteredOperatorTest() : stream(resource::get_cuda_stream(handle)) {}
+  MeanCenteredOperatorTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
  protected:
   void Run()

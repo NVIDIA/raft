@@ -13,6 +13,8 @@
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
 
+#include <cuda/stream>
+
 #include <gtest/gtest.h>
 
 #include <algorithm>
@@ -82,7 +84,7 @@ struct reduction_launch {
     const int grid_dim  = 1;
     raft::launch_kernel(
       stream, grid_dim, block_dim, test_reduction_kernel, arr_d.data(), ref_d.data(), reduce_op);
-    stream.synchronize();
+    stream.sync();
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);
   }
@@ -106,7 +108,7 @@ struct reduction_launch {
                         ref_d.data(),
                         rank_d.data(),
                         reduce_op);
-    stream.synchronize();
+    stream.sync();
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);
     ASSERT_EQ(rank_d.value(stream), rank_ref_val);
@@ -121,7 +123,7 @@ struct reduction_launch {
     const int grid_dim  = 1;
     raft::launch_kernel(
       stream, grid_dim, block_dim, test_block_random_sample_kernel, arr_d.data(), ref_d.data());
-    stream.synchronize();
+    stream.sync();
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);
   }
@@ -139,7 +141,7 @@ struct reduction_launch {
                         test_binary_reduction_kernel<block_dim>,
                         arr_d.data(),
                         ref_d.data());
-    stream.synchronize();
+    stream.sync();
     RAFT_CUDA_TRY(cudaPeekAtLastError());
     ASSERT_EQ(ref_d.value(stream), ref_val);
   }
@@ -155,7 +157,7 @@ class ReductionTest : public testing::TestWithParam<std::vector<int>> {  // NOLI
  public:
   explicit ReductionTest()
     : input(testing::TestWithParam<std::vector<int>>::GetParam()),
-      stream(rmm::cuda_stream_default),
+      stream(cuda::stream_ref{cudaStream_t{cudaStreamDefault}}),
       arr_d(input.size(), stream)
   {
     update_device(arr_d.data(), input.data(), input.size(), stream);

@@ -68,7 +68,7 @@ void slice(raft::resources const& handle,
                       coords.row2,
                       coords.col2,
                       raft::is_row_major(in),
-                      resource::get_cuda_stream(handle));
+                      resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group matrix_slice

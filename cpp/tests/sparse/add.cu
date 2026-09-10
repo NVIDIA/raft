@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -38,7 +38,7 @@ class CSRAddTest : public ::testing::TestWithParam<CSRAddInputs<Type_f, Index_>>
  public:
   CSRAddTest()
     : params(::testing::TestWithParam<CSRAddInputs<Type_f, Index_>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       ind_a(params.matrix_a.row_ind.size(), stream),
       ind_ptr_a(params.matrix_a.row_ind_ptr.size(), stream),
       values_a(params.matrix_a.row_ind_ptr.size(), stream),

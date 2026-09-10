@@ -87,8 +87,8 @@ class MaskedMatmulTest
  public:
   MaskedMatmulTest()
     : params(::testing::TestWithParam<MaskedMatmulInputs<value_t, output_t, index_t>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
-      a_data_d(0, resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
+      a_data_d(0, resource::get_cuda_stream(handle).get()),
       b_data_d(0, resource::get_cuda_stream(handle)),
       bits_d(0, resource::get_cuda_stream(handle)),
       c_indptr_d(0, resource::get_cuda_stream(handle)),

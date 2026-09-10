@@ -104,7 +104,7 @@ void histogram(raft::resources const& handle,
                                                data.data_handle(),
                                                data.extent(0),
                                                data.extent(1),
-                                               resource::get_cuda_stream(handle),
+                                               resource::get_cuda_stream(handle).get(),
                                                binner);
 }
 

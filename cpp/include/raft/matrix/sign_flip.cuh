@@ -33,7 +33,7 @@ void sign_flip(raft::resources const& handle,
 {
   if (resource::get_dry_run_flag(handle)) { return; }
   detail::signFlip(
-    inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle));
+    inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group matrix_sign_flip

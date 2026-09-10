@@ -133,7 +133,7 @@ void max_duplicates(raft::resources const& handle,
                     value_idx m,
                     value_idx n)
 {
-  auto stream        = resource::get_cuda_stream(handle);
+  auto stream        = resource::get_cuda_stream(handle).get();
   auto thrust_policy = resource::get_thrust_policy(handle);
 
   // compute diffs & take exclusive scan

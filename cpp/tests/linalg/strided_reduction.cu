@@ -41,7 +41,7 @@ class stridedReductionTest : public ::testing::TestWithParam<stridedReductionInp
  public:
   stridedReductionTest()
     : params(::testing::TestWithParam<stridedReductionInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream),
       dots_exp(params.cols, stream),  // expected dot products (from test)
       dots_act(params.cols, stream)   // actual dot products (from prim)
@@ -155,12 +155,12 @@ TEST(stridedReductionTest, LargeReducedDimension)
                           sums_same_type.data_handle(),
                           kCols,
                           raft::CompareApprox<float>(1e-6f),
-                          stream));
+                          stream.get()));
   ASSERT_TRUE(devArrMatch(static_cast<double>(kRows),
                           sums_wider_type.data_handle(),
                           kCols,
                           raft::CompareApprox<double>(1e-12),
-                          stream));
+                          stream.get()));
 }
 
 }  // end namespace linalg

@@ -72,7 +72,7 @@ double completeness_score(raft::resources const& handle,
                                    truth_cluster_array.extent(0),
                                    lower_label_range,
                                    upper_label_range,
-                                   resource::get_cuda_stream(handle));
+                                   resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group stats_completeness

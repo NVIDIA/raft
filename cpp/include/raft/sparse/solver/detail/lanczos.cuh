@@ -285,7 +285,7 @@ void lanczos_aux(raft::resources const& handle,
   } else {
     spmv_alg = CUSPARSE_SPMV_ALG_DEFAULT;
   }
-  auto stream           = resource::get_cuda_stream(handle);
+  auto stream           = resource::get_cuda_stream(handle).get();
   bool const is_dry_run = resource::get_dry_run_flag(handle);
 
   IndexTypeT n  = A.structure_view().get_n_rows();
@@ -469,7 +469,7 @@ auto lanczos_smallest(raft::resources const& handle,
   }
   int n           = A.structure_view().get_n_rows();
   int ncv         = restartIter;
-  auto stream     = resource::get_cuda_stream(handle);
+  auto stream     = resource::get_cuda_stream(handle).get();
   bool is_dry_run = resource::get_dry_run_flag(handle);
 
   auto V = raft::make_device_matrix<ValueTypeT, uint32_t, raft::row_major>(handle, ncv, n);

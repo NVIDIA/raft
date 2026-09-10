@@ -45,7 +45,7 @@ void fill(raft::resources const& handle,
                    in.data_handle(),
                    *(scalar.data_handle()),
                    in.size(),
-                   resource::get_cuda_stream(handle));
+                   resource::get_cuda_stream(handle).get());
 }
 
 /**

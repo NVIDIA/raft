@@ -27,7 +27,7 @@ void get_clean_coo(raft::resources& handle,
                    int num_cols,
                    raft::sparse::COO<T2, T1, T1>& coo)
 {
-  cudaStream_t stream = raft::resource::get_cuda_stream(handle);
+  cudaStream_t stream = raft::resource::get_cuda_stream(handle).get();
   raft::sparse::op::coo_sort(int(rows.size()),
                              int(columns.size()),
                              int(values.size()),
@@ -54,7 +54,7 @@ create_coo_matrix(raft::resources& handle,
                   int num_rows,
                   int num_cols)
 {
-  cudaStream_t stream  = raft::resource::get_cuda_stream(handle);
+  cudaStream_t stream  = raft::resource::get_cuda_stream(handle).get();
   auto coo_struct_view = raft::make_device_coordinate_structure_view(
     rows.data_handle(), columns.data_handle(), num_rows, num_cols, int(rows.size()));
   auto c_matrix = raft::make_device_coo_matrix<T2, T1, T1, T1>(handle, coo_struct_view);
@@ -67,7 +67,7 @@ template <typename T2, typename T1>
 raft::device_coo_matrix<T2, T1, T1, T1, raft::device_container_policy, raft::PRESERVING>
 create_coo_matrix(raft::resources& handle, raft::sparse::COO<T2, T1, T1>& coo)
 {
-  cudaStream_t stream  = raft::resource::get_cuda_stream(handle);
+  cudaStream_t stream  = raft::resource::get_cuda_stream(handle).get();
   auto coo_struct_view = raft::make_device_coordinate_structure_view(
     coo.rows(), coo.cols(), coo.n_rows, coo.n_cols, int(coo.nnz));
   auto c_matrix = raft::make_device_coo_matrix<T2, T1, T1, T1>(handle, coo_struct_view);
@@ -88,7 +88,7 @@ class SparsePreprocessCSR
  public:
   SparsePreprocessCSR()
     : params(::testing::TestWithParam<SparsePreprocessInputs<Type_f, Index_>>::GetParam()),
-      stream(resource::get_cuda_stream(handle))
+      stream(resource::get_cuda_stream(handle).get())
   {
   }
 
@@ -97,7 +97,7 @@ class SparsePreprocessCSR
 
   void Run(bool bm25_on, bool coo_on)
   {
-    cudaStream_t stream = raft::resource::get_cuda_stream(handle);
+    cudaStream_t stream = raft::resource::get_cuda_stream(handle).get();
     int num_rows        = pow(2, params.n_rows);
     int num_cols        = pow(2, params.n_cols);
     int nnz             = params.nnz_edges;

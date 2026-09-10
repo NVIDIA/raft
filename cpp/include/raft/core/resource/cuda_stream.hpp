@@ -13,6 +13,7 @@
 
 #include <rmm/cuda_stream_view.hpp>
 
+#include <cuda/stream>
 #include <cuda_runtime.h>
 
 #include <source_location>
@@ -21,7 +22,7 @@ namespace RAFT_EXPORT raft {
 namespace resource {
 class cuda_stream_resource : public resource {
  public:
-  cuda_stream_resource(rmm::cuda_stream_view stream_view = rmm::cuda_stream_per_thread)
+  cuda_stream_resource(rmm::cuda_stream_view stream_view = cuda::stream_ref{cudaStreamPerThread})
     : stream(stream_view)
   {
   }
@@ -39,7 +40,8 @@ class cuda_stream_resource : public resource {
  */
 class cuda_stream_resource_factory : public resource_factory {
  public:
-  cuda_stream_resource_factory(rmm::cuda_stream_view stream_view = rmm::cuda_stream_per_thread)
+  cuda_stream_resource_factory(
+    rmm::cuda_stream_view stream_view = cuda::stream_ref{cudaStreamPerThread})
     : stream(stream_view)
   {
   }

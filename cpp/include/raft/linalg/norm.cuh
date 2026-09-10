@@ -135,7 +135,7 @@ void norm(raft::resources const& handle,
                                                 in.data_handle(),
                                                 in.extent(1),
                                                 in.extent(0),
-                                                resource::get_cuda_stream(handle),
+                                                resource::get_cuda_stream(handle).get(),
                                                 fin_op);
   } else {
     RAFT_EXPECTS(static_cast<IndexType>(out.size()) == in.extent(1),
@@ -145,7 +145,7 @@ void norm(raft::resources const& handle,
                                                 in.data_handle(),
                                                 in.extent(1),
                                                 in.extent(0),
-                                                resource::get_cuda_stream(handle),
+                                                resource::get_cuda_stream(handle).get(),
                                                 fin_op);
   }
 }

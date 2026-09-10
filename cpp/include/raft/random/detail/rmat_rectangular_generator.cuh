@@ -264,7 +264,7 @@ void rmat_rectangular_gen_impl(raft::resources const& handle,
                               r_scale,
                               c_scale,
                               n_edges,
-                              resource::get_cuda_stream(handle),
+                              resource::get_cuda_stream(handle).get(),
                               r);
 }
 
@@ -313,7 +313,7 @@ void rmat_rectangular_gen_impl(raft::resources const& handle,
                                       r_scale,
                                       c_scale,
                                       n_edges,
-                                      resource::get_cuda_stream(handle),
+                                      resource::get_cuda_stream(handle).get(),
                                       r);
 }
 

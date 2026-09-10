@@ -110,7 +110,7 @@ void encode_bm25(raft::resources const& handle,
                  float k_param = 1.6f,
                  float b_param = 0.75f)
 {
-  cudaStream_t stream = raft::resource::get_cuda_stream(handle);
+  cudaStream_t stream = raft::resource::get_cuda_stream(handle).get();
   // auto coo_in = detail::create_coo_from_csr<ValueType, IndexType>(handle, csr_in);
   auto num_cols = csr_in.structure_view().get_n_cols();
   auto num_rows = csr_in.structure_view().get_n_rows();

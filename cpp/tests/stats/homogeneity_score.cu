@@ -41,7 +41,7 @@ class homogeneityTest : public ::testing::TestWithParam<homogeneityParam> {
     nElements       = params.nElements;
     lowerLabelRange = params.lowerLabelRange;
     upperLabelRange = params.upperLabelRange;
-    stream          = resource::get_cuda_stream(handle);
+    stream          = resource::get_cuda_stream(handle).get();
 
     // generating random value test input
     std::vector<int> arr1(nElements, 0);

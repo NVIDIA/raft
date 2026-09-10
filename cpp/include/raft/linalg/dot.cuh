@@ -53,7 +53,7 @@ void dot(raft::resources const& handle,
                                     y.data_handle(),
                                     y.stride(0),
                                     out.data_handle(),
-                                    resource::get_cuda_stream(handle)));
+                                    resource::get_cuda_stream(handle).get()));
 }
 
 /**
@@ -84,7 +84,7 @@ void dot(raft::resources const& handle,
                                     y.data_handle(),
                                     y.stride(0),
                                     out.data_handle(),
-                                    resource::get_cuda_stream(handle)));
+                                    resource::get_cuda_stream(handle).get()));
 }
 
 /** @} */  // end of group dot

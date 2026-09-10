@@ -17,7 +17,7 @@
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/resource_ref.hpp>
 
-#include <cuda/stream_ref>
+#include <cuda/stream>
 
 #include <gtest/gtest.h>
 

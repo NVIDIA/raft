@@ -46,7 +46,7 @@ void coo_to_csr(raft::resources const& handle,
                 int* dstCols,
                 value_t* dstVals)
 {
-  auto stream         = resource::get_cuda_stream(handle);
+  auto stream         = resource::get_cuda_stream(handle).get();
   auto cusparseHandle = resource::get_cusparse_handle(handle);
 
   rmm::device_uvector<int> dstRows(nnz, stream);

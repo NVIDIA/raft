@@ -78,7 +78,7 @@ void multiply_scalar(
     in.data_handle(),
     *scalar.data_handle(),
     static_cast<typename OutType::index_type>(out.size()),
-    resource::get_cuda_stream(handle));
+    resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end of group multiply

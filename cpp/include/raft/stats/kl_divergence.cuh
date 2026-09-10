@@ -63,7 +63,7 @@ value_t kl_divergence(raft::resources const& handle,
                                modelPDF.data_handle(),
                                candidatePDF.data_handle(),
                                modelPDF.extent(0),
-                               resource::get_cuda_stream(handle));
+                               resource::get_cuda_stream(handle).get());
 }
 
 /** @} */  // end group kl_divergence

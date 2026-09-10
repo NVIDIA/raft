@@ -260,7 +260,7 @@ value_t silhouette_score(
                           distances_buffer.data(),
                           n_left_rows,
                           n_right_rows,
-                          chunk_stream);
+                          chunk_stream.get());
     }
   }
 

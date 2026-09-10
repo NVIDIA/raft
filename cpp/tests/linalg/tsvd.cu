@@ -43,7 +43,7 @@ class TsvdTest : public ::testing::TestWithParam<TsvdInputs<T>> {
  public:
   TsvdTest()
     : params(::testing::TestWithParam<TsvdInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       components(0, stream),
       components_ref(0, stream),
       data2(0, stream),
@@ -218,7 +218,7 @@ TEST_P(TsvdTestLeftVecF, Result)
                           components_ref.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef TsvdTest<double> TsvdTestLeftVecD;
@@ -228,7 +228,7 @@ TEST_P(TsvdTestLeftVecD, Result)
                           components_ref.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef TsvdTest<float> TsvdTestDataVecF;
@@ -238,7 +238,7 @@ TEST_P(TsvdTestDataVecF, Result)
                           data2_back.data(),
                           (params.n_col2 * params.n_col2),
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef TsvdTest<double> TsvdTestDataVecD;
@@ -248,7 +248,7 @@ TEST_P(TsvdTestDataVecD, Result)
                           data2_back.data(),
                           (params.n_col2 * params.n_col2),
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 INSTANTIATE_TEST_CASE_P(TsvdTests, TsvdTestLeftVecF, ::testing::ValuesIn(inputsf2));

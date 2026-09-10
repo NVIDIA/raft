@@ -296,7 +296,7 @@ void bitmap_to_csr(raft::resources const& handle,
   if (csr_view.get_n_rows() == 0 || csr_view.get_n_cols() == 0) { return; }
 
   auto thrust_policy = resource::get_thrust_policy(handle);
-  auto stream        = resource::get_cuda_stream(handle);
+  auto stream        = resource::get_cuda_stream(handle).get();
 
   index_t* indptr  = csr_view.get_indptr().data();
   index_t* indices = csr_view.get_indices().data();

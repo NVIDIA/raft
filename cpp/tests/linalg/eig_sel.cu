@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -34,7 +34,7 @@ class EigSelTest : public ::testing::TestWithParam<EigSelInputs<T>> {
  public:
   EigSelTest()
     : params(::testing::TestWithParam<EigSelInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       cov_matrix(params.len, stream),
       eig_vectors(params.n_eigen_vals * params.n, stream),
       eig_vectors_ref(params.n_eigen_vals * params.n, stream),
