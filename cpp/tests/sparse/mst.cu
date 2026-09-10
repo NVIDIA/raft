@@ -835,11 +835,12 @@ TEST(MST, Int64Indices)
     }
   };
 
-  run_typed(int64_t{}, int64_t{}, float{});    // uniform 64-bit, widened-key wide path
-  run_typed(int64_t{}, int64_t{}, double{});   // uniform 64-bit, full 128-bit key
-  run_typed(int32_t{}, int64_t{}, float{});    // mixed 32-bit vertex_t, 64-bit edge_t
-  run_typed(uint32_t{}, int64_t{}, float{});   // unsigned vertex_t on the wide path
-  run_typed(uint32_t{}, uint32_t{}, float{});  // unsigned narrow path (below INT_MAX)
+  run_typed(int64_t{}, int64_t{}, float{});     // uniform 64-bit, widened-key wide path
+  run_typed(int64_t{}, int64_t{}, double{});    // uniform 64-bit, full 128-bit key
+  run_typed(int32_t{}, int64_t{}, float{});     // mixed 32-bit vertex_t, 64-bit edge_t
+  run_typed(uint32_t{}, int64_t{}, float{});    // unsigned vertex_t on the wide path
+  run_typed(uint32_t{}, uint32_t{}, float{});   // unsigned narrow path (below INT_MAX)
+  run_typed(uint32_t{}, uint32_t{}, double{});  // unsigned 4-byte edge_t on the wide path
 }
 
 }  // namespace mst

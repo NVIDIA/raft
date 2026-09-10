@@ -75,13 +75,13 @@ Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
     resource::sync_stream(res);
     RAFT_EXPECTS(last_offset == e, "offsets[v] must equal e (CSR offsets must cover all e edges)");
   }
-  // narrow packing uses signed 32-bit int4 fields; unsigned 32-bit types
-  // can exceed them (use a 64-bit edge_t for edge counts above INT_MAX)
+  // narrow packing stores vertex ids in signed 32-bit int4 fields
   if constexpr (narrow && std::is_unsigned_v<vertex_t>) {
     RAFT_EXPECTS(v <= static_cast<vertex_t>(std::numeric_limits<int>::max()),
                  "unsigned 32-bit vertex ids above INT_MAX are not supported");
   }
-  if constexpr (narrow && std::is_unsigned_v<edge_t>) {
+  // wl_size_t is int for any 4-byte edge_t: counter and capacity must stay below INT_MAX
+  if constexpr (sizeof(edge_t) == 4 && std::is_unsigned_v<edge_t>) {
     RAFT_EXPECTS(e <= static_cast<edge_t>(std::numeric_limits<int>::max()),
                  "unsigned 32-bit edge counts above INT_MAX are not supported");
   }
