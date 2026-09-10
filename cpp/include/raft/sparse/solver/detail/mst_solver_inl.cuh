@@ -6,15 +6,17 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdspan.hpp>
+#include <raft/core/operators.hpp>
+#include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
+#include <raft/linalg/map.cuh>
 #include <raft/sparse/solver/detail/mst_kernels.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
-#include <rmm/exec_policy.hpp>
-
-#include <thrust/sequence.h>
 
 #include <algorithm>
 #include <cstdint>
@@ -56,11 +58,23 @@ Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
   using entry_t         = typename mst_traits<weight_t, edge_t>::entry_t;
   using wl_size_t       = typename mst_traits<weight_t, edge_t>::wl_size_t;
 
+  // fold the stream argument into a handle copy: one source for launches and dry-run state
+  raft::resources res = handle;
+  resource::set_cuda_stream(res, stream);
+  const bool dry_run = resource::get_dry_run_flag(res);
+
   RAFT_EXPECTS(v > 0, "0 vertices");
   RAFT_EXPECTS(e > 0, "0 edges");
   RAFT_EXPECTS(offsets != nullptr, "Null offsets.");
   RAFT_EXPECTS(indices != nullptr, "Null indices.");
   RAFT_EXPECTS(weights != nullptr, "Null weights.");
+  if (!dry_run) {
+    // offsets[v] != e silently truncates or misattributes edges
+    edge_t last_offset{};
+    raft::update_host(&last_offset, offsets + v, 1, stream);
+    resource::sync_stream(res);
+    RAFT_EXPECTS(last_offset == e, "offsets[v] must equal e (CSR offsets must cover all e edges)");
+  }
   // narrow packing uses signed 32-bit int4 fields; unsigned 32-bit types
   // can exceed them (use a 64-bit edge_t for edge counts above INT_MAX)
   if constexpr (narrow && std::is_unsigned_v<vertex_t>) {
@@ -91,14 +105,6 @@ Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
 
   const int vblocks =
     static_cast<int>((static_cast<size_t>(v) + mst_block_size - 1) / mst_block_size);
-  if (initialize_colors) {
-    thrust::sequence(rmm::exec_policy(stream), parent.begin(), parent.end());
-  } else {
-    raft::launch_kernel(
-      stream, vblocks, mst_block_size, mst_init_parent_kernel<vertex_t>, v, color, parent.data());
-  }
-  RAFT_CUDA_TRY(cudaMemsetAsync(minv_raw.data(), 0xFF, minv_bytes, stream));
-  RAFT_CUDA_TRY(cudaMemsetAsync(in_mst.data(), 0, e * sizeof(bool), stream));
 
   // Two-phase filter: solve a sampled light-edge prefix first, then the
   // rest find-filtered. Disabled for bounded solves. Constants are empirical.
@@ -111,190 +117,218 @@ Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
   if (iterations == 0 && e / v >= filter_min_avg_degree) {
     const int ns = static_cast<int>(std::min<edge_t>(e, max_samples));
     rmm::device_uvector<key_t> keys_d(ns, stream);
-    raft::launch_kernel(
-      stream, 1, 32, mst_sample_keys_kernel<edge_t, weight_t>, ns, e, weights, keys_d.data());
-    key_t keys[max_samples];
-    raft::update_host(keys, keys_d.data(), ns, stream);
-    RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
-    std::sort(keys, keys + ns);
-    thr_key =
-      keys[std::min(max_samples - 1, static_cast<int>(filter_light_edges_per_vertex * v * ns / e))];
+    if (!dry_run) {
+      raft::launch_kernel(
+        res, 1, 32, mst_sample_keys_kernel<edge_t, weight_t>, ns, e, weights, keys_d.data());
+      key_t keys[max_samples];
+      raft::update_host(keys, keys_d.data(), ns, stream);
+      resource::sync_stream(res);
+      std::sort(keys, keys + ns);
+      thr_key = keys[std::min(max_samples - 1,
+                              static_cast<int>(filter_light_edges_per_vertex * v * ns / e))];
+    }
     filtered = true;
   }
 
-  int round    = 0;
-  auto boruvka = [&](wl_size_t wl_size) {
-    entry_t* d1 = wl1.data();
-    entry_t* d2 = wl2.data();
-    while (wl_size > 0) {
-      if (iterations > 0 && round >= iterations) break;
-      wl_size_d.set_value_to_zero_async(stream);
-      const int wblocks =
-        static_cast<int>((static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
-      if constexpr (narrow) {
-        mst_ull* const base = reinterpret_cast<mst_ull*>(minv_raw.data());
-        mst_ull* const cur  = base + (round % 2) * static_cast<size_t>(v);
-        mst_ull* const prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
-        raft::launch_kernel(stream,
-                            wblocks,
-                            mst_block_size,
-                            mst_filter_min_kernel<vertex_t>,
-                            d1,
-                            wl_size,
-                            d2,
-                            wl_size_d.data(),
-                            parent.data(),
-                            cur,
-                            prev);
-        std::swap(d1, d2);
-        wl_size = wl_size_d.value(stream);
-        if (wl_size > 0) {
-          const int nblocks = static_cast<int>(
-            (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
-          raft::launch_kernel(stream,
-                              nblocks,
-                              mst_block_size,
-                              mst_select_join_kernel<vertex_t>,
-                              d1,
-                              wl_size,
-                              parent.data(),
-                              cur,
-                              in_mst.data());
-        }
-      } else {
-#if RAFT_MST_HAS_CAS128
-        mst_u128* const base = reinterpret_cast<mst_u128*>(minv_raw.data());
-        mst_u128* const cur  = base + (round % 2) * static_cast<size_t>(v);
-        mst_u128* const prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
-        raft::launch_kernel(stream,
-                            wblocks,
-                            mst_block_size,
-                            mst_filter_min_kernel<vertex_t, wl_size_t>,
-                            d1,
-                            wl_size,
-                            d2,
-                            wl_size_d.data(),
-                            parent.data(),
-                            cur,
-                            prev);
-        std::swap(d1, d2);
-        wl_size = wl_size_d.value(stream);
-        if (wl_size > 0) {
-          const int nblocks = static_cast<int>(
-            (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
-          raft::launch_kernel(stream,
-                              nblocks,
-                              mst_block_size,
-                              mst_select_join_kernel<vertex_t, wl_size_t>,
-                              d1,
-                              wl_size,
-                              parent.data(),
-                              cur,
-                              in_mst.data());
-        }
-#else
-        mst_ull* const base      = reinterpret_cast<mst_ull*>(minv_raw.data());
-        mst_ull* const minw_cur  = base + (round % 2) * static_cast<size_t>(v);
-        mst_ull* const minw_prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
-        mst_ull* const mine_cur =
-          base + 2 * static_cast<size_t>(v) + (round % 2) * static_cast<size_t>(v);
-        mst_ull* const mine_prev =
-          base + 2 * static_cast<size_t>(v) + ((round + 1) % 2) * static_cast<size_t>(v);
-        raft::launch_kernel(stream,
-                            wblocks,
-                            mst_block_size,
-                            mst_filter_min_kernel<vertex_t, wl_size_t>,
-                            d1,
-                            wl_size,
-                            d2,
-                            wl_size_d.data(),
-                            parent.data(),
-                            minw_cur,
-                            minw_prev,
-                            mine_prev);
-        std::swap(d1, d2);
-        wl_size = wl_size_d.value(stream);
-        if (wl_size > 0) {
-          const int nblocks = static_cast<int>(
-            (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
-          raft::launch_kernel(stream,
-                              nblocks,
-                              mst_block_size,
-                              mst_min_index_kernel<wl_size_t>,
-                              d1,
-                              wl_size,
-                              minw_cur,
-                              mine_cur);
-          raft::launch_kernel(stream,
-                              nblocks,
-                              mst_block_size,
-                              mst_select_join_kernel<vertex_t, wl_size_t>,
-                              d1,
-                              wl_size,
-                              parent.data(),
-                              mine_cur,
-                              in_mst.data());
-        }
-#endif
-      }
-      round++;
-    }
-  };
-
   const int eblocks =
     static_cast<int>((static_cast<size_t>(e) + mst_block_size - 1) / mst_block_size);
-  auto launch_init = [&](bool first) {
-    wl_size_d.set_value_to_zero_async(stream);
-    if (first) {
-      raft::launch_kernel(stream,
-                          eblocks,
-                          mst_block_size,
-                          mst_init_worklist_kernel<true, vertex_t, edge_t, weight_t>,
-                          wl1.data(),
-                          wl_size_d.data(),
-                          wl_capacity,
-                          v,
-                          e,
-                          offsets,
-                          indices,
-                          weights,
-                          parent.data(),
-                          thr_key);
+
+  // dry-run protocol: this block is all device work and allocates nothing
+  if (!dry_run) {
+    if (initialize_colors) {
+      raft::linalg::map_offset(
+        res,
+        raft::make_device_vector_view<vertex_t, size_t>(parent.data(), parent.size()),
+        raft::cast_op<vertex_t>{});
     } else {
-      raft::launch_kernel(stream,
-                          eblocks,
-                          mst_block_size,
-                          mst_init_worklist_kernel<false, vertex_t, edge_t, weight_t>,
-                          wl1.data(),
-                          wl_size_d.data(),
-                          wl_capacity,
-                          v,
-                          e,
-                          offsets,
-                          indices,
-                          weights,
-                          parent.data(),
-                          thr_key);
+      raft::launch_kernel(
+        res, vblocks, mst_block_size, mst_init_parent_kernel<vertex_t>, v, color, parent.data());
     }
-    const wl_size_t wl_size = wl_size_d.value(stream);
-    RAFT_EXPECTS(wl_size >= 0 && wl_size <= wl_capacity,
-                 "MST worklist overflow: the input CSR must be symmetric (each "
-                 "undirected edge stored in both directions).");
-    return wl_size;
-  };
+    const auto fill_minv = [&] {
+      raft::linalg::map_offset(res,
+                               raft::make_device_vector_view<mst_ull, size_t>(
+                                 reinterpret_cast<mst_ull*>(minv_raw.data()), minv_bytes / 8),
+                               raft::const_op<mst_ull>{~mst_ull{0}});
+    };
+    fill_minv();
+    raft::linalg::map_offset(
+      res,
+      raft::make_device_vector_view<bool, size_t>(in_mst.data(), in_mst.size()),
+      raft::const_op<bool>{false});
 
-  boruvka(launch_init(true));
+    int round    = 0;
+    auto boruvka = [&](wl_size_t wl_size) {
+      entry_t* d1 = wl1.data();
+      entry_t* d2 = wl2.data();
+      while (wl_size > 0) {
+        if (iterations > 0 && round >= iterations) break;
+        wl_size_d.set_value_to_zero_async(stream);
+        const int wblocks =
+          static_cast<int>((static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
+        if constexpr (narrow) {
+          mst_ull* const base = reinterpret_cast<mst_ull*>(minv_raw.data());
+          mst_ull* const cur  = base + (round % 2) * static_cast<size_t>(v);
+          mst_ull* const prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
+          raft::launch_kernel(res,
+                              wblocks,
+                              mst_block_size,
+                              mst_filter_min_kernel<vertex_t>,
+                              d1,
+                              wl_size,
+                              d2,
+                              wl_size_d.data(),
+                              parent.data(),
+                              cur,
+                              prev);
+          std::swap(d1, d2);
+          wl_size = wl_size_d.value(stream);
+          if (wl_size > 0) {
+            const int nblocks = static_cast<int>(
+              (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
+            raft::launch_kernel(res,
+                                nblocks,
+                                mst_block_size,
+                                mst_select_join_kernel<vertex_t>,
+                                d1,
+                                wl_size,
+                                parent.data(),
+                                cur,
+                                in_mst.data());
+          }
+        } else {
+#if RAFT_MST_HAS_CAS128
+          mst_u128* const base = reinterpret_cast<mst_u128*>(minv_raw.data());
+          mst_u128* const cur  = base + (round % 2) * static_cast<size_t>(v);
+          mst_u128* const prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
+          raft::launch_kernel(res,
+                              wblocks,
+                              mst_block_size,
+                              mst_filter_min_kernel<vertex_t, wl_size_t>,
+                              d1,
+                              wl_size,
+                              d2,
+                              wl_size_d.data(),
+                              parent.data(),
+                              cur,
+                              prev);
+          std::swap(d1, d2);
+          wl_size = wl_size_d.value(stream);
+          if (wl_size > 0) {
+            const int nblocks = static_cast<int>(
+              (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
+            raft::launch_kernel(res,
+                                nblocks,
+                                mst_block_size,
+                                mst_select_join_kernel<vertex_t, wl_size_t>,
+                                d1,
+                                wl_size,
+                                parent.data(),
+                                cur,
+                                in_mst.data());
+          }
+#else
+          mst_ull* const base      = reinterpret_cast<mst_ull*>(minv_raw.data());
+          mst_ull* const minw_cur  = base + (round % 2) * static_cast<size_t>(v);
+          mst_ull* const minw_prev = base + ((round + 1) % 2) * static_cast<size_t>(v);
+          mst_ull* const mine_cur =
+            base + 2 * static_cast<size_t>(v) + (round % 2) * static_cast<size_t>(v);
+          mst_ull* const mine_prev =
+            base + 2 * static_cast<size_t>(v) + ((round + 1) % 2) * static_cast<size_t>(v);
+          raft::launch_kernel(res,
+                              wblocks,
+                              mst_block_size,
+                              mst_filter_min_kernel<vertex_t, wl_size_t>,
+                              d1,
+                              wl_size,
+                              d2,
+                              wl_size_d.data(),
+                              parent.data(),
+                              minw_cur,
+                              minw_prev,
+                              mine_prev);
+          std::swap(d1, d2);
+          wl_size = wl_size_d.value(stream);
+          if (wl_size > 0) {
+            const int nblocks = static_cast<int>(
+              (static_cast<long long>(wl_size) + mst_block_size - 1) / mst_block_size);
+            raft::launch_kernel(res,
+                                nblocks,
+                                mst_block_size,
+                                mst_min_index_kernel<wl_size_t>,
+                                d1,
+                                wl_size,
+                                minw_cur,
+                                mine_cur);
+            raft::launch_kernel(res,
+                                nblocks,
+                                mst_block_size,
+                                mst_select_join_kernel<vertex_t, wl_size_t>,
+                                d1,
+                                wl_size,
+                                parent.data(),
+                                mine_cur,
+                                in_mst.data());
+          }
+#endif
+        }
+        round++;
+      }
+    };
 
-  if (filtered) {
-    RAFT_CUDA_TRY(cudaMemsetAsync(minv_raw.data(), 0xFF, minv_bytes, stream));
-    boruvka(launch_init(false));
+    auto launch_init = [&](bool first) {
+      wl_size_d.set_value_to_zero_async(stream);
+      if (first) {
+        raft::launch_kernel(res,
+                            eblocks,
+                            mst_block_size,
+                            mst_init_worklist_kernel<true, vertex_t, edge_t, weight_t>,
+                            wl1.data(),
+                            wl_size_d.data(),
+                            wl_capacity,
+                            v,
+                            e,
+                            offsets,
+                            indices,
+                            weights,
+                            parent.data(),
+                            thr_key);
+      } else {
+        raft::launch_kernel(res,
+                            eblocks,
+                            mst_block_size,
+                            mst_init_worklist_kernel<false, vertex_t, edge_t, weight_t>,
+                            wl1.data(),
+                            wl_size_d.data(),
+                            wl_capacity,
+                            v,
+                            e,
+                            offsets,
+                            indices,
+                            weights,
+                            parent.data(),
+                            thr_key);
+      }
+      const wl_size_t wl_size = wl_size_d.value(stream);
+      RAFT_EXPECTS(wl_size >= 0 && wl_size <= wl_capacity,
+                   "MST worklist overflow: the input CSR must be symmetric (each "
+                   "undirected edge stored in both directions).");
+      return wl_size;
+    };
+
+    boruvka(launch_init(true));
+
+    if (filtered) {
+      fill_minv();
+      boruvka(launch_init(false));
+    }
+
+    raft::launch_kernel(
+      res, vblocks, mst_block_size, mst_flatten_colors_kernel<vertex_t>, v, parent.data(), color);
   }
 
-  raft::launch_kernel(
-    stream, vblocks, mst_block_size, mst_flatten_colors_kernel<vertex_t>, v, parent.data(), color);
-
   // symmetrized count can exceed 32-bit edge_t/vertex_t for v > 2^30:
-  // fail loudly rather than under-allocate
+  // fail loudly rather than under-allocate. Kept after the solve: allocating
+  // first shifts the worklist addresses and slows the narrow path
   const int64_t max_out_wide =
     symmetrize_output ? 2 * (static_cast<int64_t>(v) - 1) : (static_cast<int64_t>(v) - 1);
   RAFT_EXPECTS(max_out_wide <= std::numeric_limits<edge_t>::max() &&
@@ -304,8 +338,14 @@ Graph_COO<vertex_t, edge_t, weight_t> mst_solve(raft::resources const& handle,
   const edge_t max_out = static_cast<edge_t>(max_out_wide);
   Graph_COO<vertex_t, edge_t, weight_t> mst_result(std::max<edge_t>(max_out, 1), stream);
   rmm::device_scalar<edge_t> out_count(stream);
+  if (dry_run) {
+    // resizes below only shrink; every allocation already ran in both modes
+    mst_result.n_edges = max_out;
+    return mst_result;
+  }
+
   out_count.set_value_to_zero_async(stream);
-  raft::launch_kernel(stream,
+  raft::launch_kernel(res,
                       eblocks,
                       mst_block_size,
                       mst_extract_coo_kernel<vertex_t, edge_t, weight_t>,

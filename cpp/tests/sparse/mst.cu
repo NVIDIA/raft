@@ -699,6 +699,87 @@ TEST(MST, IntegerWeights)
   ASSERT_EQ(truth.colors, result.colors);
 }
 
+// dry-run must predict the solve's memory exactly: all allocations are sized from v/e/flags
+TEST(MST, DryRunCompliance)
+{
+  raft::resources handle;
+  auto stream       = resource::get_cuda_stream(handle);
+  const auto& csr_h = csr_in4_h[0];
+  const int v       = static_cast<int>(csr_h.offsets.size() - 1);
+  const int e       = static_cast<int>(csr_h.indices.size());
+
+  rmm::device_uvector<int> offsets_d(v + 1, stream);
+  rmm::device_uvector<int> indices_d(e, stream);
+  rmm::device_uvector<float> weights_d(e, stream);
+  rmm::device_uvector<int> colors_d(v, stream);
+  raft::update_device(offsets_d.data(), csr_h.offsets.data(), v + 1, stream);
+  raft::update_device(indices_d.data(), csr_h.indices.data(), e, stream);
+  raft::update_device(weights_d.data(), csr_h.weights.data(), e, stream);
+
+  for (bool symmetrize : {true, false}) {
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        auto result = raft::sparse::solver::mst<int, int, float>(h,
+                                                                 offsets_d.data(),
+                                                                 indices_d.data(),
+                                                                 weights_d.data(),
+                                                                 v,
+                                                                 e,
+                                                                 colors_d.data(),
+                                                                 symmetrize,
+                                                                 true,
+                                                                 0);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
+  }
+}
+
+// the deprecated stream-taking overload must keep matching the handle-only one
+TEST(MST, DeprecatedStreamOverload)
+{
+  raft::resources handle;
+  auto stream       = resource::get_cuda_stream(handle);
+  const auto& csr_h = csr_in4_h[0];
+  const int v       = static_cast<int>(csr_h.offsets.size() - 1);
+  const int e       = static_cast<int>(csr_h.indices.size());
+
+  rmm::device_uvector<int> offsets_d(v + 1, stream);
+  rmm::device_uvector<int> indices_d(e, stream);
+  rmm::device_uvector<float> weights_d(e, stream);
+  rmm::device_uvector<int> colors_new(v, stream);
+  rmm::device_uvector<int> colors_old(v, stream);
+  raft::update_device(offsets_d.data(), csr_h.offsets.data(), v + 1, stream);
+  raft::update_device(indices_d.data(), csr_h.indices.data(), e, stream);
+  raft::update_device(weights_d.data(), csr_h.weights.data(), e, stream);
+
+  auto res_new = raft::sparse::solver::mst<int, int, float>(
+    handle, offsets_d.data(), indices_d.data(), weights_d.data(), v, e, colors_new.data(), false);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+  auto res_old = raft::sparse::solver::mst<int, int, float>(handle,
+                                                            offsets_d.data(),
+                                                            indices_d.data(),
+                                                            weights_d.data(),
+                                                            v,
+                                                            e,
+                                                            colors_old.data(),
+                                                            stream,
+                                                            false);
+#pragma GCC diagnostic pop
+
+  ASSERT_EQ(res_new.n_edges, res_old.n_edges);
+  std::vector<float> w_new(res_new.n_edges), w_old(res_old.n_edges);
+  std::vector<int> c_new(v), c_old(v);
+  raft::update_host(w_new.data(), res_new.weights.data(), res_new.n_edges, stream);
+  raft::update_host(w_old.data(), res_old.weights.data(), res_old.n_edges, stream);
+  raft::update_host(c_new.data(), colors_new.data(), v, stream);
+  raft::update_host(c_old.data(), colors_old.data(), v, stream);
+  resource::sync_stream(handle, stream);
+  ASSERT_EQ(w_new, w_old);
+  ASSERT_EQ(c_new, c_old);
+}
+
 // wide, mixed, and unsigned instantiations must match the 32-bit forest exactly
 TEST(MST, Int64Indices)
 {
@@ -734,7 +815,6 @@ TEST(MST, Int64Indices)
                                                                         static_cast<vertex2_t>(v),
                                                                         static_cast<edge2_t>(e),
                                                                         col_d.data(),
-                                                                        stream,
                                                                         false,
                                                                         true,
                                                                         0);

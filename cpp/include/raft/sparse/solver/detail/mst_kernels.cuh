@@ -6,6 +6,8 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/util/device_atomics.cuh>
+#include <raft/util/device_loads_stores.cuh>
 
 #include <cstdint>
 #include <type_traits>
@@ -29,7 +31,8 @@
 // any target. Must be defined consistently across all TUs of a binary (ODR).
 #if defined(RAFT_MST_FORCE_TWOPASS)
 #define RAFT_MST_HAS_CAS128 0
-#elif RAFT_MST_MIN_ARCH >= 900
+#elif RAFT_MST_MIN_ARCH >= 900 && defined(__SIZEOF_INT128__)
+// the 128-bit CAS also needs host __int128 (MSVC lacks it)
 #define RAFT_MST_HAS_CAS128 1
 #else
 #define RAFT_MST_HAS_CAS128 0
@@ -85,66 +88,15 @@ struct mst_traits {
   using wl_size_t              = std::conditional_t<sizeof(edge_t) == 4, int, long long>;
 };
 
-template <typename T>
-RAFT_DEVICE_INLINE_FUNCTION T mst_atomic_cas(T* addr, T compare, T val)
-{
-  if constexpr (sizeof(T) == 4) {
-    return static_cast<T>(atomicCAS(reinterpret_cast<unsigned int*>(addr),
-                                    static_cast<unsigned int>(compare),
-                                    static_cast<unsigned int>(val)));
-  } else {
-    return static_cast<T>(atomicCAS(
-      reinterpret_cast<mst_ull*>(addr), static_cast<mst_ull>(compare), static_cast<mst_ull>(val)));
-  }
-}
-
-template <typename T>
-RAFT_DEVICE_INLINE_FUNCTION T mst_atomic_add(T* addr, T val)
-{
-  if constexpr (sizeof(T) == 4) {
-    return static_cast<T>(
-      atomicAdd(reinterpret_cast<unsigned int*>(addr), static_cast<unsigned int>(val)));
-  } else {
-    return static_cast<T>(atomicAdd(reinterpret_cast<mst_ull*>(addr), static_cast<mst_ull>(val)));
-  }
-}
-
-// Single-instruction word accesses: racing reads can never see a torn value
-// (uniform-size races are defined, PTX ISA 8.7.2) and L1 is kept. Do NOT
-// replace with atomics: they bypass L1, causing a large perf hit.
-template <typename T>
-RAFT_DEVICE_INLINE_FUNCTION T mst_word_load(const T* addr)
-{
-  if constexpr (sizeof(T) == 4) {
-    unsigned int r;
-    asm volatile("ld.b32 %0, [%1];" : "=r"(r) : "l"(addr) : "memory");
-    return static_cast<T>(r);
-  } else {
-    unsigned long long r;
-    asm volatile("ld.b64 %0, [%1];" : "=l"(r) : "l"(addr) : "memory");
-    return static_cast<T>(r);
-  }
-}
-
-template <typename T>
-RAFT_DEVICE_INLINE_FUNCTION void mst_word_store(T* addr, T val)
-{
-  if constexpr (sizeof(T) == 4) {
-    asm volatile("st.b32 [%0], %1;" ::"l"(addr), "r"(static_cast<unsigned int>(val)) : "memory");
-  } else {
-    asm volatile("st.b64 [%0], %1;" ::"l"(addr), "l"(static_cast<unsigned long long>(val))
-                 : "memory");
-  }
-}
-
-// Find with path halving (without it, equal-weight tie chains go quadratic, see tests for example)
+// Find with path halving (without it, equal-weight tie chains go quadratic, see tests for example).
+// parent[] races are intentional; atomics instead of ldg_ca/stg_wb bypass L1 (large perf hit)
 template <typename vertex_t>
 RAFT_DEVICE_INLINE_FUNCTION vertex_t mst_uf_find(vertex_t curr, vertex_t* const __restrict__ parent)
 {
   vertex_t next;
-  while (curr != (next = mst_word_load(&parent[curr]))) {
-    const vertex_t grand = mst_word_load(&parent[next]);
-    if (grand != next) mst_word_store(&parent[curr], grand);
+  while (curr != (next = raft::ldg_ca(&parent[curr]))) {
+    const vertex_t grand = raft::ldg_ca(&parent[next]);
+    if (grand != next) raft::stg_wb(&parent[curr], grand);
     curr = next;
   }
   return curr;
@@ -159,7 +111,7 @@ RAFT_DEVICE_INLINE_FUNCTION void mst_uf_join(vertex_t arep,
   do {
     mrep = max(arep, brep);
     arep = min(arep, brep);
-  } while ((brep = mst_atomic_cas(&parent[mrep], mrep, arep)) != mrep);
+  } while ((brep = atomicCAS(&parent[mrep], mrep, arep)) != mrep);
 }
 
 RAFT_INLINE_FUNCTION unsigned int mst_sample_hash(unsigned int val)
@@ -172,6 +124,24 @@ RAFT_INLINE_FUNCTION unsigned int mst_sample_hash(unsigned int val)
 RAFT_DEVICE_INLINE_FUNCTION long long mst_grid_idx()
 {
   return threadIdx.x + static_cast<long long>(blockIdx.x) * mst_block_size;
+}
+
+// CSR row of edge j by binary search over the offsets
+template <typename vertex_t, typename edge_t>
+RAFT_DEVICE_INLINE_FUNCTION vertex_t mst_row_of(const edge_t* const __restrict__ offsets,
+                                                const vertex_t v,
+                                                const long long j)
+{
+  vertex_t lo = 0, hi = v;
+  while (lo + 1 < hi) {
+    const vertex_t mid = lo + (hi - lo) / 2;
+    if (offsets[mid] <= j) {
+      lo = mid;
+    } else {
+      hi = mid;
+    }
+  }
+  return lo;
 }
 
 template <typename vertex_t>
@@ -218,22 +188,14 @@ RAFT_KERNEL mst_extract_coo_kernel(const vertex_t v,
 {
   const long long j = mst_grid_idx();
   if (j < e && in_mst[j]) {
-    vertex_t lo = 0, hi = v;
-    while (lo + 1 < hi) {
-      const vertex_t mid = lo + (hi - lo) / 2;
-      if (offsets[mid] <= j) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    const edge_t k = mst_atomic_add(out_count, static_cast<edge_t>(symmetrize ? 2 : 1));
-    out_src[k]     = lo;
-    out_dst[k]     = indices[j];
-    out_w[k]       = weights[j];
+    const vertex_t r = mst_row_of(offsets, v, j);
+    const edge_t k   = atomicAdd(out_count, static_cast<edge_t>(symmetrize ? 2 : 1));
+    out_src[k]       = r;
+    out_dst[k]       = indices[j];
+    out_w[k]         = weights[j];
     if (symmetrize) {
       out_src[k + 1] = indices[j];
-      out_dst[k + 1] = lo;
+      out_dst[k + 1] = r;
       out_w[k + 1]   = weights[j];
     }
   }
@@ -255,16 +217,7 @@ RAFT_KERNEL mst_init_worklist_kernel(
   const long long j = mst_grid_idx();
   if (j < e) {
     const vertex_t n = indices[j];
-    vertex_t lo = 0, hi = v;
-    while (lo + 1 < hi) {
-      const vertex_t mid = lo + (hi - lo) / 2;
-      if (offsets[mid] <= j) {
-        lo = mid;
-      } else {
-        hi = mid;
-      }
-    }
-    const vertex_t r = lo;
+    const vertex_t r = mst_row_of(offsets, v, j);
     if (n > r) {
       const typename mst_traits<weight_t, edge_t>::key_t k = mst_order_key(weights[j]);
       if (FIRST ? (k <= thr_key) : (k > thr_key)) {
@@ -272,7 +225,7 @@ RAFT_KERNEL mst_init_worklist_kernel(
         const vertex_t brep = FIRST ? n : mst_uf_find(n, parent);
         if (FIRST || (arep != brep)) {
           using wl_size_t      = typename mst_traits<weight_t, edge_t>::wl_size_t;
-          const wl_size_t slot = mst_atomic_add(wl_size, static_cast<wl_size_t>(1));
+          const wl_size_t slot = atomicAdd(wl_size, static_cast<wl_size_t>(1));
           // slot >= 0: counter wraparound defense for malformed inputs
           if (slot >= 0 && slot < wl_capacity) {
             if constexpr (mst_traits<weight_t, edge_t>::narrow) {
@@ -344,10 +297,10 @@ RAFT_KERNEL mst_select_join_kernel(const int4* const __restrict__ wl,
 // sm_90+: single-pass
 RAFT_DEVICE_INLINE_FUNCTION void mst_atomic_min_u128(mst_u128* const addr, const mst_u128 val)
 {
-  mst_u128 old = atomicCAS(addr, val, val);
+  mst_u128 old = ::atomicCAS(addr, val, val);
   while (old > val) {
     const mst_u128 assumed = old;
-    old                    = atomicCAS(addr, assumed, val);
+    old                    = ::atomicCAS(addr, assumed, val);
     if (old == assumed) break;
   }
 }
@@ -367,11 +320,11 @@ RAFT_KERNEL mst_filter_min_kernel(const mst_entry64* const __restrict__ wl1,
     const vertex_t arep = mst_uf_find(static_cast<vertex_t>(el.x), parent);
     const vertex_t brep = mst_uf_find(static_cast<vertex_t>(el.y), parent);
     if (arep != brep) {
-      minv_prev[arep]                                          = ~static_cast<mst_u128>(0);
-      minv_prev[brep]                                          = ~static_cast<mst_u128>(0);
-      el.x                                                     = arep;
-      el.y                                                     = brep;
-      wl2[mst_atomic_add(wl2_size, static_cast<wl_size_t>(1))] = el;
+      minv_prev[arep]                                     = ~static_cast<mst_u128>(0);
+      minv_prev[brep]                                     = ~static_cast<mst_u128>(0);
+      el.x                                                = arep;
+      el.y                                                = brep;
+      wl2[atomicAdd(wl2_size, static_cast<wl_size_t>(1))] = el;
       const mst_u128 val =
         ((static_cast<mst_u128>(static_cast<mst_ull>(el.z))) << 64) | static_cast<mst_ull>(el.w);
       const mst_ull key_a = reinterpret_cast<volatile mst_ull*>(&minv[arep])[1];
@@ -419,14 +372,14 @@ RAFT_KERNEL mst_filter_min_kernel(const mst_entry64* const __restrict__ wl1,
     const vertex_t arep = mst_uf_find(static_cast<vertex_t>(el.x), parent);
     const vertex_t brep = mst_uf_find(static_cast<vertex_t>(el.y), parent);
     if (arep != brep) {
-      minw_prev[arep]                                          = ~0ull;  // ping-pong resets
-      minw_prev[brep]                                          = ~0ull;
-      mine_prev[arep]                                          = ~0ull;
-      mine_prev[brep]                                          = ~0ull;
-      el.x                                                     = arep;
-      el.y                                                     = brep;
-      wl2[mst_atomic_add(wl2_size, static_cast<wl_size_t>(1))] = el;
-      const mst_ull k                                          = static_cast<mst_ull>(el.z);
+      minw_prev[arep]                                     = ~0ull;  // ping-pong resets
+      minw_prev[brep]                                     = ~0ull;
+      mine_prev[arep]                                     = ~0ull;
+      mine_prev[brep]                                     = ~0ull;
+      el.x                                                = arep;
+      el.y                                                = brep;
+      wl2[atomicAdd(wl2_size, static_cast<wl_size_t>(1))] = el;
+      const mst_ull k                                     = static_cast<mst_ull>(el.z);
       if (minw[arep] > k) atomicMin(const_cast<mst_ull*>(&minw[arep]), k);
       if (minw[brep] > k) atomicMin(const_cast<mst_ull*>(&minw[brep]), k);
     }
