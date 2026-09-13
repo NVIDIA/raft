@@ -13,6 +13,7 @@
 
 #include <rmm/cuda_stream_pool.hpp>
 
+#include <cuda/stream>
 #include <cuda_runtime.h>
 
 namespace RAFT_EXPORT raft {
@@ -95,7 +96,7 @@ inline std::size_t get_stream_pool_size(const resources& res)
 /**
  * @brief return stream from pool
  */
-inline rmm::cuda_stream_view get_stream_from_stream_pool(const resources& res)
+inline cuda::stream_ref get_stream_from_stream_pool(const resources& res)
 {
   RAFT_EXPECTS(is_stream_pool_initialized(res), "ERROR: rmm::cuda_stream_pool was not initialized");
   return get_cuda_stream_pool(res).get_stream();
@@ -104,8 +105,7 @@ inline rmm::cuda_stream_view get_stream_from_stream_pool(const resources& res)
 /**
  * @brief return stream from pool at index
  */
-inline rmm::cuda_stream_view get_stream_from_stream_pool(const resources& res,
-                                                         std::size_t stream_idx)
+inline cuda::stream_ref get_stream_from_stream_pool(const resources& res, std::size_t stream_idx)
 {
   RAFT_EXPECTS(is_stream_pool_initialized(res), "ERROR: rmm::cuda_stream_pool was not initialized");
   return get_cuda_stream_pool(res).get_stream(stream_idx);
@@ -114,7 +114,7 @@ inline rmm::cuda_stream_view get_stream_from_stream_pool(const resources& res,
 /**
  * @brief return stream from pool if size > 0, else main stream on res
  */
-inline rmm::cuda_stream_view get_next_usable_stream(const resources& res)
+inline cuda::stream_ref get_next_usable_stream(const resources& res)
 {
   return is_stream_pool_initialized(res) ? get_stream_from_stream_pool(res) : get_cuda_stream(res);
 }
@@ -125,7 +125,7 @@ inline rmm::cuda_stream_view get_next_usable_stream(const resources& res)
  * @param[in] res the raft resources object
  * @param[in] stream_idx the required index of the stream in the stream pool if available
  */
-inline rmm::cuda_stream_view get_next_usable_stream(const resources& res, std::size_t stream_idx)
+inline cuda::stream_ref get_next_usable_stream(const resources& res, std::size_t stream_idx)
 {
   return is_stream_pool_initialized(res) ? get_stream_from_stream_pool(res, stream_idx)
                                          : get_cuda_stream(res);

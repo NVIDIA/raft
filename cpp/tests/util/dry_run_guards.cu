@@ -42,7 +42,6 @@ namespace raft::util {
 TEST(DryRunGuard, AddDoesNotExecute)
 {
   raft::resources res;
-  auto stream     = resource::get_cuda_stream(res);
   constexpr int n = 256;
 
   auto a   = raft::make_device_vector<float>(res, n);
@@ -75,7 +74,6 @@ TEST(DryRunGuard, AddDoesNotExecute)
 TEST(DryRunGuard, RngDoesNotExecute)
 {
   raft::resources res;
-  auto stream     = resource::get_cuda_stream(res);
   constexpr int n = 1024;
 
   auto out = raft::make_device_vector<float>(res, n);
@@ -180,7 +178,6 @@ TEST(DryRunAllocTracking, DeallocReducesCurrent)
 TEST(DryRunE2E, StatsComposite)
 {
   raft::resources res;
-  auto stream        = resource::get_cuda_stream(res);
   constexpr int rows = 256;
   constexpr int cols = 64;
 
