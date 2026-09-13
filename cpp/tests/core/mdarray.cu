@@ -44,7 +44,7 @@
 #include <memory_resource>
 
 namespace {
-void check_status(int32_t* d_status, rmm::cuda_stream_view stream)
+void check_status(int32_t* d_status, cuda::stream_ref stream)
 {
   stream.sync();
   int32_t h_status{1};

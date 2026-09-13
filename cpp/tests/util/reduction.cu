@@ -77,7 +77,7 @@ struct reduction_launch {
   static void run(const rmm::device_uvector<int>& arr_d,
                   int ref_val,
                   ReduceLambda reduce_op,
-                  rmm::cuda_stream_view stream)
+                  cuda::stream_ref stream)
   {
     rmm::device_scalar<int> ref_d(stream);
     const int block_dim = 64;
@@ -94,7 +94,7 @@ struct reduction_launch {
                          int ref_val,
                          int rank_ref_val,
                          ReduceLambda reduce_op,
-                         rmm::cuda_stream_view stream)
+                         cuda::stream_ref stream)
   {
     rmm::device_scalar<int> ref_d(stream);
     rmm::device_scalar<int> rank_d(stream);
@@ -116,7 +116,7 @@ struct reduction_launch {
 
   static void run_random_sample(const rmm::device_uvector<int>& arr_d,
                                 int ref_val,
-                                rmm::cuda_stream_view stream)
+                                cuda::stream_ref stream)
   {
     rmm::device_scalar<int> ref_d(stream);
     const int block_dim = 64;
@@ -130,7 +130,7 @@ struct reduction_launch {
 
   static void run_binary(const rmm::device_uvector<int>& arr_d,
                          int ref_val,
-                         rmm::cuda_stream_view stream)
+                         cuda::stream_ref stream)
   {
     rmm::device_scalar<int> ref_d(stream);
     constexpr int block_dim = 64;
@@ -151,7 +151,7 @@ template <typename T>
 class ReductionTest : public testing::TestWithParam<std::vector<int>> {  // NOLINT
  protected:
   const std::vector<int> input;    // NOLINT
-  rmm::cuda_stream_view stream;    // NOLINT
+  cuda::stream_ref stream;         // NOLINT
   rmm::device_uvector<int> arr_d;  // NOLINT
 
  public:

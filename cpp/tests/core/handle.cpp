@@ -187,7 +187,7 @@ TEST(Raft, HandleDefault)
 {
   raft::handle_t h;
   ASSERT_EQ(0, h.get_device());
-  ASSERT_EQ(rmm::cuda_stream_per_thread, resource::get_cuda_stream(h));
+  ASSERT_EQ(cuda::stream_ref{cudaStreamPerThread}, resource::get_cuda_stream(h));
   ASSERT_NE(nullptr, h.get_cublas_handle());
   ASSERT_NE(nullptr, h.get_cusolver_dn_handle());
   ASSERT_NE(nullptr, h.get_cusolver_sp_handle());
@@ -205,7 +205,7 @@ TEST(Raft, Handle)
   // test non default stream handle
   cudaStream_t stream;
   RAFT_CUDA_TRY(cudaStreamCreate(&stream));
-  rmm::cuda_stream_view stream_view(stream);
+  cuda::stream_ref stream_view(stream);
   raft::handle_t handle(stream_view);
   ASSERT_EQ(stream_view, resource::get_cuda_stream(handle));
   resource::sync_stream(handle, stream);
@@ -385,7 +385,7 @@ TEST(Raft, ExplicitSetDoesNotPropagate)
   // Explicit set on a -- creates a new cell
   cudaStream_t raw_stream;
   RAFT_CUDA_TRY(cudaStreamCreate(&raw_stream));
-  rmm::cuda_stream_view new_stream(raw_stream);
+  cuda::stream_ref new_stream(raw_stream);
   resource::set_cuda_stream(a, new_stream);
 
   // a sees the new stream

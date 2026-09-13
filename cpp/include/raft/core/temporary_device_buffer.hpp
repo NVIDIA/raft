@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,6 +11,8 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/util/cudart_utils.hpp>
+
+#include <cuda/stream>
 
 #include <variant>
 
@@ -118,7 +120,7 @@ class temporary_device_buffer {
   }
 
  private:
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
   ElementType* original_data_;
   data_store data_;
   Extents extents_;

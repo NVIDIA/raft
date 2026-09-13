@@ -71,17 +71,25 @@ struct DeviceEvent {
  *   if the two views point to the same stream
  *   or sometimes when one of them is the legacy default stream.
  */
-bool are_implicitly_synchronized(rmm::cuda_stream_view a, rmm::cuda_stream_view b)
+bool are_implicitly_synchronized(cuda::stream_ref a, cuda::stream_ref b)
 {
   // any stream is "synchronized" with itself
   if (a.get() == b.get()) return true;
   // legacy + blocking streams
   unsigned int flags = 0;
-  if (a.is_default()) {
+#ifdef CUDA_API_PER_THREAD_DEFAULT_STREAM
+  if (a.get() == cudaStreamLegacy) {
+#else
+  if (a.get() == cudaStreamLegacy || a.get() == nullptr) {
+#endif
     RAFT_CUDA_TRY(cudaStreamGetFlags(b.get(), &flags));
     if ((flags & cudaStreamNonBlocking) == 0) return true;
   }
-  if (b.is_default()) {
+#ifdef CUDA_API_PER_THREAD_DEFAULT_STREAM
+  if (b.get() == cudaStreamLegacy) {
+#else
+  if (b.get() == cudaStreamLegacy || b.get() == nullptr) {
+#endif
     RAFT_CUDA_TRY(cudaStreamGetFlags(a.get(), &flags));
     if ((flags & cudaStreamNonBlocking) == 0) return true;
   }
@@ -257,9 +265,9 @@ void lstsqEig(raft::resources const& handle,
               math_t* w,
               cudaStream_t stream)
 {
-  rmm::cuda_stream_view mainStream   = rmm::cuda_stream_view(stream);
-  rmm::cuda_stream_view multAbStream = resource::get_next_usable_stream(handle);
-  bool dry_run                       = resource::get_dry_run_flag(handle);
+  cuda::stream_ref mainStream   = cuda::stream_ref(stream);
+  cuda::stream_ref multAbStream = resource::get_next_usable_stream(handle);
+  bool dry_run                  = resource::get_dry_run_flag(handle);
   bool concurrent;
   if (dry_run) {
     concurrent = false;
