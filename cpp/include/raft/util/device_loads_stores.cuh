@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,6 +12,7 @@
 #include <cuda_fp16.h>
 
 #include <cstdint>  // uintX_t
+#include <type_traits>
 
 namespace raft {
 
@@ -767,6 +768,44 @@ DI void stg(const int64_t& reg, void* addr, bool guard)
     :
     : "l"(addr), "l"(reg), "r"((int)guard)
     : "memory");
+}
+
+/** @} */
+
+/**
+ * @defgroup PlainWordAccess Single-instruction word loads/stores
+ * @{
+ * @brief Pin a 4- or 8-byte access to one load/store instruction with the
+ *        default cache policy (.ca loads / .wb stores), keeping L1.
+ *
+ * For intentionally racy algorithms (e.g. concurrent union-find): a single
+ * instruction cannot be torn or fused by the compiler, and uniform-size data
+ * races are defined under the PTX memory model (ISA 8.7.2: a racing scalar
+ * read returns the value committed by some write). Unlike `ldg`
+ * (ld.global.cg) or atomics, these do not bypass the non-coherent L1.
+ */
+template <typename T, typename = std::enable_if_t<sizeof(T) == 4 || sizeof(T) == 8>>
+DI T ldg_ca(const T* addr)
+{
+  if constexpr (sizeof(T) == 4) {
+    uint32_t r;
+    asm volatile("ld.b32 %0, [%1];" : "=r"(r) : "l"(addr) : "memory");
+    return static_cast<T>(r);
+  } else {
+    uint64_t r;
+    asm volatile("ld.b64 %0, [%1];" : "=l"(r) : "l"(addr) : "memory");
+    return static_cast<T>(r);
+  }
+}
+
+template <typename T, typename = std::enable_if_t<sizeof(T) == 4 || sizeof(T) == 8>>
+DI void stg_wb(T* addr, T val)
+{
+  if constexpr (sizeof(T) == 4) {
+    asm volatile("st.b32 [%0], %1;" ::"l"(addr), "r"(static_cast<uint32_t>(val)) : "memory");
+  } else {
+    asm volatile("st.b64 [%0], %1;" ::"l"(addr), "l"(static_cast<uint64_t>(val)) : "memory");
+  }
 }
 
 /** @} */
