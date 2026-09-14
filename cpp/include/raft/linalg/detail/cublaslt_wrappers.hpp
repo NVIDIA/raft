@@ -340,7 +340,7 @@ struct coef_wrapper<false, S> {
   S beta_default  = 0;
   const S* alpha;
   const S* beta;
-  coef_wrapper(const S* alpha_in, const S* beta_in, rmm::cuda_stream_view)
+  coef_wrapper(const S* alpha_in, const S* beta_in, cuda::stream_ref)
     : alpha(alpha_in == nullptr ? &alpha_default : alpha_in),
       beta(beta_in == nullptr ? &beta_default : beta_in)
   {
@@ -350,10 +350,10 @@ struct coef_wrapper<false, S> {
 template <typename S>
 struct coef_wrapper<true, S> {
   S* store = nullptr;
-  rmm::cuda_stream_view stream;
+  cuda::stream_ref stream;
   const S* alpha;
   const S* beta;
-  coef_wrapper(const S* alpha_in, const S* beta_in, rmm::cuda_stream_view stream)
+  coef_wrapper(const S* alpha_in, const S* beta_in, cuda::stream_ref stream)
     : stream(stream), alpha(alpha_in), beta(beta_in)
   {
     if (alpha != nullptr && beta != nullptr) { return; }

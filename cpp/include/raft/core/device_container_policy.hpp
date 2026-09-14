@@ -20,11 +20,11 @@
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/util/cudart_utils.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/device_uvector.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/resource_ref.hpp>
 
+#include <cuda/stream>
 #include <thrust/device_ptr.h>
 
 namespace RAFT_EXPORT raft {
@@ -43,11 +43,10 @@ class device_reference {
 
  private:
   std::conditional_t<std::is_const<T>::value, const_pointer, pointer> ptr_;
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
 
  public:
-  device_reference(thrust::device_ptr<T> ptr, rmm::cuda_stream_view stream)
-    : ptr_{ptr}, stream_{stream}
+  device_reference(thrust::device_ptr<T> ptr, cuda::stream_ref stream) : ptr_{ptr}, stream_{stream}
   {
   }
 
@@ -103,12 +102,12 @@ class device_uvector {
   /**
    * @brief Ctor that accepts a size, stream and an optional mr.
    */
-  explicit device_uvector(std::size_t size, rmm::cuda_stream_view stream) : data_{size, stream} {}
+  explicit device_uvector(std::size_t size, cuda::stream_ref stream) : data_{size, stream} {}
   /**
    * @brief Ctor that accepts a size, stream and a memory resource.
    */
   explicit device_uvector(std::size_t size,
-                          rmm::cuda_stream_view stream,
+                          cuda::stream_ref stream,
                           rmm::device_async_resource_ref mr)
     : data_{size, stream, mr}
   {

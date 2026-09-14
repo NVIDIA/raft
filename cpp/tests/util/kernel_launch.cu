@@ -14,6 +14,8 @@
 
 #include <rmm/device_uvector.hpp>
 
+#include <cuda/stream>
+
 #include <gtest/gtest.h>
 
 #include <cstdint>
@@ -89,7 +91,7 @@ concept launchable_when_moved = requires(W w)
 // is always the one of the launch. Everything else must fail to compile.
 static_assert(launchable_as_named<raft::resources&>,
               "resources must convert to a launch_on prvalue");
-static_assert(launchable_as_named<rmm::cuda_stream_view>,
+static_assert(launchable_as_named<cuda::stream_ref>,
               "a stream view must convert to a launch_on prvalue");
 static_assert(launchable_as_named<cudaStream_t>,
               "a raw stream handle must convert to a launch_on prvalue");
@@ -164,7 +166,7 @@ TEST(KernelLaunch, ConvertedRestrictedPointerArgument)
 TEST(KernelLaunch, StreamOverload)
 {
   raft::resources res;
-  auto stream = resource::get_cuda_stream(res);
+  cuda::stream_ref stream = resource::get_cuda_stream(res);
   EXPECT_NO_THROW(raft::launch_kernel(stream, 1, 1, noop_kernel));
   resource::sync_stream(res);
 }
@@ -180,7 +182,7 @@ TEST(KernelLaunch, RawStreamHandleOverload)
 TEST(KernelLaunch, SharedMemory)
 {
   raft::resources res;
-  auto stream = resource::get_cuda_stream(res);
+  cuda::stream_ref stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
 
@@ -252,7 +254,7 @@ TEST(KernelLaunch, DryRunIgnoresBadConfig)
 TEST(KernelLaunch, SkipExecutionOnStream)
 {
   raft::resources res;
-  auto stream = resource::get_cuda_stream(res);
+  cuda::stream_ref stream = resource::get_cuda_stream(res);
   rmm::device_uvector<int> out(1, stream);
   RAFT_CUDA_TRY(cudaMemsetAsync(out.data(), 0, sizeof(int), stream.get()));
 

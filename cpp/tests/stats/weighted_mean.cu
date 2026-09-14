@@ -66,7 +66,6 @@ class RowWeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T
     params = ::testing::TestWithParam<WeightedMeanInputs<T>>::GetParam();
     raft::random::RngState r(params.seed);
     int rows = params.M, cols = params.N, len = rows * cols;
-    auto stream = resource::get_cuda_stream(handle);
     // device-side data
     din.resize(len);
     dweights.resize(cols);
@@ -144,7 +143,6 @@ class ColWeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T
     raft::random::RngState r(params.seed);
     int rows = params.M, cols = params.N, len = rows * cols;
 
-    auto stream = resource::get_cuda_stream(handle);
     // device-side data
     din.resize(len);
     dweights.resize(rows);
@@ -199,7 +197,6 @@ class WeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T>> 
   {
     params = ::testing::TestWithParam<WeightedMeanInputs<T>>::GetParam();
     raft::random::RngState r(params.seed);
-    auto stream = resource::get_cuda_stream(handle);
     int rows = params.M, cols = params.N, len = rows * cols;
     auto weight_size = params.along_rows ? cols : rows;
     auto mean_size   = params.along_rows ? rows : cols;

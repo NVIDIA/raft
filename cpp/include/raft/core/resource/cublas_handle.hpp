@@ -17,7 +17,7 @@ namespace resource {
 
 class cublas_resource : public resource {
  public:
-  cublas_resource(rmm::cuda_stream_view stream)
+  cublas_resource(cuda::stream_ref stream)
   {
     RAFT_CUBLAS_TRY_NO_THROW(cublasCreate(&cublas_res));
     RAFT_CUBLAS_TRY_NO_THROW(cublasSetStream(cublas_res, stream.get()));
@@ -38,12 +38,12 @@ class cublas_resource : public resource {
  */
 class cublas_resource_factory : public resource_factory {
  public:
-  cublas_resource_factory(rmm::cuda_stream_view stream) : stream_(stream) {}
+  cublas_resource_factory(cuda::stream_ref stream) : stream_(stream) {}
   resource_type get_resource_type() override { return resource_type::CUBLAS_HANDLE; }
   resource* make_resource() override { return new cublas_resource(stream_); }
 
  private:
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
 };
 
 /**

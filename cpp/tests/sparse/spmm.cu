@@ -88,8 +88,6 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
   {
     params = ::testing::TestWithParam<SpmmInputs<T>>::GetParam();
 
-    cudaStream_t stream = resource::get_cuda_stream(handle).get();
-
     // We compute Z = X * Y and compare against reference result
     // Dimensions of X : M x K
     // Dimensions of Y : K x N

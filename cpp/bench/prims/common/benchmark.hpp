@@ -15,11 +15,12 @@
 
 #include <rmm/cuda_device.hpp>
 #include <rmm/cuda_stream.hpp>
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/device_buffer.hpp>
 #include <rmm/mr/cuda_memory_resource.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/mr/pool_memory_resource.hpp>
+
+#include <cuda/stream>
 
 #include <benchmark/benchmark.h>
 
@@ -59,7 +60,7 @@ struct using_pool_memory_res {
 struct cuda_event_timer {
  private:
   ::benchmark::State* state_;
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
   cudaEvent_t start_;
   cudaEvent_t stop_;
 
@@ -68,7 +69,7 @@ struct cuda_event_timer {
    * @param state  the benchmark::State whose timer we are going to update.
    * @param stream CUDA stream we are measuring time on.
    */
-  cuda_event_timer(::benchmark::State& state, rmm::cuda_stream_view stream)
+  cuda_event_timer(::benchmark::State& state, cuda::stream_ref stream)
     : state_(&state), stream_(stream)
   {
     RAFT_CUDA_TRY(cudaEventCreate(&start_));
@@ -102,7 +103,7 @@ class fixture {
 
  public:
   raft::device_resources handle;
-  rmm::cuda_stream_view stream;
+  cuda::stream_ref stream;
 
   explicit fixture(bool use_pool_memory_resource = false)
     : stream{resource::get_cuda_stream(handle)}

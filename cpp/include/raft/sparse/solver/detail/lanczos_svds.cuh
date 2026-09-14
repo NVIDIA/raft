@@ -186,7 +186,6 @@ ValueTypeT normalize_or_randomize(raft::resources const& handle,
                                   bool* used_random_vector)
 {
   common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::normalize_or_randomize");
-  auto stream         = resource::get_cuda_stream(handle);
   auto nrm            = vector_norm(handle, target, n_rows);
   *used_random_vector = false;
 
