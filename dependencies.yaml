@@ -420,7 +420,7 @@ dependencies:
       - output_types: [conda]
         packages:
           - breathe>=4.35.0
-          - doxygen>=1.8.20
+          - doxygen=1.18.0
           - graphviz
           - ipython
           - numpydoc
