@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -51,8 +51,6 @@ TEST(Raft, SpectralMatrices)
   sparse_matrix_t<index_type, value_type, nnz_type> sm2{h, csr_v};
   ASSERT_EQ(nullptr, sm1.row_offsets_);
   ASSERT_EQ(nullptr, sm2.row_offsets_);
-
-  auto stream = resource::get_cuda_stream(h);
 
   auto cnstr_lm1 = [&h, ro, ci, vs, nrows, nnz](void) {
     laplacian_matrix_t<index_type, value_type, nnz_type> lm1{h, ro, ci, vs, nrows, nnz};

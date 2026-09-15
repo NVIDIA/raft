@@ -162,7 +162,7 @@ struct launch_on {
    * @param[in] loc call site to blame for launch errors; leave at its default
    */
   launch_on(  // NOLINT(google-explicit-constructor)
-    rmm::cuda_stream_view stream,
+    cuda::stream_ref stream,
     std::size_t smem                                 = 0,
     bool kSkipExecution                              = false,
     std::initializer_list<cudaLaunchAttribute> attrs = {},

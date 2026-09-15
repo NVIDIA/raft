@@ -115,7 +115,7 @@ class MakeRegressionTest : public ::testing::TestWithParam<MakeRegressionInputs<
  protected:
   MakeRegressionInputs<T> params{::testing::TestWithParam<MakeRegressionInputs<T>>::GetParam()};
   raft::resources handle;
-  rmm::cuda_stream_view stream{resource::get_cuda_stream(handle)};
+  cuda::stream_ref stream{resource::get_cuda_stream(handle)};
   rmm::device_uvector<T> values_ret{size_t(params.n_samples) * size_t(params.n_targets), stream};
   rmm::device_uvector<T> values_prod{size_t(params.n_samples) * size_t(params.n_targets), stream};
 
@@ -257,7 +257,7 @@ class MakeRegressionMdspanTest : public ::testing::TestWithParam<MakeRegressionI
  private:
   MakeRegressionInputs<T> params{::testing::TestWithParam<MakeRegressionInputs<T>>::GetParam()};
   raft::resources handle;
-  rmm::cuda_stream_view stream{resource::get_cuda_stream(handle)};
+  cuda::stream_ref stream{resource::get_cuda_stream(handle)};
   rmm::device_uvector<T> values_ret{size_t(params.n_samples) * size_t(params.n_targets), stream};
   rmm::device_uvector<T> values_prod{size_t(params.n_samples) * size_t(params.n_targets), stream};
 
