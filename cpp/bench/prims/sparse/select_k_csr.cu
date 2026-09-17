@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include <common/benchmark.hpp>
@@ -83,7 +83,7 @@ struct SelectKCsrTest : public fixture {
                                                  1,
                                                  nnz,
                                                  1,
-                                                 stream,
+                                                 stream.get(),
                                                  false,
                                                  nullptr,
                                                  nullptr,

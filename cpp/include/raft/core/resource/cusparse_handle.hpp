@@ -10,16 +10,18 @@
 #include <raft/core/resource/resource_types.hpp>
 #include <raft/core/resources.hpp>
 
+#include <cuda/stream>
+
 #include <cusparse_v2.h>
 
 namespace RAFT_EXPORT raft {
 namespace resource {
 class cusparse_resource : public resource {
  public:
-  cusparse_resource(rmm::cuda_stream_view stream)
+  cusparse_resource(cuda::stream_ref stream)
   {
     RAFT_CUSPARSE_TRY_NO_THROW(cusparseCreate(&cusparse_res));
-    RAFT_CUSPARSE_TRY_NO_THROW(cusparseSetStream(cusparse_res, stream));
+    RAFT_CUSPARSE_TRY_NO_THROW(cusparseSetStream(cusparse_res, stream.get()));
   }
 
   ~cusparse_resource() { RAFT_CUSPARSE_TRY_NO_THROW(cusparseDestroy(cusparse_res)); }
@@ -36,12 +38,12 @@ class cusparse_resource : public resource {
  */
 class cusparse_resource_factory : public resource_factory {
  public:
-  cusparse_resource_factory(rmm::cuda_stream_view stream) : stream_(stream) {}
+  cusparse_resource_factory(cuda::stream_ref stream) : stream_(stream) {}
   resource_type get_resource_type() override { return resource_type::CUSPARSE_HANDLE; }
   resource* make_resource() override { return new cusparse_resource(stream_); }
 
  private:
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
 };
 
 /**

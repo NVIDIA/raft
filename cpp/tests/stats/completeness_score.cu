@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #include "../test_utils.cuh"
@@ -33,7 +33,7 @@ template <typename T>
 class completenessTest : public ::testing::TestWithParam<completenessParam> {
  protected:
   // the constructor
-  completenessTest() : stream(resource::get_cuda_stream(handle)) {}
+  completenessTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void SetUp() override
   {

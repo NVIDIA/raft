@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -41,7 +41,7 @@ struct reduce_rows_by_key : public fixture {
                                        params.cols,
                                        params.keys,
                                        out.data(),
-                                       stream,
+                                       stream.get(),
                                        false);
     });
   }

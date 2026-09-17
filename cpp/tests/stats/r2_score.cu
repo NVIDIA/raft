@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -39,7 +39,7 @@ template <typename T>
 template <typename T>
 class R2_scoreTest : public ::testing::TestWithParam<R2_scoreInputs<T>> {
  protected:
-  R2_scoreTest() : stream(resource::get_cuda_stream(handle)) {}
+  R2_scoreTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void SetUp() override
   {

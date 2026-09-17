@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/input_validation.hpp>
@@ -17,9 +18,8 @@
 #include <raft/util/vectorized.cuh>
 #include <raft/util/vectorized_kvp.cuh>
 
-#include <rmm/cuda_stream_view.hpp>
-
 #include <cuda/std/tuple>
+#include <cuda/stream>
 
 namespace raft {
 namespace linalg::detail {
@@ -92,7 +92,7 @@ RAFT_KERNEL map_kernel(OutT* out_ptr, IdxT len, Func f, const InTs*... in_ptrs)
 }
 
 template <int R, bool PassOffset, typename OutT, typename IdxT, typename Func, typename... InTs>
-void map_call(rmm::cuda_stream_view stream, OutT* out_ptr, IdxT len, Func f, const InTs*... in_ptrs)
+void map_call(cuda::stream_ref stream, OutT* out_ptr, IdxT len, Func f, const InTs*... in_ptrs)
 {
   const IdxT len_vectorized = raft::div_rounding_up_safe<IdxT>(len, R);
   const int threads =
@@ -150,7 +150,7 @@ constexpr inline auto operator*(const ratio_selector& a, const ratio_selector& b
 
 template <int R, bool PassOffset, typename OutT, typename IdxT, typename Func, typename... InTs>
 void map_call_rt(
-  int r, rmm::cuda_stream_view stream, OutT* out_ptr, IdxT len, Func f, const InTs*... in_ptrs)
+  int r, cuda::stream_ref stream, OutT* out_ptr, IdxT len, Func f, const InTs*... in_ptrs)
 {
   if (r >= R) { return map_call<R, PassOffset>(stream, out_ptr, len, f, in_ptrs...); }
   if constexpr (R > 1) {
@@ -159,7 +159,7 @@ void map_call_rt(
 }
 
 template <bool PassOffset, typename OutT, typename IdxT, typename Func, typename... InTs>
-void map(rmm::cuda_stream_view stream, OutT* out_ptr, IdxT len, Func f, const InTs*... in_ptrs)
+void map(cuda::stream_ref stream, OutT* out_ptr, IdxT len, Func f, const InTs*... in_ptrs)
 {
   // don't vectorize on small inputs
   if (len <= kSmallInputThreshold) {
@@ -210,6 +210,7 @@ template <bool PassOffset,
           typename = raft::enable_if_input_device_mdspan<InTypes...>>
 void map(const raft::resources& res, OutType out, Func f, InTypes... ins)
 {
+  if (resource::get_dry_run_flag(res)) { return; }
   RAFT_EXPECTS(raft::is_row_or_column_major(out), "Output must be contiguous");
   (map_check_shape(out, ins), ...);
 

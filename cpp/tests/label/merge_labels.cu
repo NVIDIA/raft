@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -34,7 +34,7 @@ class MergeLabelsTest : public ::testing::TestWithParam<MergeLabelsInputs<Index_
  protected:
   MergeLabelsTest()
     : params(::testing::TestWithParam<MergeLabelsInputs<Index_>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       labels_a(params.N, stream),
       labels_b(params.N, stream),
       expected(params.N, stream),

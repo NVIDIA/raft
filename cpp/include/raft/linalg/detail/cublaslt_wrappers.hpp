@@ -10,6 +10,7 @@
 #include <raft/core/resource/cublaslt_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/custom_resource.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cache.hpp>
 #include <raft/util/cuda_data_type.hpp>
@@ -339,7 +340,7 @@ struct coef_wrapper<false, S> {
   S beta_default  = 0;
   const S* alpha;
   const S* beta;
-  coef_wrapper(const S* alpha_in, const S* beta_in, rmm::cuda_stream_view)
+  coef_wrapper(const S* alpha_in, const S* beta_in, cuda::stream_ref)
     : alpha(alpha_in == nullptr ? &alpha_default : alpha_in),
       beta(beta_in == nullptr ? &beta_default : beta_in)
   {
@@ -349,22 +350,23 @@ struct coef_wrapper<false, S> {
 template <typename S>
 struct coef_wrapper<true, S> {
   S* store = nullptr;
-  rmm::cuda_stream_view stream;
+  cuda::stream_ref stream;
   const S* alpha;
   const S* beta;
-  coef_wrapper(const S* alpha_in, const S* beta_in, rmm::cuda_stream_view stream)
+  coef_wrapper(const S* alpha_in, const S* beta_in, cuda::stream_ref stream)
     : stream(stream), alpha(alpha_in), beta(beta_in)
   {
     if (alpha != nullptr && beta != nullptr) { return; }
     S defaults[2] = {1, 0};
-    RAFT_CUDA_TRY(cudaMallocAsync(&store, 2 * sizeof(S), stream));
-    RAFT_CUDA_TRY(cudaMemcpyAsync(store, defaults, 2 * sizeof(S), cudaMemcpyHostToDevice, stream));
+    RAFT_CUDA_TRY(cudaMallocAsync(&store, 2 * sizeof(S), stream.get()));
+    RAFT_CUDA_TRY(
+      cudaMemcpyAsync(store, defaults, 2 * sizeof(S), cudaMemcpyHostToDevice, stream.get()));
     if (alpha == nullptr) { alpha = &store[0]; }
     if (beta == nullptr) { beta = &store[1]; }
   }
   ~coef_wrapper() noexcept
   {
-    if (store != nullptr) { RAFT_CUDA_TRY_NO_THROW(cudaFreeAsync(store, stream)); }
+    if (store != nullptr) { RAFT_CUDA_TRY_NO_THROW(cudaFreeAsync(store, stream.get())); }
   }
 };
 
@@ -395,6 +397,7 @@ void matmul_strided_batched(raft::resources const& res,
                             int32_t batch_count,
                             cublasComputeType_t compute_type)
 {
+  if (resource::get_dry_run_flag(res)) { return; }
   common::nvtx::range<common::nvtx::domain::raft> batch_scope(
     "linalg::detail::matmul_strided_batched(m = %d, n = %d, k = %d, batch_count = %d)",
     m,
@@ -429,7 +432,7 @@ void matmul_strided_batched(raft::resources const& res,
                                  nullptr,
                                  nullptr,
                                  0,
-                                 stream));
+                                 stream.get()));
 }
 
 /**
@@ -458,6 +461,8 @@ template <bool DevicePointerMode = false, typename S, typename A, typename B, ty
                                   uint64_t ldc,
                                   cudaStream_t stream)
 {
+  // We pass nullptr to the workspace, so the extra memory usage should be zero.
+  if (resource::get_dry_run_flag(res)) { return; }
   common::nvtx::range<common::nvtx::domain::raft> batch_scope(
     "linalg::matmul(m = %d, n = %d, k = %d)", m, n, k);
   std::shared_ptr<matmul_desc> mm_desc{nullptr};
@@ -543,7 +548,7 @@ void matmul(raft::resources const& res,
                                           beta,
                                           c_ptr,
                                           ldc,
-                                          resource::get_cuda_stream(res));
+                                          resource::get_cuda_stream(res).get());
 }
 
 }  // namespace linalg::detail

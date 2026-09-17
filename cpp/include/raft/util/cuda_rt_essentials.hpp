@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -15,6 +15,7 @@
 #include <cuda_runtime.h>
 
 #include <cstdio>
+#include <source_location>
 
 namespace raft {
 
@@ -26,6 +27,33 @@ struct cuda_error : public raft::exception {
   explicit cuda_error(std::string const& message) : raft::exception(message) {}
 };
 
+/**
+ * @brief Throw raft::cuda_error blaming @p location, unless @p status is cudaSuccess.
+ *
+ * The function form of RAFT_CUDA_TRY: a utility that checks a CUDA call on behalf of its caller
+ * forwards the location it received, so that the reported location is the caller's rather than the
+ * utility's.
+ *
+ * @param[in] status the status returned by a CUDA runtime API call
+ * @param[in] call the name of the CUDA runtime API call, as it should appear in the message
+ * @param[in] location the call site to blame; leave at its default unless forwarding one
+ *
+ * @throw raft::cuda_error if @p status is not cudaSuccess
+ */
+inline void check_cuda_error(cudaError_t status,
+                             char const* call,
+                             std::source_location location = std::source_location::current())
+{
+  if (status == cudaSuccess) { return; }
+  cudaGetLastError();  // clear the error, so that it does not affect the subsequent calls
+  throw cuda_error(format_error_message(location,
+                                        "CUDA error encountered at: ",
+                                        "call='%s', Reason=%s:%s",
+                                        call,
+                                        cudaGetErrorName(status),
+                                        cudaGetErrorString(status)));
+}
+
 }  // namespace raft
 
 /**
@@ -36,21 +64,7 @@ struct cuda_error : public raft::exception {
  * exception detailing the CUDA error that occurred
  *
  */
-#define RAFT_CUDA_TRY(call)                        \
-  do {                                             \
-    cudaError_t const status = call;               \
-    if (status != cudaSuccess) {                   \
-      cudaGetLastError();                          \
-      std::string msg{};                           \
-      SET_ERROR_MSG(msg,                           \
-                    "CUDA error encountered at: ", \
-                    "call='%s', Reason=%s:%s",     \
-                    #call,                         \
-                    cudaGetErrorName(status),      \
-                    cudaGetErrorString(status));   \
-      throw raft::cuda_error(msg);                 \
-    }                                              \
-  } while (0)
+#define RAFT_CUDA_TRY(call) raft::check_cuda_error(call, #call)
 
 /**
  * @brief Debug macro to check for CUDA errors

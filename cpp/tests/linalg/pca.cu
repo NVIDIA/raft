@@ -43,7 +43,7 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
  public:
   PcaTest()
     : params(::testing::TestWithParam<PcaInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       explained_vars(params.n_col, stream),
       explained_vars_ref(params.n_col, stream),
       components(params.n_col * params.n_col, stream),
@@ -177,21 +177,37 @@ class PcaTest : public ::testing::TestWithParam<PcaInputs<T>> {
     auto mu_view    = raft::make_device_vector_view<T, std::size_t>(mean2.data(), n_cols);
     auto noise_view = raft::make_device_scalar_view<T, std::size_t>(noise_vars2.data());
 
-    pca_fit_transform(handle,
-                      prms,
-                      input_view,
-                      trans_view,
-                      comp_view,
-                      ev_view,
-                      evr_view,
-                      sv_view,
-                      mu_view,
-                      noise_view);
+    // Wrap the calls in the dry-run check: PCA's internal buffers are sized purely from the
+    // argument shapes, so the predicted (dry-run) peak allocation must match the real peak exactly.
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        pca_fit_transform(h,
+                          prms,
+                          input_view,
+                          trans_view,
+                          comp_view,
+                          ev_view,
+                          evr_view,
+                          sv_view,
+                          mu_view,
+                          noise_view);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      // Lower bound: fit must allocate at least the n_cols x n_cols covariance/components matrix.
+      n_cols * n_cols * sizeof(T));
 
     auto data2_back_view = raft::make_device_matrix_view<T, std::size_t, LayoutPolicy>(
       data2_back.data(), n_rows, n_cols);
 
-    pca_inverse_transform(handle, prms, trans_view, comp_view, sv_view, mu_view, data2_back_view);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        pca_inverse_transform(h, prms, trans_view, comp_view, sv_view, mu_view, data2_back_view);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      // Lower bound: inverse-transform must allocate at least an n_components x n_cols buffer.
+      n_components * n_cols * sizeof(T));
 
     ASSERT_TRUE(devArrMatch(
       data2.data(), data2_back.data(), len, raft::CompareApprox<T>(params.tolerance), stream));
@@ -222,7 +238,7 @@ TEST_P(PcaTestValF, Result)
                           explained_vars_ref.data(),
                           params.n_col,
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<double> PcaTestValD;
@@ -232,7 +248,7 @@ TEST_P(PcaTestValD, Result)
                           explained_vars_ref.data(),
                           params.n_col,
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<float> PcaTestLeftVecF;
@@ -242,7 +258,7 @@ TEST_P(PcaTestLeftVecF, Result)
                           components_ref.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<double> PcaTestLeftVecD;
@@ -252,7 +268,7 @@ TEST_P(PcaTestLeftVecD, Result)
                           components_ref.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<float> PcaTestTransDataF;
@@ -262,7 +278,7 @@ TEST_P(PcaTestTransDataF, Result)
                           trans_data_ref.data(),
                           (params.n_row * params.n_col),
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<double> PcaTestTransDataD;
@@ -272,7 +288,7 @@ TEST_P(PcaTestTransDataD, Result)
                           trans_data_ref.data(),
                           (params.n_row * params.n_col),
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<float> PcaTestDataVecSmallF;
@@ -282,7 +298,7 @@ TEST_P(PcaTestDataVecSmallF, Result)
                           data_back.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<float>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<double> PcaTestDataVecSmallD;
@@ -292,7 +308,7 @@ TEST_P(PcaTestDataVecSmallD, Result)
                           data_back.data(),
                           (params.n_col * params.n_col),
                           raft::CompareApprox<double>(params.tolerance),
-                          resource::get_cuda_stream(handle)));
+                          resource::get_cuda_stream(handle).get()));
 }
 
 typedef PcaTest<float> PcaTestDataVecF;

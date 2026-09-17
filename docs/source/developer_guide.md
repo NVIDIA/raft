@@ -48,7 +48,7 @@ int n_streams = get_stream_pool_size(res);
 #pragma omp parallel for num_threads(n_streams)
 for(int i = 0; i < n; i++) {
     int thread_num    = omp_get_thread_num() % n_streams;
-    auto s            = get_stream_from_stream_pool(res, thread_num);  // rmm::cuda_stream_view
+    auto s            = get_stream_from_stream_pool(res, thread_num);  // cuda::stream_ref
     ... possible light cpu pre-processing ...
     my_kernel1<<<b, tpb, 0, s>>>(...);
     ...
@@ -227,6 +227,8 @@ Keep in mind that this only applies to files tracked by git that have been modif
 ## Error handling
 Call CUDA APIs via the provided helper macros `RAFT_CUDA_TRY`, `RAFT_CUBLAS_TRY` and `RAFT_CUSOLVER_TRY`. These macros take care of checking the return values of the used API calls and generate an exception when the command is not successful. If you need to avoid an exception, e.g. inside a destructor, use `RAFT_CUDA_TRY_NO_THROW`, `RAFT_CUBLAS_TRY_NO_THROW ` and `RAFT_CUSOLVER_TRY_NO_THROW`. These macros log the error but do not throw an exception.
 
+A function that reports an error on behalf of its caller cannot use these macros, because they would blame its own line rather than the caller's. Such a function should take a `std::source_location` parameter defaulted to `std::source_location::current()` and forward it to `raft::format_error_message` (or to `raft::check_cuda_error`, the function form of `RAFT_CUDA_TRY`), so that the reported location is the caller's; `raft::resource::sync_stream` is an example. The `SET_ERROR_MSG` macro is deprecated in favour of `raft::format_error_message`.
+
 ## Logging
 
 ### Introduction
@@ -314,6 +316,27 @@ When writing new code, re-using functionality, or reviewing changes, prefer:
 4. **Avoid deprecated functions.** Use any reasonable non-deprecated substitute over a
    deprecated function; when adding a replacement, deprecate the old one per
    [API stability](#api-stability).
+
+## Dry Run Protocol
+
+The dry run protocol defines a mechanism to simulate the execution of algorithms to get a precise estimate of the memory requirements for a real execution with the same parameters.
+
+In dry run mode:
+- no CUDA work happens in any CUDA stream
+- no expensive CPU algorithms are allowed to run
+- no real allocations happen in any of:
+  - `rmm` default device resource (device mdarrays and `rmm::device_uvector`)
+  - `cuda::mr` (host/managed/pinned) resources (all mdarray types)
+  - workspace memory resources managed by `raft::resources`.
+All attempted allocations in the above resources are tracked and reported, thus enabling planning of the memory usage with a relatively small overhead of simulated execution.
+
+To keep the dry run mode functional, the developers must follow the protocol:
+- Any function that takes `raft::resources` handle as an argument can run in dry run mode.
+  It's always safe to call such functions without any precautions.
+- Any other expensive function or any function involving CUDA-calls must be guarded by `resource::get_dry_run_flag(res)`
+- Allocations through rmm or raft memory resources must NOT be guarded to accurately track the allocation statistics.
+
+See the full [Dry Run Protocol](dry_run_protocol.md) guide for rules, patterns, and common mistakes.
 
 ## Header organization of expensive function templates
 
@@ -425,7 +448,7 @@ All RAFT algorithms should be as asynchronous as possible avoiding the use of th
 
 void foo(const raft::resources& res, ...)
 {
-    auto stream = get_cuda_stream(res);  // rmm::cuda_stream_view
+    auto stream = get_cuda_stream(res);  // cuda::stream_ref
 }
 ```
 When multiple streams are needed, e.g. to manage a pipeline, use the internal streams available in `raft::resources` (see [Resource Management](#resource-management)). If multiple streams are used all operations still must be ordered according to `raft::resource::get_cuda_stream()` (from `raft/core/resource/cuda_stream.hpp`). Before any operation in any of the internal CUDA streams is started, all previous work in `raft::resource::get_cuda_stream()` must have completed. Any work enqueued in `raft::resource::get_cuda_stream()` after a RAFT function returns should not start before all work enqueued in the internal streams has completed. E.g. if a RAFT algorithm is called like this:
@@ -497,7 +520,7 @@ void foo(const raft::resources& res, ...)
     cublasHandle_t cublasHandle = get_cublas_handle(res);
     const int num_streams       = get_stream_pool_size(res);
     const int stream_idx        = ...
-    auto stream                 = get_stream_from_stream_pool(res, stream_idx);  // rmm::cuda_stream_view
+    auto stream                 = get_stream_from_stream_pool(res, stream_idx);  // cuda::stream_ref
     ...
 }
 ```

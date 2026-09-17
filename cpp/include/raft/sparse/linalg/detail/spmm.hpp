@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -10,6 +10,7 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusparse_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/sparse/detail/cusparse_wrappers.h>
 
@@ -84,11 +85,14 @@ void spmm(raft::resources const& handle,
                                                   descr_z,
                                                   alg,
                                                   &bufferSize,
-                                                  resource::get_cuda_stream(handle)));
+                                                  resource::get_cuda_stream(handle).get()));
 
-  raft::interruptible::synchronize(resource::get_cuda_stream(handle));
+  resource::sync_stream(handle);
 
-  rmm::device_uvector<ValueType> tmp(bufferSize, resource::get_cuda_stream(handle));
+  // cusparsespmm_bufferSize returns a size in BYTES. Mimic that, then cast the buffer below.
+  rmm::device_uvector<uint8_t> tmp(bufferSize, resource::get_cuda_stream(handle));
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   RAFT_CUSPARSE_TRY(raft::sparse::detail::cusparsespmm(resource::get_cusparse_handle(handle),
                                                        opX,
@@ -99,8 +103,8 @@ void spmm(raft::resources const& handle,
                                                        beta,
                                                        descr_z,
                                                        alg,
-                                                       tmp.data(),
-                                                       resource::get_cuda_stream(handle)));
+                                                       reinterpret_cast<ValueType*>(tmp.data()),
+                                                       resource::get_cuda_stream(handle).get()));
 }
 
 }  // end namespace detail

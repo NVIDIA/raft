@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/matrix.cuh>
 #include <raft/util/input_validation.hpp>
 
@@ -29,13 +30,18 @@ template <typename m_t, typename idx_t, typename layout_t>
 void col_reverse(raft::resources const& handle,
                  raft::device_matrix_view<m_t, idx_t, layout_t> inout)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(raft::is_row_or_column_major(inout), "Unsupported matrix layout");
   if (raft::is_col_major(inout)) {
-    detail::colReverse(
-      inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle));
+    detail::colReverse(inout.data_handle(),
+                       inout.extent(0),
+                       inout.extent(1),
+                       resource::get_cuda_stream(handle).get());
   } else {
-    detail::rowReverse(
-      inout.data_handle(), inout.extent(1), inout.extent(0), resource::get_cuda_stream(handle));
+    detail::rowReverse(inout.data_handle(),
+                       inout.extent(1),
+                       inout.extent(0),
+                       resource::get_cuda_stream(handle).get());
   }
 }
 
@@ -49,13 +55,18 @@ template <typename m_t, typename idx_t, typename layout_t>
 void row_reverse(raft::resources const& handle,
                  raft::device_matrix_view<m_t, idx_t, layout_t> inout)
 {
+  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(raft::is_row_or_column_major(inout), "Unsupported matrix layout");
   if (raft::is_col_major(inout)) {
-    detail::rowReverse(
-      inout.data_handle(), inout.extent(0), inout.extent(1), resource::get_cuda_stream(handle));
+    detail::rowReverse(inout.data_handle(),
+                       inout.extent(0),
+                       inout.extent(1),
+                       resource::get_cuda_stream(handle).get());
   } else {
-    detail::colReverse(
-      inout.data_handle(), inout.extent(1), inout.extent(0), resource::get_cuda_stream(handle));
+    detail::colReverse(inout.data_handle(),
+                       inout.extent(1),
+                       inout.extent(0),
+                       resource::get_cuda_stream(handle).get());
   }
 }
 /** @} */  // end group matrix_reverse

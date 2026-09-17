@@ -10,6 +10,8 @@
 #include <raft/core/resource/resource_types.hpp>
 #include <raft/core/resources.hpp>
 
+#include <cuda/stream>
+
 #include <cusolverSp.h>
 
 namespace RAFT_EXPORT raft {
@@ -20,10 +22,10 @@ namespace resource {
  */
 class cusolver_sp_resource : public resource {
  public:
-  cusolver_sp_resource(rmm::cuda_stream_view stream)
+  cusolver_sp_resource(cuda::stream_ref stream)
   {
     RAFT_CUSOLVER_TRY_NO_THROW(cusolverSpCreate(&cusolver_res));
-    RAFT_CUSOLVER_TRY_NO_THROW(cusolverSpSetStream(cusolver_res, stream));
+    RAFT_CUSOLVER_TRY_NO_THROW(cusolverSpSetStream(cusolver_res, stream.get()));
   }
 
   void* get_resource() override { return &cusolver_res; }
@@ -41,12 +43,12 @@ class cusolver_sp_resource : public resource {
  */
 class cusolver_sp_resource_factory : public resource_factory {
  public:
-  cusolver_sp_resource_factory(rmm::cuda_stream_view stream) : stream_(stream) {}
+  cusolver_sp_resource_factory(cuda::stream_ref stream) : stream_(stream) {}
   resource_type get_resource_type() override { return resource_type::CUSOLVER_SP_HANDLE; }
   resource* make_resource() override { return new cusolver_sp_resource(stream_); }
 
  private:
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
 };
 
 /**

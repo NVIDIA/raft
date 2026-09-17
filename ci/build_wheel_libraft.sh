@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -24,10 +24,6 @@ rapids-pip-retry install \
     -v \
     --prefer-binary \
     -r /tmp/requirements-build.txt
-
-# build with '--no-build-isolation', for better sccache hit rate
-# 0 really means "add --no-build-isolation" (ref: https://github.com/pypa/pip/issues/5735)
-export PIP_NO_BUILD_ISOLATION=0
 
 ci/build_wheel.sh libraft ${package_dir}
 ci/validate_wheel.sh ${package_dir} "${RAPIDS_WHEEL_BLD_OUTPUT_DIR}"

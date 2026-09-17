@@ -94,7 +94,7 @@ class MinMaxTest : public ::testing::TestWithParam<MinMaxInputs<T>> {
 
   void SetUp() override
   {
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     params      = ::testing::TestWithParam<MinMaxInputs<T>>::GetParam();
     raft::random::RngState r(params.seed);
     int len = params.rows * params.cols;
@@ -122,15 +122,20 @@ class MinMaxTest : public ::testing::TestWithParam<MinMaxInputs<T>> {
                 minmax_ref.data(),
                 minmax_ref.data() + params.cols,
                 stream);
-    raft::stats::minmax<T, int>(
+    raft::execute_with_dry_run_check(
       handle,
-      raft::make_device_matrix_view<const T, int, raft::layout_f_contiguous>(
-        data.data(), params.rows, params.cols),
-      std::nullopt,
-      std::nullopt,
-      raft::make_device_vector_view<T, int>(minmax_act.data(), params.cols),
-      raft::make_device_vector_view<T, int>(minmax_act.data() + params.cols, params.cols),
-      std::nullopt);
+      [&](raft::resources const& h) {
+        raft::stats::minmax<T, int>(
+          h,
+          raft::make_device_matrix_view<const T, int, raft::layout_f_contiguous>(
+            data.data(), params.rows, params.cols),
+          std::nullopt,
+          std::nullopt,
+          raft::make_device_vector_view<T, int>(minmax_act.data(), params.cols),
+          raft::make_device_vector_view<T, int>(minmax_act.data() + params.cols, params.cols),
+          std::nullopt);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
   }
 
  protected:

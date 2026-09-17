@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -68,7 +68,7 @@ class ReduceColsTest : public ::testing::TestWithParam<ReduceColsInputs<T, IdxT>
     params = ::testing::TestWithParam<ReduceColsInputs<T, IdxT>>::GetParam();
     raft::random::RngState r(params.seed);
     raft::resources handle;
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     auto nrows  = params.rows;
     auto ncols  = params.cols;
     auto nkeys  = params.nkeys;

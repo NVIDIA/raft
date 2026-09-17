@@ -1,6 +1,6 @@
 /*
 
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -15,6 +15,7 @@
 #include <raft/core/nvtx.hpp>
 #include <raft/core/operators.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/map.cuh>
 #include <raft/matrix/select_k_types.hpp>
 
@@ -85,7 +86,7 @@ void segmented_sort_by_key(raft::resources const& handle,
                            const ValT* offsets,
                            bool asc)
 {
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
   auto mr     = resource::get_workspace_resource_ref(handle);
   auto out_inds =
     raft::make_device_mdarray<ValT, ValT>(handle, mr, raft::make_extents<ValT>(n_elements));
@@ -126,6 +127,8 @@ void segmented_sort_by_key(raft::resources const& handle,
 
   auto d_temp_storage = raft::make_device_mdarray<char, size_t>(
     handle, mr, raft::make_extents<size_t>(temp_storage_bytes));
+
+  if (resource::get_dry_run_flag(handle)) { return; }
 
   if (asc) {
     // Run sorting operation

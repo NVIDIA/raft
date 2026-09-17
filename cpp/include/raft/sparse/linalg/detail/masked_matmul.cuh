@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -48,8 +48,6 @@ void masked_matmul(raft::resources const& handle,
                "Number of rows in C must match the number of rows in A.");
   RAFT_EXPECTS(B.extent(0) == compressed_C_view.get_n_cols(),
                "Number of columns in C must match the number of columns in B.");
-
-  auto stream = raft::resource::get_cuda_stream(handle);
 
   auto C_matrix = raft::make_device_csr_matrix<output_t, index_t>(handle, compressed_C_view);
 
@@ -111,8 +109,6 @@ void masked_matmul(raft::resources const& handle,
                "Number of rows in C must match the number of rows in A.");
   RAFT_EXPECTS(B.extent(0) == compressed_C_view.get_n_cols(),
                "Number of columns in C must match the number of columns in B.");
-
-  auto stream = raft::resource::get_cuda_stream(handle);
 
   auto C_matrix = raft::make_device_csr_matrix<output_t, index_t>(handle, compressed_C_view);
 

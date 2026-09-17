@@ -254,7 +254,7 @@ class svds_bench_base : public fixture {
                        CUBLAS_OP_N,
                        one,
                        zero,
-                       stream);
+                       stream.get());
 
     raft::linalg::gemm(handle,
                        Vt.data_handle(),
@@ -268,7 +268,7 @@ class svds_bench_base : public fixture {
                        CUBLAS_OP_T,
                        one,
                        zero,
-                       stream);
+                       stream.get());
 
     std::vector<value_t> h_utu(static_cast<std::size_t>(params.k) * params.k);
     std::vector<value_t> h_vvt(static_cast<std::size_t>(params.k) * params.k);

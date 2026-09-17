@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -77,19 +77,18 @@ inline const char* cublas_error_to_string(cublasStatus_t err)
  * Invokes a cuBLAS runtime API function call, if the call does not return
  * CUBLAS_STATUS_SUCCESS, throws an exception detailing the cuBLAS error that occurred
  */
-#define RAFT_CUBLAS_TRY(call)                                              \
-  do {                                                                     \
-    cublasStatus_t const status = (call);                                  \
-    if (CUBLAS_STATUS_SUCCESS != status) {                                 \
-      std::string msg{};                                                   \
-      SET_ERROR_MSG(msg,                                                   \
-                    "cuBLAS error encountered at: ",                       \
-                    "call='%s', Reason=%d:%s",                             \
-                    #call,                                                 \
-                    status,                                                \
-                    raft::linalg::detail::cublas_error_to_string(status)); \
-      throw raft::cublas_error(msg);                                       \
-    }                                                                      \
+#define RAFT_CUBLAS_TRY(call)                                                              \
+  do {                                                                                     \
+    cublasStatus_t const status = (call);                                                  \
+    if (CUBLAS_STATUS_SUCCESS != status) {                                                 \
+      throw raft::cublas_error(                                                            \
+        raft::format_error_message(std::source_location::current(),                        \
+                                   "cuBLAS error encountered at: ",                        \
+                                   "call='%s', Reason=%d:%s",                              \
+                                   #call,                                                  \
+                                   status,                                                 \
+                                   raft::linalg::detail::cublas_error_to_string(status))); \
+    }                                                                                      \
   } while (0)
 
 // FIXME: Remove after consumers rename

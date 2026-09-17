@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -7,13 +7,16 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_resources.hpp>
+#include <raft/core/resource/cuda_stream_pool.hpp>
 #include <raft/core/resource/multi_gpu.hpp>
 #include <raft/core/resource/resource_types.hpp>
 
 #include <rmm/cuda_device.hpp>
+#include <rmm/cuda_stream_pool.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/mr/pool_memory_resource.hpp>
 
+#include <cstddef>
 #include <memory>
 #include <unordered_set>
 #include <vector>
@@ -111,6 +114,24 @@ class device_resources_snmg : public device_resources {
       rmm::mr::set_per_device_resource(rmm::cuda_device_id{device_id}, *per_device_pools_.back());
     }
     RAFT_CUDA_TRY(cudaSetDevice(main_gpu_id_));
+  }
+
+  /**
+   * @brief Set a CUDA stream pool on all GPUs of the multi-GPU world
+   *
+   * @param[in] num_streams Number of CUDA streams in each device's pool
+   */
+  void set_stream_pool(std::size_t num_streams)
+  {
+    RAFT_EXPECTS(num_streams > 0, "num_streams must be greater than zero");
+
+    auto& device_resources = raft::resource::get_multi_gpu_resource(*this);
+    for (auto& device_resource : device_resources) {
+      rmm::cuda_set_device_raii device_guard{
+        rmm::cuda_device_id{raft::resource::get_device_id(device_resource)}};
+      raft::resource::set_cuda_stream_pool(device_resource,
+                                           std::make_shared<rmm::cuda_stream_pool>(num_streams));
+    }
   }
 
   bool has_resource_factory(resource::resource_type resource_type) const override

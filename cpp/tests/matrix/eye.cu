@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -31,7 +31,7 @@ class InitTest : public ::testing::TestWithParam<InitInputs<T>> {
  public:
   InitTest()
     : params(::testing::TestWithParam<InitInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle))
+      stream(resource::get_cuda_stream(handle).get())
   {
   }
 

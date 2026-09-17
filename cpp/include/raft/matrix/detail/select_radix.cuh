@@ -11,6 +11,7 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/device_properties.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/map.cuh>
 #include <raft/matrix/detail/select_k_layout.cuh>
 #include <raft/util/cudart_utils.hpp>
@@ -878,7 +879,8 @@ unsigned calc_grid_dim(int batch_size, IdxT len, int sm_cnt)
 }
 
 template <typename T, typename IdxT, int BitsPerPass, int BlockSize, typename RowLayout>
-void radix_topk(const T* in,
+void radix_topk(bool dry_run,
+                const T* in,
                 const IdxT* in_idx,
                 int batch_size,
                 IdxT len,
@@ -890,7 +892,7 @@ void radix_topk(const T* in,
                 const IdxT* len_i,
                 unsigned grid_dim,
                 int sm_cnt,
-                rmm::cuda_stream_view stream,
+                cuda::stream_ref stream,
                 rmm::device_async_resource_ref mr)
 {
   // TODO: is it possible to relax this restriction?
@@ -912,11 +914,14 @@ void radix_topk(const T* in,
 
   rmm::device_buffer bufs(max_chunk_size * buf_len * 2 * (sizeof(T) + sizeof(IdxT)), stream, mr);
 
+  if (dry_run) { return; }
+
   for (size_t offset = 0; offset < static_cast<size_t>(batch_size); offset += max_chunk_size) {
     int chunk_size = std::min(max_chunk_size, batch_size - offset);
+    RAFT_CUDA_TRY(cudaMemsetAsync(
+      counters.data(), 0, counters.size() * sizeof(Counter<T, IdxT>), stream.get()));
     RAFT_CUDA_TRY(
-      cudaMemsetAsync(counters.data(), 0, counters.size() * sizeof(Counter<T, IdxT>), stream));
-    RAFT_CUDA_TRY(cudaMemsetAsync(histograms.data(), 0, histograms.size() * sizeof(IdxT), stream));
+      cudaMemsetAsync(histograms.data(), 0, histograms.size() * sizeof(IdxT), stream.get()));
     auto kernel = radix_kernel<T, IdxT, BitsPerPass, BlockSize, false, RowLayout>;
 
     T* chunk_out            = out + offset * k;
@@ -1158,7 +1163,8 @@ RAFT_KERNEL radix_topk_one_block_kernel(const T* in,
 // used. It's used when len is relatively small or when the number of blocks per row calculated by
 // `calc_grid_dim()` is 1.
 template <typename T, typename IdxT, int BitsPerPass, int BlockSize, typename RowLayout>
-void radix_topk_one_block(const T* in,
+void radix_topk_one_block(bool dry_run,
+                          const T* in,
                           const IdxT* in_idx,
                           int batch_size,
                           IdxT len,
@@ -1168,7 +1174,7 @@ void radix_topk_one_block(const T* in,
                           bool select_min,
                           const IdxT* len_i,
                           int sm_cnt,
-                          rmm::cuda_stream_view stream,
+                          cuda::stream_ref stream,
                           rmm::device_async_resource_ref mr)
 {
   static_assert(calc_num_passes<T, BitsPerPass>() > 1);
@@ -1179,6 +1185,8 @@ void radix_topk_one_block(const T* in,
     calc_chunk_size<T, IdxT, BlockSize>(batch_size, len, sm_cnt, kernel, true);
 
   rmm::device_buffer bufs(max_chunk_size * buf_len * 2 * (sizeof(T) + sizeof(IdxT)), stream, mr);
+
+  if (dry_run) { return; }
 
   for (size_t offset = 0; offset < static_cast<size_t>(batch_size); offset += max_chunk_size) {
     int chunk_size          = std::min(max_chunk_size, batch_size - offset);
@@ -1280,9 +1288,11 @@ void select_k(raft::resources const& res,
   RAFT_EXPECTS(RowLayout::is_uniform || len_i != nullptr,
                "CSR layout requires a non-null indptr array (len_i)!");
 
-  auto stream = resource::get_cuda_stream(res);
-  auto mr     = resource::get_workspace_resource_ref(res);
+  bool dry_run = resource::get_dry_run_flag(res);
+  auto stream  = resource::get_cuda_stream(res).get();
+  auto mr      = resource::get_workspace_resource_ref(res);
   if (k == len && RowLayout::is_uniform) {
+    if (dry_run) { return; }
     RAFT_CUDA_TRY(
       cudaMemcpyAsync(out, in, sizeof(T) * batch_size * len, cudaMemcpyDeviceToDevice, stream));
     if (in_idx) {
@@ -1302,15 +1312,27 @@ void select_k(raft::resources const& res,
 
   if (len <= BlockSize * items_per_thread) {
     impl::radix_topk_one_block<T, IdxT, BitsPerPass, BlockSize, RowLayout>(
-      in, in_idx, batch_size, len, k, out, out_idx, select_min, len_i, sm_cnt, stream, mr);
+      dry_run, in, in_idx, batch_size, len, k, out, out_idx, select_min, len_i, sm_cnt, stream, mr);
   } else {
     unsigned grid_dim =
       impl::calc_grid_dim<T, IdxT, BitsPerPass, BlockSize>(batch_size, len, sm_cnt);
     if (grid_dim == 1) {
-      impl::radix_topk_one_block<T, IdxT, BitsPerPass, BlockSize, RowLayout>(
-        in, in_idx, batch_size, len, k, out, out_idx, select_min, len_i, sm_cnt, stream, mr);
+      impl::radix_topk_one_block<T, IdxT, BitsPerPass, BlockSize, RowLayout>(dry_run,
+                                                                             in,
+                                                                             in_idx,
+                                                                             batch_size,
+                                                                             len,
+                                                                             k,
+                                                                             out,
+                                                                             out_idx,
+                                                                             select_min,
+                                                                             len_i,
+                                                                             sm_cnt,
+                                                                             stream,
+                                                                             mr);
     } else {
-      impl::radix_topk<T, IdxT, BitsPerPass, BlockSize, RowLayout>(in,
+      impl::radix_topk<T, IdxT, BitsPerPass, BlockSize, RowLayout>(dry_run,
+                                                                   in,
                                                                    in_idx,
                                                                    batch_size,
                                                                    len,

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -116,7 +116,7 @@ template <typename OpT,
 class MatVecOpTest : public ::testing::TestWithParam<MatVecOpInputs<IdxType>> {
  public:
   MatVecOpTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<MatVecOpInputs<IdxType>>::GetParam()),
       vec_size(params.bcastAlongRows ? params.cols : params.rows),
       in(params.rows * params.cols + params.inAlignOffset, stream),
@@ -161,15 +161,20 @@ class MatVecOpTest : public ::testing::TestWithParam<MatVecOpInputs<IdxType>> {
                   OpT{},
                   stream);
     }
-    matrixVectorOpLaunch<OpT>(handle,
-                              out_ptr,
-                              in_ptr,
-                              vec1.data(),
-                              vec2.data(),
-                              params.cols,
-                              params.rows,
-                              params.rowMajor,
-                              params.bcastAlongRows);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        matrixVectorOpLaunch<OpT>(h,
+                                  out_ptr,
+                                  in_ptr,
+                                  vec1.data(),
+                                  vec2.data(),
+                                  params.cols,
+                                  params.rows,
+                                  params.rowMajor,
+                                  params.bcastAlongRows);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     resource::sync_stream(handle);
   }
 

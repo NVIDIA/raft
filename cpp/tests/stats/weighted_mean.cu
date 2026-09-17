@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -66,7 +66,6 @@ class RowWeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T
     params = ::testing::TestWithParam<WeightedMeanInputs<T>>::GetParam();
     raft::random::RngState r(params.seed);
     int rows = params.M, cols = params.N, len = rows * cols;
-    auto stream = resource::get_cuda_stream(handle);
     // device-side data
     din.resize(len);
     dweights.resize(cols);
@@ -89,17 +88,20 @@ class RowWeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T
     auto weights =
       raft::make_device_vector_view<const T, std::uint32_t>(dweights.data().get(), cols);
 
-    if (params.row_major) {
-      auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::row_major>(
-        din.data().get(), rows, cols);
-      // compute result
-      row_weighted_mean(handle, input, weights, output);
-    } else {
-      auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::col_major>(
-        din.data().get(), rows, cols);
-      // compute result
-      row_weighted_mean(handle, input, weights, output);
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.row_major) {
+          auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::row_major>(
+            din.data().get(), rows, cols);
+          row_weighted_mean(h, input, weights, output);
+        } else {
+          auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::col_major>(
+            din.data().get(), rows, cols);
+          row_weighted_mean(h, input, weights, output);
+        }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
 
     // adjust tolerance to account for round-off accumulation
     params.tolerance *= params.N;
@@ -141,7 +143,6 @@ class ColWeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T
     raft::random::RngState r(params.seed);
     int rows = params.M, cols = params.N, len = rows * cols;
 
-    auto stream = resource::get_cuda_stream(handle);
     // device-side data
     din.resize(len);
     dweights.resize(rows);
@@ -164,17 +165,20 @@ class ColWeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T
     auto output = raft::make_device_vector_view<T, std::uint32_t>(dact.data().get(), cols);
     auto weights =
       raft::make_device_vector_view<const T, std::uint32_t>(dweights.data().get(), rows);
-    if (params.row_major) {
-      auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::row_major>(
-        din.data().get(), rows, cols);
-      // compute result
-      col_weighted_mean(handle, input, weights, output);
-    } else {
-      auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::col_major>(
-        din.data().get(), rows, cols);
-      // compute result
-      col_weighted_mean(handle, input, weights, output);
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.row_major) {
+          auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::row_major>(
+            din.data().get(), rows, cols);
+          col_weighted_mean(h, input, weights, output);
+        } else {
+          auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::col_major>(
+            din.data().get(), rows, cols);
+          col_weighted_mean(h, input, weights, output);
+        }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     // adjust tolerance to account for round-off accumulation
     params.tolerance *= params.M;
   }
@@ -193,7 +197,6 @@ class WeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T>> 
   {
     params = ::testing::TestWithParam<WeightedMeanInputs<T>>::GetParam();
     raft::random::RngState r(params.seed);
-    auto stream = resource::get_cuda_stream(handle);
     int rows = params.M, cols = params.N, len = rows * cols;
     auto weight_size = params.along_rows ? cols : rows;
     auto mean_size   = params.along_rows ? rows : cols;
@@ -222,25 +225,28 @@ class WeightedMeanTest : public ::testing::TestWithParam<WeightedMeanInputs<T>> 
     auto output = raft::make_device_vector_view<T, std::uint32_t>(dact.data().get(), mean_size);
     auto weights =
       raft::make_device_vector_view<const T, std::uint32_t>(dweights.data().get(), weight_size);
-    if (params.row_major) {
-      auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::row_major>(
-        din.data().get(), rows, cols);
-      // compute result
-      if (params.along_rows) {
-        weighted_mean<Apply::ALONG_ROWS>(handle, input, weights, output);
-      } else {
-        weighted_mean<Apply::ALONG_COLUMNS>(handle, input, weights, output);
-      }
-    } else {
-      auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::col_major>(
-        din.data().get(), rows, cols);
-      // compute result
-      if (params.along_rows) {
-        weighted_mean<Apply::ALONG_ROWS>(handle, input, weights, output);
-      } else {
-        weighted_mean<Apply::ALONG_COLUMNS>(handle, input, weights, output);
-      }
-    }
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        if (params.row_major) {
+          auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::row_major>(
+            din.data().get(), rows, cols);
+          if (params.along_rows) {
+            weighted_mean<Apply::ALONG_ROWS>(h, input, weights, output);
+          } else {
+            weighted_mean<Apply::ALONG_COLUMNS>(h, input, weights, output);
+          }
+        } else {
+          auto input = raft::make_device_matrix_view<const T, std::uint32_t, raft::col_major>(
+            din.data().get(), rows, cols);
+          if (params.along_rows) {
+            weighted_mean<Apply::ALONG_ROWS>(h, input, weights, output);
+          } else {
+            weighted_mean<Apply::ALONG_COLUMNS>(h, input, weights, output);
+          }
+        }
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     // adjust tolerance to account for round-off accumulation
     params.tolerance *= params.N;
   }

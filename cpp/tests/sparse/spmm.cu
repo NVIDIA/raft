@@ -88,8 +88,6 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
   {
     params = ::testing::TestWithParam<SpmmInputs<T>>::GetParam();
 
-    cudaStream_t stream = resource::get_cuda_stream(handle);
-
     // We compute Z = X * Y and compare against reference result
     // Dimensions of X : M x K
     // Dimensions of Y : K x N
@@ -138,7 +136,7 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
 
   void runTest()
   {
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
 
     auto [ldx, ldy, ldz, x_size, y_size, z_size] = getXYZStrides();
 
@@ -194,8 +192,16 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
                         ldz,
                         params.row_major);
 
-    spmm(
-      handle, params.trans_x, params.trans_y, &alpha, X_csr, y_stride_view, &beta, z_stride_view);
+    // min_alloc: the actual contiguous span of the strided z matrix (what spmm allocates for z_tmp)
+    auto z_span = params.row_major ? (size_t(params.M) - 1) * ldz + params.N
+                                   : (size_t(params.N) - 1) * ldz + params.M;
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        spmm(h, params.trans_x, params.trans_y, &alpha, X_csr, y_stride_view, &beta, z_stride_view);
+      },
+      raft::alloc_behavior::ARGUMENT_DRIVEN,
+      z_span * sizeof(T));
 
     resource::sync_stream(handle, stream);
 
@@ -217,7 +223,7 @@ class SpmmTest : public ::testing::TestWithParam<SpmmInputs<T>> {
   {
     double eps = 1e-4;
 
-    cudaStream_t stream = resource::get_cuda_stream(handle);
+    cudaStream_t stream = resource::get_cuda_stream(handle).get();
 
     size_t dense_size = n_rows * n_cols;
     std::vector<T> dense_host(dense_size);

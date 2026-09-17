@@ -17,11 +17,10 @@
 #include <raft/mr/resource_monitor.hpp>
 #include <raft/mr/statistics_adaptor.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/resource_ref.hpp>
 
-#include <cuda/stream_ref>
+#include <cuda/stream>
 
 #include <chrono>
 #include <exception>

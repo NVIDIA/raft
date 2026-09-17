@@ -31,14 +31,14 @@ TEST(Raft, GemmLargeSpan)
   auto b = raft::make_device_vector<float, std::int64_t>(resources, informative);
   auto c = raft::make_device_vector<float, std::int64_t>(resources, max_samples);
 
-  RAFT_CUDA_TRY(cudaMemsetAsync(a.data_handle(), 0, a.size() * sizeof(float), stream.value()));
-  RAFT_CUDA_TRY(cudaMemsetAsync(b.data_handle(), 0, b.size() * sizeof(float), stream.value()));
+  RAFT_CUDA_TRY(cudaMemsetAsync(a.data_handle(), 0, a.size() * sizeof(float), stream.get()));
+  RAFT_CUDA_TRY(cudaMemsetAsync(b.data_handle(), 0, b.size() * sizeof(float), stream.get()));
 
   const float alpha = 1.0f;
   const float beta  = 0.0f;
   for (const auto samples : sample_counts) {
     SCOPED_TRACE(samples);
-    RAFT_CUDA_TRY(cudaMemsetAsync(c.data_handle(), 0xff, samples * sizeof(float), stream.value()));
+    RAFT_CUDA_TRY(cudaMemsetAsync(c.data_handle(), 0xff, samples * sizeof(float), stream.get()));
     raft::linalg::gemm(resources,
                        true,
                        true,
@@ -53,22 +53,22 @@ TEST(Raft, GemmLargeSpan)
                        &beta,
                        c.data_handle(),
                        static_cast<int>(samples),
-                       stream.value());
+                       stream.get());
 
     std::array<float, 3> output_samples{};
     RAFT_CUDA_TRY(cudaMemcpyAsync(
-      &output_samples[0], c.data_handle(), sizeof(float), cudaMemcpyDeviceToHost, stream.value()));
+      &output_samples[0], c.data_handle(), sizeof(float), cudaMemcpyDeviceToHost, stream.get()));
     RAFT_CUDA_TRY(cudaMemcpyAsync(&output_samples[1],
                                   c.data_handle() + samples / 2,
                                   sizeof(float),
                                   cudaMemcpyDeviceToHost,
-                                  stream.value()));
+                                  stream.get()));
     RAFT_CUDA_TRY(cudaMemcpyAsync(&output_samples[2],
                                   c.data_handle() + samples - 1,
                                   sizeof(float),
                                   cudaMemcpyDeviceToHost,
-                                  stream.value()));
-    RAFT_CUDA_TRY(cudaStreamSynchronize(stream.value()));
+                                  stream.get()));
+    RAFT_CUDA_TRY(cudaStreamSynchronize(stream.get()));
     EXPECT_FLOAT_EQ(output_samples[0], 0.0f);
     EXPECT_FLOAT_EQ(output_samples[1], 0.0f);
     EXPECT_FLOAT_EQ(output_samples[2], 0.0f);

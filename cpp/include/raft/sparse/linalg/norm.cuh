@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __SPARSE_NORM_H
@@ -87,7 +87,8 @@ void rowNormCsr(raft::resources const& handle,
                 raft::linalg::NormType type,
                 Lambda fin_op = raft::identity_op())
 {
-  detail::rowNormCsrCaller(ia, data, nnz, N, norm, type, fin_op, resource::get_cuda_stream(handle));
+  detail::rowNormCsrCaller(
+    ia, data, nnz, N, norm, type, fin_op, resource::get_cuda_stream(handle).get());
 }
 
 };  // end NAMESPACE linalg

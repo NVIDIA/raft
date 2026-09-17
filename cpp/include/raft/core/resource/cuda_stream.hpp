@@ -6,19 +6,21 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/interruptible.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resource/resource_types.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cudart_utils.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
-
+#include <cuda/stream>
 #include <cuda_runtime.h>
+
+#include <source_location>
 
 namespace RAFT_EXPORT raft {
 namespace resource {
 class cuda_stream_resource : public resource {
  public:
-  cuda_stream_resource(rmm::cuda_stream_view stream_view = rmm::cuda_stream_per_thread)
+  cuda_stream_resource(cuda::stream_ref stream_view = cuda::stream_ref{cudaStreamPerThread})
     : stream(stream_view)
   {
   }
@@ -27,7 +29,7 @@ class cuda_stream_resource : public resource {
   ~cuda_stream_resource() override {}
 
  private:
-  rmm::cuda_stream_view stream;
+  cuda::stream_ref stream;
 };
 
 /**
@@ -36,7 +38,7 @@ class cuda_stream_resource : public resource {
  */
 class cuda_stream_resource_factory : public resource_factory {
  public:
-  cuda_stream_resource_factory(rmm::cuda_stream_view stream_view = rmm::cuda_stream_per_thread)
+  cuda_stream_resource_factory(cuda::stream_ref stream_view = cuda::stream_ref{cudaStreamPerThread})
     : stream(stream_view)
   {
   }
@@ -44,7 +46,7 @@ class cuda_stream_resource_factory : public resource_factory {
   resource* make_resource() override { return new cuda_stream_resource(stream); }
 
  private:
-  rmm::cuda_stream_view stream;
+  cuda::stream_ref stream;
 };
 
 /**
@@ -52,26 +54,25 @@ class cuda_stream_resource_factory : public resource_factory {
  * @{
  */
 /**
- * Load a rmm::cuda_stream_view from a resources instance (and populate it on the res
+ * Load a cuda::stream_ref from a resources instance (and populate it on the res
  * if needed).
  * @param res raft res object for managing resources
  * @return
  */
-inline rmm::cuda_stream_view get_cuda_stream(resources const& res)
+inline cuda::stream_ref get_cuda_stream(resources const& res)
 {
   if (!res.has_resource_factory(resource_type::CUDA_STREAM_VIEW)) {
     res.ensure_default_factory(std::make_shared<cuda_stream_resource_factory>());
   }
-  return *res.get_resource<rmm::cuda_stream_view>(resource_type::CUDA_STREAM_VIEW);
+  return *res.get_resource<cuda::stream_ref>(resource_type::CUDA_STREAM_VIEW);
 };
 
 /**
- * Load a rmm::cuda_stream_view from a resources instance (and populate it on the res
- * if needed).
+ * Set a cuda::stream_ref on a resources instance.
  * @param[in] res raft resources object for managing resources
- * @param[in] stream_view cuda stream view
+ * @param[in] stream_view cuda stream reference
  */
-inline void set_cuda_stream(resources& res, rmm::cuda_stream_view stream_view)
+inline void set_cuda_stream(resources& res, cuda::stream_ref stream_view)
 {
   res.add_resource_factory(std::make_shared<cuda_stream_resource_factory>(stream_view));
 };
@@ -81,16 +82,30 @@ inline void set_cuda_stream(resources& res, rmm::cuda_stream_view stream_view)
  *
  * @param[in] res the raft resources object
  * @param[in] stream stream to synchronize
+ * @param[in] location the call site to blame for the errors; leave at its default unless
+ * synchronizing on behalf of a caller, in which case forward the caller's location.
  */
-inline void sync_stream(const resources& res, rmm::cuda_stream_view stream)
+inline void sync_stream(const resources& res,
+                        cuda::stream_ref stream,
+                        std::source_location location = std::source_location::current())
 {
-  interruptible::synchronize(stream);
+  if (raft::resource::get_dry_run_flag(res)) { return; }
+  interruptible::synchronize(stream, location);
 }
 
 /**
  * @brief synchronize main stream on the resources instance
+ *
+ * @param[in] res the raft resources object
+ * @param[in] location the call site to blame for the errors; leave at its default unless
+ * synchronizing on behalf of a caller, in which case forward the caller's location.
  */
-inline void sync_stream(const resources& res) { sync_stream(res, get_cuda_stream(res)); }
+inline void sync_stream(const resources& res,
+                        std::source_location location = std::source_location::current())
+{
+  if (raft::resource::get_dry_run_flag(res)) { return; }
+  sync_stream(res, get_cuda_stream(res), location);
+}
 
 /**
  * @}

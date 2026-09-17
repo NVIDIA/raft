@@ -1,6 +1,6 @@
 /*
  * SPDX-FileCopyrightText: Copyright (2019) Sandia Corporation
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
  */
 /*
@@ -20,16 +20,19 @@
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/util/cudart_utils.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/device_uvector.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/resource_ref.hpp>
 
+#include <cuda/stream>
 #include <thrust/device_ptr.h>
 
 namespace RAFT_EXPORT raft {
 /**
  * @brief A simplified version of thrust::device_reference with support for CUDA stream.
+ *
+ * @note This proxy performs H2D or D2H transfer and a synchronization on the given
+ *       stream on every access.
  */
 template <typename T>
 class device_reference {
@@ -40,11 +43,10 @@ class device_reference {
 
  private:
   std::conditional_t<std::is_const<T>::value, const_pointer, pointer> ptr_;
-  rmm::cuda_stream_view stream_;
+  cuda::stream_ref stream_;
 
  public:
-  device_reference(thrust::device_ptr<T> ptr, rmm::cuda_stream_view stream)
-    : ptr_{ptr}, stream_{stream}
+  device_reference(thrust::device_ptr<T> ptr, cuda::stream_ref stream) : ptr_{ptr}, stream_{stream}
   {
   }
 
@@ -53,12 +55,14 @@ class device_reference {
     auto* raw = ptr_.get();
     value_type v{};
     update_host(&v, raw, 1, stream_);
+    raft::interruptible::synchronize(stream_);
     return v;
   }
   auto operator=(T const& other) -> device_reference&
   {
     auto* raw = ptr_.get();
     update_device(raw, &other, 1, stream_);
+    raft::interruptible::synchronize(stream_);
     return *this;
   }
 };
@@ -98,12 +102,12 @@ class device_uvector {
   /**
    * @brief Ctor that accepts a size, stream and an optional mr.
    */
-  explicit device_uvector(std::size_t size, rmm::cuda_stream_view stream) : data_{size, stream} {}
+  explicit device_uvector(std::size_t size, cuda::stream_ref stream) : data_{size, stream} {}
   /**
    * @brief Ctor that accepts a size, stream and a memory resource.
    */
   explicit device_uvector(std::size_t size,
-                          rmm::cuda_stream_view stream,
+                          cuda::stream_ref stream,
                           rmm::device_async_resource_ref mr)
     : data_{size, stream, mr}
   {
@@ -126,6 +130,29 @@ class device_uvector {
   }
 
   void resize(size_type size) { data_.resize(size, data_.stream()); }
+
+  /**
+   * @brief Resize the internal buffer without copying old data.
+   *
+   * Unlike resize(), this never copies old data.
+   * Thus, unlike in resize(), there's no point in time where the old and the new buffers are both
+   * alive, and the peak memory usage is lower.
+   *
+   * Unlike resize(), this deallocates the old buffer even if the new size is smaller.
+   * This ensures the memory is released promptly.
+   */
+  void reallocate(size_type size)
+  {
+    if (size != data_.size()) {
+      auto stream = data_.stream();
+      auto mr     = data_.memory_resource();
+      // Resize and shrink rmm::device_uvector: force deallocation without copying old data
+      data_.resize(0, data_.stream());
+      data_.shrink_to_fit(data_.stream());
+      // Assign a new value after the old one is deallocated
+      data_ = rmm::device_uvector<T>(size, stream, mr);
+    }
+  }
 
   [[nodiscard]] auto data() noexcept -> pointer { return data_.data(); }
   [[nodiscard]] auto data() const noexcept -> const_pointer { return data_.data(); }

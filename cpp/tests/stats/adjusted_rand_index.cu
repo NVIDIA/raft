@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -34,7 +34,7 @@ template <typename T, typename MathT = int>
 class adjustedRandIndexTest : public ::testing::TestWithParam<adjustedRandIndexParam> {
  protected:
   adjustedRandIndexTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       firstClusterArray(0, stream),
       secondClusterArray(0, stream)
   {

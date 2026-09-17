@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -47,7 +47,7 @@ class TriangularTest : public ::testing::TestWithParam<TriangularInputs<T>> {
  public:
   TriangularTest()
     : params(::testing::TestWithParam<TriangularInputs<T>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       data(params.rows * params.cols, stream)
   {
   }

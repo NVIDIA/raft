@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -27,7 +27,7 @@ namespace RAFT_EXPORT raft {
  *        most of the methods have bound check on debug build.
  *
  * @code
- *   rmm::device_uvector<float> uvec(10, rmm::cuda_stream_default);
+ *   rmm::device_uvector<float> uvec(10, cuda::stream_ref{cudaStream_t{cudaStreamDefault}});
  *   auto view = device_span<float>{uvec.data(), uvec.size()};
  * @endcode
  */

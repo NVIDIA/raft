@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -49,7 +49,7 @@ template <typename MatrixT, typename IdxT>
 class ScatterTest : public ::testing::TestWithParam<ScatterInputs<IdxT>> {
  protected:
   ScatterTest()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       params(::testing::TestWithParam<ScatterInputs<IdxT>>::GetParam()),
       d_in(0, stream),
       d_out_exp(0, stream),

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -108,16 +108,14 @@ struct KVPAddOp {
 };
 
 template <typename InType, typename IdxType, typename OutType>
-void mapLaunch(OutType* out,
+void mapLaunch(const raft::resources& handle,
+               OutType* out,
                const InType* in1,
                const InType* in2,
                const InType* in3,
                InType scalar,
-               IdxType len,
-               cudaStream_t stream)
+               IdxType len)
 {
-  raft::resources handle;
-  resource::set_cuda_stream(handle, stream);
   auto out_view = raft::make_device_vector_view(out, len);
   auto in1_view = raft::make_device_vector_view(in1, len);
   auto in2_view = raft::make_device_vector_view(in2, len);
@@ -213,7 +211,7 @@ class MapTest : public ::testing::TestWithParam<MapInputs<InType, IdxType, OutTy
  public:
   MapTest()
     : params(::testing::TestWithParam<MapInputs<InType, IdxType, OutType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in1(params.len, stream),
       in2(params.len, stream),
       in3(params.len, stream),
@@ -289,7 +287,12 @@ class MapTest : public ::testing::TestWithParam<MapInputs<InType, IdxType, OutTy
     }
 
     create_ref(out_ref.data(), in1.data(), in2.data(), in3.data(), params.scalar, len, stream);
-    mapLaunch(out.data(), in1.data(), in2.data(), in3.data(), params.scalar, len, stream);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        mapLaunch(h, out.data(), in1.data(), in2.data(), in3.data(), params.scalar, len);
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
   }
 
@@ -307,7 +310,7 @@ class MapOffsetTest : public ::testing::TestWithParam<MapInputs<OutType, IdxType
  public:
   MapOffsetTest()
     : params(::testing::TestWithParam<MapInputs<OutType, IdxType, OutType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       out_ref(params.len, stream),
       out(params.len, stream)
   {

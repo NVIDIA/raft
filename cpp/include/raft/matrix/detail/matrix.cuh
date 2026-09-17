@@ -7,6 +7,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/util/cache_util.cuh>
@@ -17,6 +18,7 @@
 #include <rmm/exec_policy.hpp>
 
 #include <cuda/iterator>
+#include <cuda/stream>
 #include <cuda_runtime.h>
 #include <thrust/for_each.h>
 
@@ -132,7 +134,7 @@ void print(const m_t* in,
            idx_t n_cols,
            char h_separator    = ' ',
            char v_separator    = '\n',
-           cudaStream_t stream = rmm::cuda_stream_default)
+           cudaStream_t stream = cuda::stream_ref{cudaStream_t{cudaStreamDefault}}.get())
 {
   std::vector<m_t> h_matrix = std::vector<m_t>(n_cols * n_rows);
   raft::update_host(h_matrix.data(), in, n_cols * n_rows, stream);
@@ -304,6 +306,7 @@ void getDiagonalInverseMatrix(m_t* in, idx_t len, cudaStream_t stream)
 template <typename m_t, typename idx_t = int>
 m_t getL2Norm(raft::resources const& handle, const m_t* in, idx_t size, cudaStream_t stream)
 {
+  if (resource::get_dry_run_flag(handle)) { return m_t{0}; }
   cublasHandle_t cublasH = resource::get_cublas_handle(handle);
   m_t normval            = 0;
   RAFT_EXPECTS(

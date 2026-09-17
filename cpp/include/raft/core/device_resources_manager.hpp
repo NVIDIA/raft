@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -16,6 +16,7 @@
 #include <rmm/mr/pool_memory_resource.hpp>
 
 #include <cuda/memory_resource>
+#include <cuda/stream>
 
 #include <algorithm>
 #include <memory>
@@ -200,7 +201,7 @@ struct device_resources_manager {
     // the same stream
     [[nodiscard]] auto get_stream() const
     {
-      auto result = rmm::cuda_stream_per_thread;
+      auto result = cuda::stream_ref{cudaStreamPerThread};
       if (stream_count() != 0) { result = streams_->get_stream(get_thread_id() % stream_count()); }
       return result;
     }

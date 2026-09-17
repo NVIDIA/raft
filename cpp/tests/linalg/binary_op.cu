@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -38,7 +38,7 @@ class BinaryOpTest : public ::testing::TestWithParam<BinaryOpInputs<InType, IdxT
  public:
   BinaryOpTest()
     : params(::testing::TestWithParam<BinaryOpInputs<InType, IdxType, OutType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in1(params.len, stream),
       in2(params.len, stream),
       out_ref(params.len, stream),
@@ -54,7 +54,10 @@ class BinaryOpTest : public ::testing::TestWithParam<BinaryOpInputs<InType, IdxT
     uniform(handle, r, in1.data(), len, InType(-1.0), InType(1.0));
     uniform(handle, r, in2.data(), len, InType(-1.0), InType(1.0));
     naiveAdd(out_ref.data(), in1.data(), in2.data(), len);
-    binaryOpLaunch(handle, out.data(), in1.data(), in2.data(), len);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) { binaryOpLaunch(h, out.data(), in1.data(), in2.data(), len); },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     resource::sync_stream(handle, stream);
   }
 
@@ -122,7 +125,7 @@ class BinaryOpAlignment : public ::testing::Test {
  public:
   void Misaligned()
   {
-    auto stream = resource::get_cuda_stream(handle);
+    auto stream = resource::get_cuda_stream(handle).get();
     // Test to trigger cudaErrorMisalignedAddress if veclen is incorrectly
     // chosen.
     int n = 1024;
@@ -136,7 +139,7 @@ class BinaryOpAlignment : public ::testing::Test {
                            y.data() + 19,
                            256,
                            raft::add_op{},
-                           resource::get_cuda_stream(handle));
+                           resource::get_cuda_stream(handle).get());
   }
 
   raft::resources handle;

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -43,7 +43,7 @@ TEST_P(COOSort, Result)
   params = ::testing::TestWithParam<SparseSortInput<float>>::GetParam();
   raft::random::RngState r(params.seed);
   raft::resources h;
-  auto stream = resource::get_cuda_stream(h);
+  auto stream = resource::get_cuda_stream(h).get();
 
   rmm::device_uvector<int> in_rows(params.nnz, stream);
   rmm::device_uvector<int> in_cols(params.nnz, stream);

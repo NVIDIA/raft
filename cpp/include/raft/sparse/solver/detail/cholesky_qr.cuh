@@ -1,13 +1,17 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
 #pragma once
 
+#include <raft/core/copy.hpp>
+#include <raft/core/device_mdspan.hpp>
+#include <raft/core/host_mdspan.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
+#include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/detail/cublas_wrappers.hpp>
 #include <raft/linalg/detail/cusolver_wrappers.hpp>
@@ -37,7 +41,7 @@ bool cholesky_qr_pass(raft::resources const& handle,
                       int workspace_size,
                       int* dev_info)
 {
-  auto stream     = raft::resource::get_cuda_stream(handle);
+  auto stream     = raft::resource::get_cuda_stream(handle).get();
   auto cublas_h   = raft::resource::get_cublas_handle(handle);
   auto cusolver_h = raft::resource::get_cusolver_dn_handle(handle);
 
@@ -61,6 +65,12 @@ bool cholesky_qr_pass(raft::resources const& handle,
                      W,
                      k,
                      stream);
+
+  if (raft::resource::get_dry_run_flag(handle)) {
+    // Return false to force fallback to QR in dry run mode to track its memory usage.
+    // There are no more allocations to track below this point - safe to return early.
+    return false;
+  }
 
   // L = cholesky(W, LOWER)  — W is overwritten with L in lower triangle
   RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDnpotrf(
@@ -112,7 +122,7 @@ bool cholesky_qr2(raft::resources const& handle,
   int m = Q.extent(0);
   int k = Q.extent(1);
 
-  auto stream     = raft::resource::get_cuda_stream(handle);
+  auto stream     = raft::resource::get_cuda_stream(handle).get();
   auto cusolver_h = raft::resource::get_cusolver_dn_handle(handle);
 
   // Allocate workspace for Gram matrix and Cholesky

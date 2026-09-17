@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -107,7 +107,7 @@ class RngDiscreteTest : public ::testing::TestWithParam<RngDiscreteInputs<IdxT>>
  public:
   RngDiscreteTest()
     : params(::testing::TestWithParam<RngDiscreteInputs<IdxT>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       out(params.sampled_len, stream),
       weights(params.len, stream),
       histogram(params.len, stream),

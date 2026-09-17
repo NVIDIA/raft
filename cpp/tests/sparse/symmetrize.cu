@@ -58,7 +58,7 @@ class SparseSymmetrizeTest
  public:
   SparseSymmetrizeTest()
     : params(::testing::TestWithParam<SparseSymmetrizeInputs<value_idx, value_t>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       indptr(0, stream),
       indices(0, stream),
       data(0, stream)
@@ -95,8 +95,14 @@ class SparseSymmetrizeTest
 
     raft::sparse::COO<value_t, value_idx, nnz_t> out(stream);
 
-    raft::sparse::linalg::symmetrize(
-      handle, coo_rows.data(), indices.data(), data.data(), m, n, coo_rows.size(), out);
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        raft::sparse::linalg::symmetrize(
+          h, coo_rows.data(), indices.data(), data.data(), m, n, coo_rows.size(), out);
+      },
+      raft::alloc_behavior::DATA_DRIVEN,
+      nnz * 2 * (2 * sizeof(value_idx) + sizeof(value_t)));
 
     rmm::device_scalar<value_idx> sum(stream);
     sum.set_value_to_zero_async(stream);
@@ -158,7 +164,7 @@ typedef COOSymmetrizeTest<float> COOSymmetrizeView;
 TEST_P(COOSymmetrizeView, ResultView)
 {
   raft::resources handle;
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   rmm::device_uvector<int> in_rows(params.nnz, stream);
   rmm::device_uvector<int> in_cols(params.nnz, stream);
@@ -176,10 +182,15 @@ TEST_P(COOSymmetrizeView, ResultView)
   auto out_matrix =
     raft::make_device_coo_matrix<float, int, int, int>(handle, params.n_rows, params.n_cols);
 
-  linalg::coo_symmetrize(
-    handle, in_view, out_matrix, [] __device__(int row, int col, float val, float trans) {
-      return val + trans;
-    });
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      linalg::coo_symmetrize(
+        h, in_view, out_matrix, [] __device__(int row, int col, float val, float trans) {
+          return val + trans;
+        });
+    },
+    raft::alloc_behavior::DATA_DRIVEN);
 
   RAFT_CUDA_TRY(cudaStreamSynchronize(stream));
 
@@ -215,7 +226,7 @@ TEST_P(COOSymmetrizeView, ResultView)
 TEST_P(COOSymmetrizeView, ResultLegacy)
 {
   raft::resources handle;
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   raft::sparse::COO<float> in(stream, params.nnz, params.n_rows, params.n_cols, false);
   raft::sparse::COO<float> out(stream);
@@ -244,7 +255,7 @@ TEST_P(COOSymmetrizeView, ResultLegacy)
 TEST(FromKnnSymmetrizeTest, RestrictedPointerArguments)
 {
   raft::resources handle;
-  auto stream = resource::get_cuda_stream(handle);
+  auto stream = resource::get_cuda_stream(handle).get();
 
   constexpr int n = 2;
   constexpr int k = 1;

@@ -10,11 +10,13 @@
 #include <raft/core/resources.hpp>
 
 #include <rmm/exec_policy.hpp>
+
+#include <cuda/stream>
 namespace RAFT_EXPORT raft {
 namespace resource {
 class thrust_policy_resource : public resource {
  public:
-  thrust_policy_resource(rmm::cuda_stream_view stream_view)
+  thrust_policy_resource(cuda::stream_ref stream_view)
     : thrust_policy_(std::make_unique<rmm::exec_policy_nosync>(stream_view))
   {
   }
@@ -33,12 +35,12 @@ class thrust_policy_resource : public resource {
  */
 class thrust_policy_resource_factory : public resource_factory {
  public:
-  thrust_policy_resource_factory(rmm::cuda_stream_view stream_view) : stream_view_(stream_view) {}
+  thrust_policy_resource_factory(cuda::stream_ref stream_view) : stream_view_(stream_view) {}
   resource_type get_resource_type() override { return resource_type::THRUST_POLICY; }
   resource* make_resource() override { return new thrust_policy_resource(stream_view_); }
 
  private:
-  rmm::cuda_stream_view stream_view_;
+  cuda::stream_ref stream_view_;
 };
 
 /**

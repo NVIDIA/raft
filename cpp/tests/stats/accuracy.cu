@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -39,7 +39,7 @@ template <typename T>
 template <typename T>
 class AccuracyTest : public ::testing::TestWithParam<AccuracyInputs<T>> {
  protected:
-  AccuracyTest() : stream(resource::get_cuda_stream(handle)) {}
+  AccuracyTest() : stream(resource::get_cuda_stream(handle).get()) {}
 
   void SetUp() override
   {

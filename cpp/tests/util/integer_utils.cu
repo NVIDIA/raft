@@ -38,7 +38,7 @@ RAFT_KERNEL mul64_test_kernel(uint64_t* result_high,
 class Multiplication64bit : public testing::TestWithParam<MulInputs> {
  protected:
   Multiplication64bit()
-    : stream(resource::get_cuda_stream(handle)),
+    : stream(resource::get_cuda_stream(handle).get()),
       d_result_high(stream),
       d_result_low(stream),
       d_swapped_result_high(stream),

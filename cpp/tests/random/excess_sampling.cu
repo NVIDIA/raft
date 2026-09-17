@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -40,7 +40,7 @@ class ExcessSamplingTest : public ::testing::TestWithParam<inputs> {
  public:
   ExcessSamplingTest()
     : params(::testing::TestWithParam<inputs>::GetParam()),
-      stream(resource::get_cuda_stream(res)),
+      stream(resource::get_cuda_stream(res).get()),
       state{137ULL}
   {
   }

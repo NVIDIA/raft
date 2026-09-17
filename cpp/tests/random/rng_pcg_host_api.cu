@@ -48,7 +48,7 @@ RAFT_KERNEL pcg_device_kernel(DType* buffer,
 template <typename ParamType, typename DataType, int CPT, int IPC>
 class HostApiTest {
  public:
-  HostApiTest() : stream(resource::get_cuda_stream(handle)), d_buffer(0, stream)
+  HostApiTest() : stream(resource::get_cuda_stream(handle).get()), d_buffer(0, stream)
   {
     len = total_threads * CPT * IPC;
     d_buffer.resize(len, stream);

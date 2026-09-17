@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2024, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -22,7 +22,7 @@ class UnaryOpTest : public ::testing::TestWithParam<UnaryOpInputs<InType, IdxTyp
  public:
   UnaryOpTest()
     : params(::testing::TestWithParam<UnaryOpInputs<InType, IdxType, OutType>>::GetParam()),
-      stream(resource::get_cuda_stream(handle)),
+      stream(resource::get_cuda_stream(handle).get()),
       in(params.len, stream),
       out_ref(params.len, stream),
       out(params.len, stream)
@@ -46,10 +46,15 @@ class UnaryOpTest : public ::testing::TestWithParam<UnaryOpInputs<InType, IdxTyp
 
     auto in_view  = raft::make_device_vector_view<const InType>(in.data(), len);
     auto out_view = raft::make_device_vector_view(out.data(), len);
-    unary_op(handle,
-             in_view,
-             out_view,
-             raft::compose_op(raft::cast_op<OutType>(), raft::mul_const_op<InType>(scalar)));
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        unary_op(h,
+                 in_view,
+                 out_view,
+                 raft::compose_op(raft::cast_op<OutType>(), raft::mul_const_op<InType>(scalar)));
+      },
+      raft::alloc_behavior::NO_ALLOCATIONS);
     resource::sync_stream(handle, stream);
   }
 
