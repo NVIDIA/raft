@@ -349,7 +349,6 @@ jobs:
     with:
       docs-projects: raft
       dry-run: true
-      version-map: ${{ vars.VERSION_MAP }}
   wheel-build-libraft:
     needs: [build-details, checks]
     permissions:
