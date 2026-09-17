@@ -95,8 +95,8 @@ RAFT_KERNEL combined_dot_product(int rows, int cols, const T* W, T* matrix, int*
   int m_i = threadIdx.x + blockDim.x * blockIdx.x;
   int Wi  = m_i / cols;
   if (m_i < cols * rows) {
-    if (W[Wi] >= 0.0)
-      matrix[m_i] = pow(W[Wi], 0.5) * (matrix[m_i]);
+    if (W[Wi] >= T(0))
+      matrix[m_i] = raft::sqrt(W[Wi]) * (matrix[m_i]);
     else
       check[0] = Wi;  // reports Wi'th eigen values is negative.
   }

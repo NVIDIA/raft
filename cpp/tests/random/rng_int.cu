@@ -16,6 +16,8 @@
 
 #include <gtest/gtest.h>
 
+#include <vector>
+
 namespace raft {
 namespace random {
 
@@ -286,6 +288,66 @@ TEST_P(RngMdspanTestS64, Result)
   ASSERT_TRUE(match(meanvar[1], h_stats[1], CompareApprox<float>(params.tolerance)));
 }
 INSTANTIATE_TEST_SUITE_P(RngMdspanTests, RngMdspanTestS64, ::testing::ValuesIn(inputs_s64));
+
+/**
+ * normalInt draws the deviate in a narrower type than the output when it can, so the shift by mu
+ * has to be applied in the output type. If mu is folded into the Box-Muller transform instead,
+ * everything below the mantissa of the compute type is lost: at mu = 2e9 the float spacing is 128,
+ * which quantizes a sigma of 10 away completely and collapses the sample to a single value.
+ *
+ * The deviate does not depend on mu, so drawing with mu and with 0 from the same seed must give
+ * the same deviates. That is exact, so it needs no statistical tolerance.
+ */
+template <typename T>
+void testNormalIntLargeMu(T mu, T sigma, GeneratorType gtype)
+{
+  raft::resources handle;
+  auto stream       = resource::get_cuda_stream(handle);
+  constexpr int len = 32 * 1024;
+
+  rmm::device_uvector<T> shifted(len, stream);
+  rmm::device_uvector<T> centered(len, stream);
+
+  RngState r_shifted(1234ULL, gtype);
+  normalInt(handle, r_shifted, shifted.data(), len, mu, sigma);
+  RngState r_centered(1234ULL, gtype);
+  normalInt(handle, r_centered, centered.data(), len, T(0), sigma);
+
+  std::vector<T> h_shifted(len);
+  std::vector<T> h_centered(len);
+  update_host(h_shifted.data(), shifted.data(), len, stream);
+  update_host(h_centered.data(), centered.data(), len, stream);
+  resource::sync_stream(handle, stream);
+
+  bool all_zero = true;
+  for (int i = 0; i < len; ++i) {
+    // Subtract in the integer type: converting values of this magnitude to a floating point type
+    // would lose the very precision being tested for.
+    ASSERT_EQ(static_cast<T>(h_shifted[i] - mu), h_centered[i])
+      << "deviate " << i << " differs once shifted by mu=" << mu;
+    all_zero = all_zero && (h_centered[i] == T(0));
+  }
+  ASSERT_FALSE(all_zero) << "every deviate was zero for sigma=" << sigma;
+}
+
+TEST(RngNormalIntLargeMu, S32)
+{
+  for (auto gtype : {GenPhilox, GenPC}) {
+    testNormalIntLargeMu<int32_t>(16777217, 10, gtype);  // 2^24 + 1, past float's mantissa
+    testNormalIntLargeMu<int32_t>(100000000, 10, gtype);
+    testNormalIntLargeMu<int32_t>(2000000000, 10, gtype);  // near the int32_t limit
+    testNormalIntLargeMu<int32_t>(-2000000000, 10, gtype);
+  }
+}
+
+TEST(RngNormalIntLargeMu, S64)
+{
+  for (auto gtype : {GenPhilox, GenPC}) {
+    // 2^53 + 1, past double's mantissa
+    testNormalIntLargeMu<int64_t>(9007199254740993LL, 10, gtype);
+    testNormalIntLargeMu<int64_t>(4000000000000000000LL, 10, gtype);
+  }
+}
 
 }  // namespace random
 }  // namespace raft
