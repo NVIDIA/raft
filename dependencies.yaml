@@ -75,6 +75,9 @@ files:
   py_rapids_build_libraft:
     output: pyproject
     pyproject_dir: python/libraft
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: tool.rapids-build-backend
       key: requires
@@ -85,6 +88,9 @@ files:
   py_run_libraft:
     output: pyproject
     pyproject_dir: python/libraft
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: project
     includes:
@@ -101,6 +107,9 @@ files:
   py_rapids_build_pylibraft:
     output: pyproject
     pyproject_dir: python/pylibraft
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: tool.rapids-build-backend
       key: requires
@@ -114,6 +123,9 @@ files:
   py_run_pylibraft:
     output: pyproject
     pyproject_dir: python/pylibraft
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: project
     includes:
@@ -124,6 +136,9 @@ files:
   py_test_pylibraft:
     output: pyproject
     pyproject_dir: python/pylibraft
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: project.optional-dependencies
       key: test
@@ -141,6 +156,9 @@ files:
   py_rapids_build_raft_dask:
     output: pyproject
     pyproject_dir: python/raft-dask
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: tool.rapids-build-backend
       key: requires
@@ -154,6 +172,9 @@ files:
   py_run_raft_dask:
     output: pyproject
     pyproject_dir: python/raft-dask
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: project
     includes:
@@ -164,6 +185,9 @@ files:
   py_test_raft_dask:
     output: pyproject
     pyproject_dir: python/raft-dask
+    matrix:
+      cuda_suffixed: ["false"]
+      use_cuda_wheels: ["true"]
     extras:
       table: project.optional-dependencies
       key: test
@@ -359,6 +383,7 @@ dependencies:
           # if no matching matrix selectors passed, list the CUDA 13 requirement
           # (just as a source of documentation, as this populates pyproject.toml in source control)
           - matrix:
+              use_cuda_wheels: "true"
             packages:
               - *cuda_toolkit_any_cu13
               - *nvjitlink_cu13
@@ -395,10 +420,12 @@ dependencies:
               - *cupy_cu13
           - matrix:
               cuda: "12.*"
+              use_cuda_wheels: "true"
             packages:
               - cupy-cuda12x[ctk]>=14.0.1,!=14.1.0
           # fallback to CUDA 13 versions if 'cuda' is '13.*' or not provided
           - matrix:
+              use_cuda_wheels: "true"
             packages:
               - cupy-cuda13x[ctk]>=14.0.1,!=14.1.0
   depends_on_rapids_logger:
@@ -487,6 +514,7 @@ dependencies:
               - dask-cuda[cu13]==26.12.*,>=0.0.0a0
               - pylibraft-cu13==26.12.*,>=0.0.0a0
           - matrix:
+              cuda_suffixed: "false"
             packages:
               - *dask_cuda_unsuffixed
               - *pylibraft_unsuffixed
@@ -553,7 +581,10 @@ dependencies:
               cuda_suffixed: "true"
             packages:
               - distributed-ucxx-cu13==0.53.*,>=0.0.0a0
-          - {matrix: null, packages: [*distributed_ucxx_unsuffixed]}
+          - matrix:
+              cuda_suffixed: "false"
+            packages:
+              - *distributed_ucxx_unsuffixed
   depends_on_libraft:
     common:
       - output_types: requirements
@@ -577,6 +608,7 @@ dependencies:
             packages:
               - libraft-cu13==26.12.*,>=0.0.0a0
           - matrix:
+              cuda_suffixed: "false"
             packages:
               - *libraft_unsuffixed
   depends_on_libraft_headers:
@@ -622,6 +654,7 @@ dependencies:
             packages:
               - librmm-cu13==26.12.*,>=0.0.0a0
           - matrix:
+              cuda_suffixed: "false"
             packages:
               - *librmm_unsuffixed
   depends_on_rmm:
@@ -647,6 +680,7 @@ dependencies:
             packages:
               - rmm-cu13==26.12.*,>=0.0.0a0
           - matrix:
+              cuda_suffixed: "false"
             packages:
               - *rmm_unsuffixed
   depends_on_ucx_build:
