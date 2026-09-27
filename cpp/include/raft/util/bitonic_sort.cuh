@@ -27,6 +27,26 @@ _RAFT_DEVICE _RAFT_FORCEINLINE void conditional_assign(bool cond, T& ptr, T x)
   if (cond) { ptr = x; }
 }
 
+/** First element of a payload pack. k-selection always passes the index first. */
+template <typename P0, typename... Rest>
+_RAFT_DEVICE _RAFT_FORCEINLINE P0 first_payload(P0 head, Rest...)
+{
+  return head;
+}
+
+/** Whether `a` must move after `b`, breaking an equal-key tie on the index. */
+template <typename KeyT, typename IdxT>
+_RAFT_DEVICE _RAFT_FORCEINLINE bool swap_needed(bool ascending,
+                                                KeyT a,
+                                                KeyT b,
+                                                IdxT ia,
+                                                IdxT ib)
+{
+  if (a != b) { return ascending ? (a > b) : (a < b); }
+  // Must flip with `ascending`, or paired lanes disagree on a tie and duplicate an element.
+  return ascending ? (ia > ib) : (ia < ib);
+}
+
 }  // namespace
 
 /**
@@ -192,7 +212,17 @@ class bitonic {
           const int other_i = i + stride;
           KeyT& key         = keys[i];
           KeyT& other       = keys[other_i];
-          if (ascending ? key > other : key < other) {
+          bool do_swap;
+          if constexpr (sizeof...(PayloadTs) > 0) {
+            do_swap = swap_needed(ascending,
+                                  key,
+                                  other,
+                                  first_payload(payloads[i]...),
+                                  first_payload(payloads[other_i]...));
+          } else {
+            do_swap = ascending ? key > other : key < other;
+          }
+          if (do_swap) {
             swap(key, other);
             (swap(payloads[i], payloads[other_i]), ...);
           }
@@ -206,7 +236,16 @@ class bitonic {
       for (int stride = (warp_width >> 1); stride > 0; stride >>= 1) {
         const bool is_second = lane & stride;
         const KeyT other     = shfl_xor(key, stride, warp_width);
-        const bool do_assign = (ascending != is_second) ? key > other : key < other;
+        const bool asc       = (ascending != is_second);
+        bool do_assign;
+        if constexpr (sizeof...(PayloadTs) > 0) {
+          // The partner's index must cross the lane boundary to break the tie.
+          const auto my_id    = first_payload(payloads[i]...);
+          const auto other_id = shfl_xor(my_id, stride, warp_width);
+          do_assign           = swap_needed(asc, key, other, my_id, other_id);
+        } else {
+          do_assign = asc ? key > other : key < other;
+        }
 
         conditional_assign(do_assign, key, other);
         // NB: don't put shfl_xor in a conditional; it must be called by all threads in a warp.

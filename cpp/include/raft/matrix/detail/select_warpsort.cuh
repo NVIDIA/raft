@@ -109,6 +109,16 @@ _RAFT_DEVICE _RAFT_FORCEINLINE auto is_ordered(T left, T right) -> bool
   if constexpr (!Ascending) { return left > right; }
 }
 
+/** `is_ordered` with an equal-key tie broken on the index, as `swap_needed` does. */
+template <bool Ascending, typename T, typename IdxT>
+_RAFT_DEVICE _RAFT_FORCEINLINE auto is_ordered(T left, T right, IdxT left_idx, IdxT right_idx)
+  -> bool
+{
+  if (left != right) { return is_ordered<Ascending>(left, right); }
+  if constexpr (Ascending) { return left_idx < right_idx; }
+  if constexpr (!Ascending) { return left_idx > right_idx; }
+}
+
 }  // namespace
 
 /**
@@ -188,7 +198,7 @@ class warp_sort {
       for (int i = kMaxArrLen - 1; i >= 0; --i, idx += kWarpWidth) {
         if (idx < k) {
           T t = in[idx];
-          if (is_ordered<Ascending>(t, val_arr_[i])) {
+          if (is_ordered<Ascending>(t, val_arr_[i], in_idx[idx], idx_arr_[i])) {
             val_arr_[i] = t;
             idx_arr_[i] = in_idx[idx];
           }
@@ -259,7 +269,10 @@ class warp_sort {
     for (int i = std::min(kMaxArrLen, PerThreadSizeIn); i > 0; i--) {
       T& key  = val_arr_[kMaxArrLen - i];
       T other = keys_in[PerThreadSizeIn - i];
-      if (is_ordered<Ascending>(other, key)) {
+      if (is_ordered<Ascending>(other,
+                                key,
+                                ids_in[PerThreadSizeIn - i],
+                                idx_arr_[kMaxArrLen - i])) {
         key                      = other;
         idx_arr_[kMaxArrLen - i] = ids_in[PerThreadSizeIn - i];
       }
