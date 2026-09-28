@@ -104,8 +104,10 @@ class bitonic {
    *   the total size of the sorted data is `Size * warp_width`.
    *   Must be power-of-two, not larger than the WarpSize.
    */
-  _RAFT_DEVICE _RAFT_FORCEINLINE explicit bitonic(bool ascending, int warp_width = WarpSize)
-    : ascending_(ascending), warp_width_(warp_width)
+  _RAFT_DEVICE _RAFT_FORCEINLINE explicit bitonic(bool ascending,
+                                                  int warp_width = WarpSize,
+                                                  bool tie_break = false)
+    : ascending_(ascending), warp_width_(warp_width), tie_break_(tie_break)
   {
   }
 
@@ -135,7 +137,7 @@ class bitonic {
   _RAFT_DEVICE _RAFT_FORCEINLINE void merge(KeyT* __restrict__ keys,
                                             PayloadTs* __restrict__... payloads) const
   {
-    return bitonic<Size>::merge_impl(ascending_, warp_width_, keys, payloads...);
+    return bitonic<Size>::merge_impl(ascending_, warp_width_, tie_break_, keys, payloads...);
   }
 
   /**
@@ -154,7 +156,7 @@ class bitonic {
   _RAFT_DEVICE _RAFT_FORCEINLINE void sort(KeyT* __restrict__ keys,
                                            PayloadTs* __restrict__... payloads) const
   {
-    return bitonic<Size>::sort_impl(ascending_, warp_width_, keys, payloads...);
+    return bitonic<Size>::sort_impl(ascending_, warp_width_, tie_break_, keys, payloads...);
   }
 
   /**
@@ -192,6 +194,8 @@ class bitonic {
  private:
   const int warp_width_;
   const bool ascending_;
+  /** Order an equal-key tie on the payload index. Off by default. */
+  const bool tie_break_;
 
   template <int AnotherSize>
   friend class bitonic;
@@ -199,6 +203,7 @@ class bitonic {
   template <typename KeyT, typename... PayloadTs>
   static _RAFT_DEVICE _RAFT_FORCEINLINE void merge_impl(bool ascending,
                                                         int warp_width,
+                                                        bool tie_break,
                                                         KeyT* __restrict__ keys,
                                                         PayloadTs* __restrict__... payloads)
   {
@@ -214,11 +219,12 @@ class bitonic {
           KeyT& other       = keys[other_i];
           bool do_swap;
           if constexpr (sizeof...(PayloadTs) > 0) {
-            do_swap = swap_needed(ascending,
-                                  key,
-                                  other,
-                                  first_payload(payloads[i]...),
-                                  first_payload(payloads[other_i]...));
+            do_swap = tie_break ? swap_needed(ascending,
+                                              key,
+                                              other,
+                                              first_payload(payloads[i]...),
+                                              first_payload(payloads[other_i]...))
+                                : (ascending ? key > other : key < other);
           } else {
             do_swap = ascending ? key > other : key < other;
           }
@@ -239,10 +245,11 @@ class bitonic {
         const bool asc       = (ascending != is_second);
         bool do_assign;
         if constexpr (sizeof...(PayloadTs) > 0) {
-          // The partner's index must cross the lane boundary to break the tie.
+          // The shuffle is unconditional: it is a warp-collective operation.
           const auto my_id    = first_payload(payloads[i]...);
           const auto other_id = shfl_xor(my_id, stride, warp_width);
-          do_assign           = swap_needed(asc, key, other, my_id, other_id);
+          do_assign           = tie_break ? swap_needed(asc, key, other, my_id, other_id)
+                                          : (asc ? key > other : key < other);
         } else {
           do_assign = asc ? key > other : key < other;
         }
@@ -258,20 +265,21 @@ class bitonic {
   template <typename KeyT, typename... PayloadTs>
   static _RAFT_DEVICE _RAFT_FORCEINLINE void sort_impl(bool ascending,
                                                        int warp_width,
+                                                       bool tie_break,
                                                        KeyT* __restrict__ keys,
                                                        PayloadTs* __restrict__... payloads)
   {
     if constexpr (Size == 1) {
       const int lane = laneId();
       for (int width = 2; width < warp_width; width <<= 1) {
-        bitonic<1>::merge_impl(lane & width, width, keys, payloads...);
+        bitonic<1>::merge_impl(lane & width, width, tie_break, keys, payloads...);
       }
     } else {
       constexpr int kSize2 = Size / 2;
-      bitonic<kSize2>::sort_impl(false, warp_width, keys, payloads...);
-      bitonic<kSize2>::sort_impl(true, warp_width, keys + kSize2, (payloads + kSize2)...);
+      bitonic<kSize2>::sort_impl(false, warp_width, tie_break, keys, payloads...);
+      bitonic<kSize2>::sort_impl(true, warp_width, tie_break, keys + kSize2, (payloads + kSize2)...);
     }
-    bitonic<Size>::merge_impl(ascending, warp_width, keys, payloads...);
+    bitonic<Size>::merge_impl(ascending, warp_width, tie_break, keys, payloads...);
   }
 };
 
