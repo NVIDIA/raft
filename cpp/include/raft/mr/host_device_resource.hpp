@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -39,17 +39,41 @@ using host_resource = cuda::mr::any_synchronous_resource<cuda::mr::host_accessib
 using device_resource = cuda::mr::any_resource<cuda::mr::device_accessible>;
 
 /**
+ * @brief Stream-ordered reference to a device-accessible memory resource
+ */
+using device_resource_ref = cuda::mr::resource_ref<cuda::mr::device_accessible>;
+
+/**
  * @brief Alias for a `cuda::mr::synchronous_resource_ref` with the property
  * `cuda::mr::host_accessible`.
  */
-using host_resource_ref = cuda::mr::synchronous_resource_ref<cuda::mr::host_accessible>;
+using synchronous_host_resource_ref = cuda::mr::synchronous_resource_ref<cuda::mr::host_accessible>;
 
 /**
  * @brief Alias for a `cuda::mr::synchronous_resource_ref` with the properties
  * `cuda::mr::host_accessible` and `cuda::mr::device_accessible`.
  */
-using host_device_resource_ref =
+using synchronous_host_device_resource_ref =
   cuda::mr::synchronous_resource_ref<cuda::mr::host_accessible, cuda::mr::device_accessible>;
+
+/**
+ * @brief Alias for a `cuda::mr::synchronous_resource_ref` with the property
+ * `cuda::mr::host_accessible`.
+ *
+ * @deprecated Use `raft::mr::synchronous_host_resource_ref` instead.
+ */
+using host_resource_ref [[deprecated("Use raft::mr::synchronous_host_resource_ref instead.")]] =
+  synchronous_host_resource_ref;
+
+/**
+ * @brief Alias for a `cuda::mr::synchronous_resource_ref` with the properties
+ * `cuda::mr::host_accessible` and `cuda::mr::device_accessible`.
+ *
+ * @deprecated Use `raft::mr::synchronous_host_device_resource_ref` instead.
+ */
+using host_device_resource_ref
+  [[deprecated("Use raft::mr::synchronous_host_device_resource_ref instead.")]] =
+    synchronous_host_device_resource_ref;
 
 }  // namespace mr
 }  // namespace raft

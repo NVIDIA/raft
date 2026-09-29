@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -41,7 +41,7 @@ TEST(HostMemoryResource, MmapFileBacked)
 TEST(HostMemoryResource, MmapViaHostResourceRef)
 {
   raft::mr::mmap_memory_resource mr;
-  raft::mr::host_resource_ref ref{mr};
+  raft::mr::synchronous_host_resource_ref ref{mr};
   void* ptr = ref.allocate_sync(4096);
   ASSERT_NE(ptr, nullptr);
   ref.deallocate_sync(ptr, 4096);

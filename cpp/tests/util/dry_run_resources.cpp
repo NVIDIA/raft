@@ -15,7 +15,6 @@
 #include <raft/util/cudart_utils.hpp>
 
 #include <rmm/mr/per_device_resource.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cuda/stream>
 
@@ -32,7 +31,7 @@ namespace raft::util {
 TEST(DryRunResource, DeviceAsyncPeakTracking)
 {
   auto dev_ref = rmm::mr::get_current_device_resource_ref();
-  raft::mr::dry_run_resource<rmm::device_async_resource_ref> dr{dev_ref};
+  raft::mr::dry_run_resource<raft::mr::device_resource_ref> dr{dev_ref};
   auto counter = dr.get_counter();
 
   constexpr std::size_t kSize1 = 100UL * 1024UL * 1024UL;
@@ -58,7 +57,7 @@ TEST(DryRunResource, DeviceAsyncPeakTracking)
 TEST(DryRunResource, DeviceAsyncLargeAllocation)
 {
   auto dev_ref = rmm::mr::get_current_device_resource_ref();
-  raft::mr::dry_run_resource<rmm::device_async_resource_ref> dr{dev_ref};
+  raft::mr::dry_run_resource<raft::mr::device_resource_ref> dr{dev_ref};
   auto counter = dr.get_counter();
 
   constexpr std::size_t kOneGiB = 1024UL * 1024UL * 1024UL;
@@ -76,7 +75,7 @@ TEST(DryRunResource, DeviceAsyncLargeAllocation)
 TEST(DryRunResource, HostSyncPeakTracking)
 {
   auto host_ref = raft::mr::get_default_host_resource();
-  raft::mr::dry_run_resource<raft::mr::host_resource_ref> dr{host_ref};
+  raft::mr::dry_run_resource<raft::mr::synchronous_host_resource_ref> dr{host_ref};
   auto counter = dr.get_counter();
 
   constexpr std::size_t kSize1 = 100UL * 1024UL * 1024UL;

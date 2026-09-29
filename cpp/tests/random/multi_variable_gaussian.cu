@@ -10,12 +10,12 @@
 #include <raft/core/resource/cusolver_dn_handle.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/gemm.cuh>
+#include <raft/mr/host_device_resource.hpp>
 #include <raft/random/multi_variable_gaussian.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <gtest/gtest.h>
 

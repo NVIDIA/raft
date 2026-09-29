@@ -59,7 +59,7 @@ struct resource_stats {
  * @note Make sure to call get_stats() before type-erasing the adaptor to get the statistics.
  *
  * @tparam Upstream  Stored by value.  Use a concrete resource type for owning
- *                   semantics, or a ref type (e.g. raft::mr::host_resource_ref)
+ *                   semantics, or a ref type (e.g. raft::mr::synchronous_host_resource_ref)
  *                   for non-owning semantics.
  */
 template <typename Upstream>
@@ -78,7 +78,7 @@ class statistics_adaptor : public cuda::forward_property<statistics_adaptor<Upst
   // NVCC injects __host__ __device__ on std::shared_ptr special members,
   // which makes the *implicit* or *defaulted* special members __host__
   // __device__ too.  That conflicts with Upstream types whose special
-  // members are __host__ only (e.g. rmm::device_async_resource_ref).
+  // members are __host__ only (e.g. raft::mr::device_resource_ref).
   // User-defined bodies (not = default) force plain __host__ execution space.
   statistics_adaptor(statistics_adaptor&& other) noexcept
     : upstream_(std::move(other.upstream_)), stats_(std::move(other.stats_))

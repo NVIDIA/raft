@@ -17,7 +17,6 @@
 #include <raft/mr/host_memory_resource.hpp>
 
 #include <rmm/mr/per_device_resource.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cuda/stream>
 
@@ -134,8 +133,8 @@ class dry_run_resources : public resources {
   raft::mr::host_resource old_host_;
   raft::mr::device_resource old_device_;
 
-  using host_dry_run_t   = raft::mr::dry_run_resource<raft::mr::host_resource_ref>;
-  using device_dry_run_t = raft::mr::dry_run_resource<rmm::device_async_resource_ref>;
+  using host_dry_run_t   = raft::mr::dry_run_resource<raft::mr::synchronous_host_resource_ref>;
+  using device_dry_run_t = raft::mr::dry_run_resource<raft::mr::device_resource_ref>;
   std::unique_ptr<host_dry_run_t> host_adaptor_;
   std::unique_ptr<device_dry_run_t> device_adaptor_;
 
@@ -176,8 +175,9 @@ class dry_run_resources : public resources {
 
     // --- Host (global) ---
     {
-      host_adaptor_ = std::make_unique<host_dry_run_t>(raft::mr::host_resource_ref{old_host_});
-      host_stats_   = host_adaptor_->get_counter();
+      host_adaptor_ =
+        std::make_unique<host_dry_run_t>(raft::mr::synchronous_host_resource_ref{old_host_});
+      host_stats_ = host_adaptor_->get_counter();
       mr::set_default_host_resource(mr::host_resource_ref{*host_adaptor_});
     }
 
@@ -202,7 +202,7 @@ class dry_run_resources : public resources {
     // the originals alive, so it gets lazily rebuilt against the new device MR.
     cells_[resource::resource_type::THRUST_POLICY] = std::make_shared<resource::resource_cell>();
     {
-      device_dry_run_t dr{rmm::device_async_resource_ref{old_device_}};
+      device_dry_run_t dr{raft::mr::device_resource_ref{old_device_}};
       device_stats_   = dr.get_counter();
       device_adaptor_ = std::make_unique<device_dry_run_t>(std::move(dr));
       rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
@@ -211,14 +211,14 @@ class dry_run_resources : public resources {
 
     // --- Workspace ---
     {
-      mr::dry_run_resource<rmm::device_async_resource_ref> dr{ws_upstream};
+      mr::dry_run_resource<raft::mr::device_resource_ref> dr{ws_upstream};
       ws_stats_ = dr.get_counter();
       resource::set_workspace_resource(*this, std::move(dr), ws_free);
     }
 
     // --- Large workspace ---
     {
-      mr::dry_run_resource<rmm::device_async_resource_ref> dr{lws_ref};
+      mr::dry_run_resource<raft::mr::device_resource_ref> dr{lws_ref};
       lws_stats_ = dr.get_counter();
       resource::set_large_workspace_resource(*this, std::move(dr));
     }

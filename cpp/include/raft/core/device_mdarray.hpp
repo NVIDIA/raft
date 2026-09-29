@@ -11,8 +11,7 @@
 #include <raft/core/mdarray.hpp>
 #include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
-
-#include <rmm/resource_ref.hpp>
+#include <raft/mr/host_device_resource.hpp>
 
 #include <cstdint>
 
@@ -100,7 +99,7 @@ template <typename ElementType,
           typename LayoutPolicy = layout_c_contiguous,
           size_t... Extents>
 auto make_device_mdarray(raft::resources const& handle,
-                         rmm::device_async_resource_ref mr,
+                         raft::mr::device_resource_ref mr,
                          extents<IndexType, Extents...> exts)
 {
   using mdarray_t = device_mdarray<ElementType, decltype(exts), LayoutPolicy>;

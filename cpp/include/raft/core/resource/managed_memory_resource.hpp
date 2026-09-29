@@ -48,7 +48,7 @@ class managed_memory_resource_factory : public resource_factory {
 };
 
 /**
- * @brief Get the managed memory resource as a non-owning host_device_resource_ref.
+ * @brief Get the managed memory resource as a non-owning synchronous_host_device_resource_ref.
  *
  * Default: cuda::mr::legacy_managed_memory_resource.
  *
@@ -56,14 +56,14 @@ class managed_memory_resource_factory : public resource_factory {
  * @return non-owning reference to the managed memory resource
  */
 inline auto get_managed_memory_resource_ref(resources const& res)
-  -> raft::mr::host_device_resource_ref
+  -> raft::mr::synchronous_host_device_resource_ref
 {
   if (!res.has_resource_factory(resource_type::MANAGED_MEMORY_RESOURCE)) {
     res.ensure_default_factory(std::make_shared<managed_memory_resource_factory>());
   }
   auto& mr =
     *res.get_resource<raft::mr::host_device_resource>(resource_type::MANAGED_MEMORY_RESOURCE);
-  return raft::mr::host_device_resource_ref{mr};
+  return raft::mr::synchronous_host_device_resource_ref{mr};
 }
 
 /**

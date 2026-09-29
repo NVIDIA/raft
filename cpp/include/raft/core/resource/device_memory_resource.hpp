@@ -14,7 +14,6 @@
 #include <rmm/mr/limiting_resource_adaptor.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/mr/pool_memory_resource.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cstddef>
 #include <memory>
@@ -44,7 +43,7 @@ class limiting_memory_resource : public resource {
                            std::size_t allocation_limit,
                            std::optional<std::size_t> alignment)
     : any_upstream_(std::move(ar)),
-      mr_(make_adaptor(rmm::device_async_resource_ref{any_upstream_}, allocation_limit, alignment))
+      mr_(make_adaptor(raft::mr::device_resource_ref{any_upstream_}, allocation_limit, alignment))
   {
   }
 
@@ -56,7 +55,7 @@ class limiting_memory_resource : public resource {
   raft::mr::device_resource any_upstream_;
   rmm::mr::limiting_resource_adaptor mr_;
 
-  static inline auto make_adaptor(rmm::device_async_resource_ref upstream,
+  static inline auto make_adaptor(raft::mr::device_resource_ref upstream,
                                   std::size_t limit,
                                   std::optional<std::size_t> alignment)
     -> rmm::mr::limiting_resource_adaptor
@@ -205,9 +204,9 @@ inline auto get_workspace_resource(resources const& res) -> rmm::mr::limiting_re
  * @param res raft resources object for managing resources
  * @return non-owning reference to the workspace device memory resource
  */
-inline auto get_workspace_resource_ref(resources const& res) -> rmm::device_async_resource_ref
+inline auto get_workspace_resource_ref(resources const& res) -> raft::mr::device_resource_ref
 {
-  return rmm::device_async_resource_ref{*detail::get_workspace_adaptor(res)};
+  return raft::mr::device_resource_ref{*detail::get_workspace_adaptor(res)};
 }
 
 /**
@@ -308,12 +307,12 @@ inline void set_workspace_to_global_resource(
  * @param res raft resources object for managing resources
  * @return non-owning reference to the large workspace device memory resource
  */
-inline auto get_large_workspace_resource_ref(resources const& res) -> rmm::device_async_resource_ref
+inline auto get_large_workspace_resource_ref(resources const& res) -> raft::mr::device_resource_ref
 {
   if (!res.has_resource_factory(resource_type::LARGE_WORKSPACE_RESOURCE)) {
     res.ensure_default_factory(std::make_shared<large_workspace_resource_factory>());
   }
-  return rmm::device_async_resource_ref{
+  return raft::mr::device_resource_ref{
     *res.get_resource<raft::mr::device_resource>(resource_type::LARGE_WORKSPACE_RESOURCE)};
 }
 

@@ -14,6 +14,7 @@
 #include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/linalg/map.cuh>
 #include <raft/matrix/detail/select_k_layout.cuh>
+#include <raft/mr/host_device_resource.hpp>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/device_atomics.cuh>
 #include <raft/util/integer_utils.hpp>
@@ -23,7 +24,6 @@
 
 #include <rmm/device_buffer.hpp>
 #include <rmm/device_uvector.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cub/block/block_load.cuh>
 #include <cub/block/block_scan.cuh>
@@ -893,7 +893,7 @@ void radix_topk(bool dry_run,
                 unsigned grid_dim,
                 int sm_cnt,
                 cuda::stream_ref stream,
-                rmm::device_async_resource_ref mr)
+                raft::mr::device_resource_ref mr)
 {
   // TODO: is it possible to relax this restriction?
   static_assert(calc_num_passes<T, BitsPerPass>() > 1);
@@ -1175,7 +1175,7 @@ void radix_topk_one_block(bool dry_run,
                           const IdxT* len_i,
                           int sm_cnt,
                           cuda::stream_ref stream,
-                          rmm::device_async_resource_ref mr)
+                          raft::mr::device_resource_ref mr)
 {
   static_assert(calc_num_passes<T, BitsPerPass>() > 1);
 

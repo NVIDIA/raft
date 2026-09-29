@@ -30,7 +30,6 @@
 #include <rmm/device_uvector.hpp>
 #include <rmm/device_vector.hpp>
 #include <rmm/exec_policy.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cuda/iterator>
 #include <cuda/stream>
@@ -172,7 +171,7 @@ void test_mdarray_basic()
       });
     }
 
-    // cuda::mr resources (mmap): use make_host_mdarray with raft::mr::host_resource_ref
+    // cuda::mr resources (mmap): use make_host_mdarray with raft::mr::synchronous_host_resource_ref
     for (auto* mr : {&mmap_mr_default, &mmap_mr_hugepages, &mmap_mr_huge_file}) {
       auto array = make_host_mdarray<float>(handle, *mr, make_extents<uint32_t>(16u));
       array(3)   = 1;
