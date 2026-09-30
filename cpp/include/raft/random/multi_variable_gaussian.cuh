@@ -15,6 +15,8 @@
 #include <raft/mr/host_device_resource.hpp>
 #include <raft/random/random_types.hpp>
 
+#include <rmm/mr/per_device_resource.hpp>
+
 namespace raft {
 namespace random {
 

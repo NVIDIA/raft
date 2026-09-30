@@ -16,6 +16,7 @@
 #include <raft/util/kernel_launch.hpp>
 
 #include <rmm/device_uvector.hpp>
+#include <rmm/mr/per_device_resource.hpp>
 
 #include <gtest/gtest.h>
 
