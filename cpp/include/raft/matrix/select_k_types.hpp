@@ -67,6 +67,11 @@ enum class SelectAlgo : uint8_t {
    * in the given external pointers (normally, a shared memory pointer should be passed in).
    */
   kWarpDistributedShm = 8,
+  /**
+   * The same as `kWarpDistributedShm`, but orders an equal-key tie by the payload index instead of
+   * by lane arrival, so a repeated selection over the same input returns the same elements.
+   */
+  kWarpDistributedShmStable = 9,
 };
 
 inline auto operator<<(std::ostream& os, const SelectAlgo& algo) -> std::ostream&
@@ -74,6 +79,8 @@ inline auto operator<<(std::ostream& os, const SelectAlgo& algo) -> std::ostream
   auto underlying_value = static_cast<std::underlying_type<SelectAlgo>::type>(algo);
 
   switch (algo) {
+    case SelectAlgo::kWarpDistributedShmStable:
+      return os << "kWarpDistributedShmStable=" << underlying_value;
     case SelectAlgo::kAuto: return os << "kAuto=" << underlying_value;
     case SelectAlgo::kRadix8bits: return os << "kRadix8bits=" << underlying_value;
     case SelectAlgo::kRadix11bits: return os << "kRadix11bits=" << underlying_value;

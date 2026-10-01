@@ -299,6 +299,10 @@ void select_k(raft::resources const& handle,
       return detail::select::warpsort::
         select_k_impl<T, IdxT, detail::select::warpsort::warp_sort_distributed_ext, row_layout>(
           handle, in_val, in_idx, batch_size, len, k, out_val, out_idx, select_min);
+    case SelectAlgo::kWarpDistributedShmStable:
+      return detail::select::warpsort::
+        select_k_impl<T, IdxT, detail::select::warpsort::warp_sort_distributed_ext, row_layout>(
+          handle, in_val, in_idx, batch_size, len, k, out_val, out_idx, select_min, nullptr, true);
     case SelectAlgo::kWarpAuto:
       return detail::select::warpsort::select_k<T, IdxT, row_layout>(
         handle, in_val, in_idx, batch_size, len, k, out_val, out_idx, select_min);
