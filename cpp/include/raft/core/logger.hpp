@@ -56,12 +56,12 @@ inline rapids_logger::logger& default_logger()
 }  // namespace RAFT_EXPORT raft
 
 #if (RAFT_LOG_ACTIVE_LEVEL <= RAPIDS_LOGGER_LOG_LEVEL_TRACE)
-#define RAFT_LOG_TRACE_VEC(ptr, len)                                             \
-  do {                                                                           \
-    std::stringstream ss;                                                        \
-    ss << raft::detail::format("%s:%d ", __FILE__, __LINE__);                    \
-    print_vector(#ptr, ptr, len, ss);                                            \
-    raft::default_logger().log(RAPIDS_LOGGER_LOG_LEVEL_TRACE, ss.str().c_str()); \
+#define RAFT_LOG_TRACE_VEC(ptr, len)                                        \
+  do {                                                                      \
+    std::stringstream ss;                                                   \
+    ss << __FILE__ << ":" << __LINE__ << " ";                               \
+    raft::print_vector(#ptr, ptr, len, ss);                                 \
+    raft::default_logger().log(rapids_logger::level_enum::trace, ss.str()); \
   } while (0)
 #else
 #define RAFT_LOG_TRACE_VEC(ptr, len) void(0)
