@@ -16,6 +16,9 @@
 
 #include <gtest/gtest.h>
 
+#include <limits>
+#include <vector>
+
 namespace raft {
 namespace random {
 
@@ -286,6 +289,211 @@ TEST_P(RngMdspanTestS64, Result)
   ASSERT_TRUE(match(meanvar[1], h_stats[1], CompareApprox<float>(params.tolerance)));
 }
 INSTANTIATE_TEST_SUITE_P(RngMdspanTests, RngMdspanTestS64, ::testing::ValuesIn(inputs_s64));
+
+/**
+ * normalInt draws the deviate in a narrower type than the output when it can, so the shift by mu
+ * has to be applied in the output type. If mu is folded into the Box-Muller transform instead,
+ * everything below the mantissa of the compute type is lost: at mu = 2e9 the float spacing is 128,
+ * which quantizes a sigma of 10 away completely and collapses the sample to a single value.
+ *
+ * The deviate does not depend on mu, so drawing with mu and with 0 from the same seed must give
+ * the same deviates. That is exact, so it needs no statistical tolerance.
+ */
+template <typename T>
+void testNormalIntLargeMu(T mu, T sigma, GeneratorType gtype)
+{
+  raft::resources handle;
+  auto stream       = resource::get_cuda_stream(handle);
+  constexpr int len = 32 * 1024;
+
+  rmm::device_uvector<T> shifted(len, stream);
+  rmm::device_uvector<T> centered(len, stream);
+
+  RngState r_shifted(1234ULL, gtype);
+  normalInt(handle, r_shifted, shifted.data(), len, mu, sigma);
+  RngState r_centered(1234ULL, gtype);
+  normalInt(handle, r_centered, centered.data(), len, T(0), sigma);
+
+  std::vector<T> h_shifted(len);
+  std::vector<T> h_centered(len);
+  update_host(h_shifted.data(), shifted.data(), len, stream);
+  update_host(h_centered.data(), centered.data(), len, stream);
+  resource::sync_stream(handle, stream);
+
+  bool all_zero = true;
+  for (int i = 0; i < len; ++i) {
+    // Subtract in the integer type: converting values of this magnitude to a floating point type
+    // would lose the very precision being tested for.
+    ASSERT_EQ(static_cast<T>(h_shifted[i] - mu), h_centered[i])
+      << "deviate " << i << " differs once shifted by mu=" << mu;
+    all_zero = all_zero && (h_centered[i] == T(0));
+  }
+  ASSERT_FALSE(all_zero) << "every deviate was zero for sigma=" << sigma;
+}
+
+TEST(RngNormalIntLargeMu, S32)
+{
+  for (auto gtype : {GenPhilox, GenPC}) {
+    testNormalIntLargeMu<int32_t>(16777217, 10, gtype);  // 2^24 + 1, past float's mantissa
+    testNormalIntLargeMu<int32_t>(100000000, 10, gtype);
+    testNormalIntLargeMu<int32_t>(2000000000, 10, gtype);  // near the int32_t limit
+    testNormalIntLargeMu<int32_t>(-2000000000, 10, gtype);
+  }
+}
+
+TEST(RngNormalIntLargeMu, S64)
+{
+  for (auto gtype : {GenPhilox, GenPC}) {
+    // 2^53 + 1, past double's mantissa
+    testNormalIntLargeMu<int64_t>(9007199254740993LL, 10, gtype);
+    testNormalIntLargeMu<int64_t>(4000000000000000000LL, 10, gtype);
+  }
+}
+
+/**
+ * With an unsigned output, a negative deviate converted straight to the output type saturates to
+ * 0 on the device, collapsing every sample below mu onto mu. The shifted/centered comparison above
+ * cannot see that, since both draws collapse identically, so check both sides of mu directly.
+ */
+template <typename T>
+void testNormalIntUnsignedBothSides(T mu, T sigma, GeneratorType gtype)
+{
+  raft::resources handle;
+  auto stream       = resource::get_cuda_stream(handle);
+  constexpr int len = 32 * 1024;
+
+  rmm::device_uvector<T> out(len, stream);
+  RngState r(1234ULL, gtype);
+  normalInt(handle, r, out.data(), len, mu, sigma);
+
+  std::vector<T> h_out(len);
+  update_host(h_out.data(), out.data(), len, stream);
+  resource::sync_stream(handle, stream);
+
+  int below = 0;
+  int above = 0;
+  for (int i = 0; i < len; ++i) {
+    below += h_out[i] < mu;
+    above += h_out[i] > mu;
+  }
+  ASSERT_GT(below, len / 3) << "mu=" << mu << " sigma=" << sigma;
+  ASSERT_GT(above, len / 3) << "mu=" << mu << " sigma=" << sigma;
+}
+
+TEST(RngNormalIntUnsigned, U32)
+{
+  for (auto gtype : {GenPhilox, GenPC}) {
+    testNormalIntUnsignedBothSides<uint32_t>(10000000, 10000, gtype);
+    testNormalIntUnsignedBothSides<uint32_t>(4000000000U, 10, gtype);  // above INT32_MAX
+  }
+}
+
+template <typename T>
+std::vector<T> drawNormalInt(T mu, T sigma, GeneratorType gtype, int len)
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+  rmm::device_uvector<T> out(len, stream);
+  RngState r(1234ULL, gtype);
+  normalInt(handle, r, out.data(), len, mu, sigma);
+  std::vector<T> h_out(len);
+  update_host(h_out.data(), out.data(), len, stream);
+  resource::sync_stream(handle, stream);
+  return h_out;
+}
+
+/**
+ * A positive deviate above INT32_MAX still fits a uint32_t output, so it must come through intact
+ * rather than being clamped at INT32_MAX or INT32_MIN on the way. With mu = 0, every negative
+ * deviate is out of range and must saturate to 0; wrapping would put it near UINT32_MAX instead.
+ */
+TEST(RngNormalIntUnsigned, U32DeviateAboveInt32Max)
+{
+  constexpr int len = 32 * 1024;
+  for (auto gtype : {GenPhilox, GenPC}) {
+    auto h_out = drawNormalInt<uint32_t>(0, 700000000, gtype, len);
+
+    int zero = 0, above_int32 = 0, at_int32_edge = 0;
+    for (auto v : h_out) {
+      zero += v == 0;
+      above_int32 += v > 2147483648U;
+      at_int32_edge += v == 2147483647U || v == 2147483648U;
+    }
+    ASSERT_GT(zero, len * 45 / 100) << "negative deviates must saturate to 0";
+    ASSERT_LT(zero, len * 55 / 100);
+    ASSERT_GT(above_int32, 0) << "deviates above INT32_MAX were lost";
+    ASSERT_LT(at_int32_edge, 3) << "deviates beyond INT32_MAX were clamped";
+  }
+}
+
+/**
+ * Samples that fall outside the output type saturate to its bounds, as converting the exact sum
+ * mu + deviate would on the device. With mu a few units from a bound, about half the samples
+ * saturate there and none may wrap around to the far end of the range.
+ */
+template <typename T>
+void testNormalIntSaturates(T mu, T sigma, bool at_low_end)
+{
+  constexpr int len = 32 * 1024;
+  const T bound     = at_low_end ? std::numeric_limits<T>::lowest() : std::numeric_limits<T>::max();
+  for (auto gtype : {GenPhilox, GenPC}) {
+    auto h_out = drawNormalInt<T>(mu, sigma, gtype, len);
+
+    int saturated = 0, wrapped = 0;
+    for (auto v : h_out) {
+      saturated += v == bound;
+      // Every in-range sample is within 6 sigma of mu, since the deviate is at most ~5.8 sigma.
+      // Measure the distance in the unsigned type so a wrapped value cannot overflow it.
+      using U      = std::make_unsigned_t<T>;
+      const U dist = v < mu ? U(U(mu) - U(v)) : U(U(v) - U(mu));
+      wrapped += dist > U(6) * U(sigma) && v != bound;
+    }
+    ASSERT_GT(saturated, len * 45 / 100) << "mu=" << mu << " sigma=" << sigma;
+    ASSERT_LT(saturated, len * 55 / 100) << "mu=" << mu << " sigma=" << sigma;
+    ASSERT_EQ(wrapped, 0) << "mu=" << mu << " sigma=" << sigma;
+  }
+}
+
+TEST(RngNormalIntSaturates, U32)
+{
+  testNormalIntSaturates<uint32_t>(5, 1000, true);
+  testNormalIntSaturates<uint32_t>(std::numeric_limits<uint32_t>::max() - 5, 1000, false);
+}
+
+TEST(RngNormalIntSaturates, S32)
+{
+  testNormalIntSaturates<int32_t>(std::numeric_limits<int32_t>::lowest() + 5, 1000, true);
+  testNormalIntSaturates<int32_t>(std::numeric_limits<int32_t>::max() - 5, 1000, false);
+}
+
+TEST(RngNormalIntSaturates, U64)
+{
+  testNormalIntSaturates<uint64_t>(5, 1000, true);
+  testNormalIntSaturates<uint64_t>(std::numeric_limits<uint64_t>::max() - 5, 1000, false);
+}
+
+TEST(RngNormalIntSaturates, S64)
+{
+  testNormalIntSaturates<int64_t>(std::numeric_limits<int64_t>::lowest() + 5, 1000, true);
+  testNormalIntSaturates<int64_t>(std::numeric_limits<int64_t>::max() - 5, 1000, false);
+}
+
+TEST(RngNormalIntBool, Compiles)
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+  rmm::device_uvector<bool> out(1024, stream);
+  RngState r(1234ULL, GenPC);
+  normalInt(handle, r, out.data(), 1024, true, true);
+  resource::sync_stream(handle, stream);
+}
+
+TEST(RngNormalIntUnsigned, U64)
+{
+  for (auto gtype : {GenPhilox, GenPC}) {
+    testNormalIntUnsignedBothSides<uint64_t>(10000000, 10000, gtype);
+  }
+}
 
 }  // namespace random
 }  // namespace raft

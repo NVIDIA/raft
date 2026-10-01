@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -16,7 +16,9 @@
 
 #include <curand_kernel.h>
 
+#include <limits>
 #include <random>
+#include <type_traits>
 
 namespace raft {
 namespace random {
@@ -236,6 +238,37 @@ HDI void custom_next(
   *(val + 1) = res2;
 }
 
+template <typename IntType>
+struct shift_unsigned {
+  using type = std::make_unsigned_t<IntType>;
+};
+template <>
+struct shift_unsigned<bool> {
+  using type = unsigned char;
+};
+
+/**
+ * mu + trunc(dev), saturated to the range of IntType, which is what converting the exact sum
+ * would give on the device. The bounds are checked in the unsigned type of the same width, so
+ * nothing overflows and a negative deviate is never converted to an unsigned type.
+ */
+template <typename IntType, typename T>
+HDI IntType shift_by_deviate(IntType mu, T dev)
+{
+  using U           = typename shift_unsigned<IntType>::type;
+  constexpr auto lo = std::numeric_limits<IntType>::lowest();
+  constexpr auto hi = std::numeric_limits<IntType>::max();
+
+  const bool neg = dev < T(0);
+  const T mag    = neg ? -dev : dev;
+  const U room   = neg ? U(U(mu) - U(lo)) : U(U(hi) - U(mu));
+  // T(max) + 1 rounds to exactly 2^digits, so below it the conversion to U is in range.
+  if (mag >= T(std::numeric_limits<U>::max()) + T(1)) { return neg ? lo : hi; }
+  const U m = static_cast<U>(mag);
+  if (m > room) { return neg ? lo : hi; }
+  return static_cast<IntType>(neg ? U(U(mu) - m) : U(U(mu) + m));
+}
+
 template <typename GenType, typename IntType, typename LenType>
 HDI void custom_next(GenType& gen,
                      IntType* val,
@@ -243,17 +276,24 @@ HDI void custom_next(GenType& gen,
                      LenType idx    = 0,
                      LenType stride = 0)
 {
-  double res1, res2;
+  // Draw a zero-mean deviate in the narrowest type that can carry it, then shift by mu in the
+  // output type. Folding mu into the transform would round mu itself and, worse, quantize the
+  // deviate away entirely once |mu| exceeds the mantissa of the compute type (2^24 for float,
+  // 2^53 for double): at mu = 2e9 the float spacing is 128, so a sigma of 10 vanishes.
+  // With mu applied separately, float carries any deviate an integer output can represent, and
+  // double is only needed for the wider deviates of 64-bit outputs. Double is 1/64 rate on
+  // consumer GPUs, so this matters.
+  using compute_t = std::conditional_t<(sizeof(IntType) > 4), double, float>;
+  compute_t res1, res2;
   do {
     gen.next(res1);
-  } while (res1 == double(0.0));
+  } while (res1 == compute_t(0.0));
 
   gen.next(res2);
-  double mu    = static_cast<double>(params.mu);
-  double sigma = static_cast<double>(params.sigma);
-  box_muller_transform<double>(res1, res2, sigma, mu);
-  *val       = static_cast<IntType>(res1);
-  *(val + 1) = static_cast<IntType>(res2);
+  compute_t sigma = static_cast<compute_t>(params.sigma);
+  box_muller_transform<compute_t>(res1, res2, sigma, compute_t(0));
+  *val       = shift_by_deviate(params.mu, res1);
+  *(val + 1) = shift_by_deviate(params.mu, res2);
 }
 
 template <typename GenType, typename OutType, typename LenType>
