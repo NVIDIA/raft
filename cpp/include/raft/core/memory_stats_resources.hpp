@@ -158,7 +158,7 @@ class memory_stats_resources : public resources {
   raft::mr::host_resource old_host_;
   raft::mr::device_resource old_device_;
 
-  using host_stats_adaptor_t = mr::statistics_adaptor<mr::host_resource_ref>;
+  using host_stats_adaptor_t = mr::statistics_adaptor<mr::synchronous_host_resource_ref>;
   std::unique_ptr<host_stats_adaptor_t> host_adaptor_;
 
   using device_stats_adaptor_t = mr::statistics_adaptor<raft::mr::device_resource_ref>;
@@ -198,21 +198,22 @@ class memory_stats_resources : public resources {
 
     // --- Host (global) ---
     {
-      host_adaptor_ = std::make_unique<host_stats_adaptor_t>(mr::host_resource_ref{old_host_});
-      host_stats_   = host_adaptor_->get_stats();
-      mr::set_default_host_resource(mr::host_resource_ref{*host_adaptor_});
+      host_adaptor_ =
+        std::make_unique<host_stats_adaptor_t>(mr::synchronous_host_resource_ref{old_host_});
+      host_stats_ = host_adaptor_->get_stats();
+      mr::set_default_host_resource(mr::synchronous_host_resource_ref{*host_adaptor_});
     }
 
     // --- Pinned ---
     {
-      mr::statistics_adaptor<mr::host_device_resource_ref> sa{pinned_ref};
+      mr::statistics_adaptor<mr::synchronous_host_device_resource_ref> sa{pinned_ref};
       pinned_stats_ = sa.get_stats();
       resource::set_pinned_memory_resource(*this, std::move(sa));
     }
 
     // --- Managed ---
     {
-      mr::statistics_adaptor<mr::host_device_resource_ref> sa{managed_ref};
+      mr::statistics_adaptor<mr::synchronous_host_device_resource_ref> sa{managed_ref};
       managed_stats_ = sa.get_stats();
       resource::set_managed_memory_resource(*this, std::move(sa));
     }

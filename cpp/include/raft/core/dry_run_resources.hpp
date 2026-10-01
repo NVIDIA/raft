@@ -178,19 +178,19 @@ class dry_run_resources : public resources {
       host_adaptor_ =
         std::make_unique<host_dry_run_t>(raft::mr::synchronous_host_resource_ref{old_host_});
       host_stats_ = host_adaptor_->get_counter();
-      mr::set_default_host_resource(mr::host_resource_ref{*host_adaptor_});
+      mr::set_default_host_resource(mr::synchronous_host_resource_ref{*host_adaptor_});
     }
 
     // --- Pinned ---
     {
-      mr::dry_run_resource<mr::host_device_resource_ref> dr{pinned_ref};
+      mr::dry_run_resource<mr::synchronous_host_device_resource_ref> dr{pinned_ref};
       pinned_stats_ = dr.get_counter();
       resource::set_pinned_memory_resource(*this, std::move(dr));
     }
 
     // --- Managed ---
     {
-      mr::dry_run_resource<mr::host_device_resource_ref> dr{managed_ref};
+      mr::dry_run_resource<mr::synchronous_host_device_resource_ref> dr{managed_ref};
       managed_stats_ = dr.get_counter();
       resource::set_managed_memory_resource(*this, std::move(dr));
     }
