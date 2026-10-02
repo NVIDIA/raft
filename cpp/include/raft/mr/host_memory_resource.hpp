@@ -18,12 +18,13 @@ namespace mr {
 /**
  * @brief Get a reference to a stateless new/delete host memory resource.
  *
- * Analogous to std::pmr::new_delete_resource(), but returns raft::mr::host_resource_ref.
+ * Analogous to std::pmr::new_delete_resource(), but returns
+ * raft::mr::synchronous_host_resource_ref.
  */
-inline auto new_delete_resource() -> raft::mr::host_resource_ref
+inline auto new_delete_resource() -> raft::mr::synchronous_host_resource_ref
 {
   static raft::pmr::resource_adaptor instance{std::pmr::new_delete_resource()};
-  return raft::mr::host_resource_ref{instance};
+  return raft::mr::synchronous_host_resource_ref{instance};
 }
 
 namespace detail {
@@ -39,10 +40,10 @@ struct default_host_resource_holder {
     std::unique_lock<std::mutex> guard(lock_);
     return std::exchange(res_, res);
   }
-  inline auto get() -> raft::mr::host_resource_ref
+  inline auto get() -> raft::mr::synchronous_host_resource_ref
   {
     std::unique_lock<std::mutex> guard(lock_);
-    return raft::mr::host_resource_ref{res_};
+    return raft::mr::synchronous_host_resource_ref{res_};
   }
 };
 
@@ -53,10 +54,10 @@ RAFT_EXPORT inline default_host_resource_holder default_host_resource_holder_{};
 /**
  * @brief Get the current default host memory resource.
  *
- * Returns raft::mr::host_resource_ref pointing to the resource installed
+ * Returns raft::mr::synchronous_host_resource_ref pointing to the resource installed
  * via set_default_host_resource(), or new_delete_resource() if none was set.
  */
-RAFT_EXPORT inline auto get_default_host_resource() -> raft::mr::host_resource_ref
+RAFT_EXPORT inline auto get_default_host_resource() -> raft::mr::synchronous_host_resource_ref
 {
   return detail::default_host_resource_holder_.get();
 }

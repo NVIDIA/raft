@@ -30,7 +30,6 @@
 #include <rmm/device_uvector.hpp>
 #include <rmm/device_vector.hpp>
 #include <rmm/exec_policy.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cuda/iterator>
 #include <cuda/stream>
@@ -172,7 +171,7 @@ void test_mdarray_basic()
       });
     }
 
-    // cuda::mr resources (mmap): use make_host_mdarray with raft::mr::host_resource_ref
+    // cuda::mr resources (mmap): use make_host_mdarray with raft::mr::synchronous_host_resource_ref
     for (auto* mr : {&mmap_mr_default, &mmap_mr_hugepages, &mmap_mr_huge_file}) {
       auto array = make_host_mdarray<float>(handle, *mr, make_extents<uint32_t>(16u));
       array(3)   = 1;
@@ -422,16 +421,19 @@ void test_factory_methods()
   // managed memory resource: get/set with default
   {
     raft::resources handle;
-    auto ref  = raft::resource::get_managed_memory_resource_ref(handle);
-    void* ptr = ref.allocate_sync(256);
+    auto ref = raft::resource::get_managed_memory_resource_ref(handle);
+    cuda::stream_ref stream{cudaStreamPerThread};
+    void* ptr = ref.allocate(stream, 256, cuda::mr::default_cuda_malloc_alignment);
     ASSERT_NE(ptr, nullptr);
-    ref.deallocate_sync(ptr, 256);
+    ref.deallocate(stream, ptr, 256, cuda::mr::default_cuda_malloc_alignment);
+    stream.sync();
   }
 
   // managed memory resource: set custom, allocate through mdarray
   {
     raft::resources handle;
-    raft::resource::set_managed_memory_resource(handle, cuda::mr::legacy_managed_memory_resource{});
+    raft::resource::set_managed_memory_resource(
+      handle, cuda::mr::synchronous_resource_adapter{cuda::mr::legacy_managed_memory_resource{}});
     auto m_vec = make_managed_vector<float>(handle, 10);
     m_vec(0)   = 99.0f;
     ASSERT_EQ(m_vec(0), 99.0f);
@@ -440,16 +442,19 @@ void test_factory_methods()
   // pinned memory resource: get/set with default
   {
     raft::resources handle;
-    auto ref  = raft::resource::get_pinned_memory_resource_ref(handle);
-    void* ptr = ref.allocate_sync(256);
+    auto ref = raft::resource::get_pinned_memory_resource_ref(handle);
+    cuda::stream_ref stream{cudaStreamPerThread};
+    void* ptr = ref.allocate(stream, 256, cuda::mr::default_cuda_malloc_alignment);
     ASSERT_NE(ptr, nullptr);
-    ref.deallocate_sync(ptr, 256);
+    ref.deallocate(stream, ptr, 256, cuda::mr::default_cuda_malloc_alignment);
+    stream.sync();
   }
 
   // pinned memory resource: set custom, allocate through mdarray
   {
     raft::resources handle;
-    raft::resource::set_pinned_memory_resource(handle, cuda::mr::legacy_pinned_memory_resource{});
+    raft::resource::set_pinned_memory_resource(
+      handle, cuda::mr::synchronous_resource_adapter{cuda::mr::legacy_pinned_memory_resource{}});
     auto p_vec = make_pinned_vector<float>(handle, 10);
     p_vec(0)   = 55.0f;
     ASSERT_EQ(p_vec(0), 55.0f);
@@ -458,8 +463,8 @@ void test_factory_methods()
   // shared semantics: two resources objects share the same MR
   {
     raft::resources handle1;
-    raft::resource::set_managed_memory_resource(handle1,
-                                                cuda::mr::legacy_managed_memory_resource{});
+    raft::resource::set_managed_memory_resource(
+      handle1, cuda::mr::synchronous_resource_adapter{cuda::mr::legacy_managed_memory_resource{}});
     raft::resources handle2{handle1};
     auto ref1 = raft::resource::get_managed_memory_resource_ref(handle1);
     auto ref2 = raft::resource::get_managed_memory_resource_ref(handle2);

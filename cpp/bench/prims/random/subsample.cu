@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2024-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -17,6 +17,8 @@
 #include <rmm/device_scalar.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/mr/pool_memory_resource.hpp>
+
+#include <cuda/memory_resource>
 
 namespace raft::bench::random {
 
@@ -81,7 +83,7 @@ struct sample : public fixture {
   float GiB = 1073741824.0f;
   raft::device_resources res;
   rmm::mr::pool_memory_resource pool_mr;
-  cuda::mr::any_resource<cuda::mr::device_accessible> prev_mr;
+  cuda::mr::any_device_resource prev_mr;
   sample_inputs params;
   raft::device_vector<T, int64_t> out, in;
 };  // struct sample

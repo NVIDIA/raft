@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -148,8 +148,8 @@ TEST(StackedAdaptors, HostResourceRefProperties)
   raft::mr::notifying_adaptor notify_adaptor{std::move(stats_adaptor), n};
 
   // The stacked adaptor should satisfy synchronous_resource_with<host_accessible>
-  // and be usable as raft::mr::host_resource_ref.
-  raft::mr::host_resource_ref ref{notify_adaptor};
+  // and be usable as raft::mr::synchronous_host_resource_ref.
+  raft::mr::synchronous_host_resource_ref ref{notify_adaptor};
 
   void* ptr = ref.allocate_sync(512);
   ASSERT_NE(ptr, nullptr);

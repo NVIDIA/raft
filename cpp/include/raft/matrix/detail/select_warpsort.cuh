@@ -12,6 +12,7 @@
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/matrix/detail/select_k_layout.cuh>
+#include <raft/mr/host_device_resource.hpp>
 #include <raft/util/bitonic_sort.cuh>
 #include <raft/util/cache.hpp>
 #include <raft/util/cuda_utils.cuh>
@@ -20,7 +21,6 @@
 #include <raft/util/pow2_utils.cuh>
 
 #include <rmm/device_uvector.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cub/util_type.cuh>  // cub::Traits
 #include <cuda/stream>
@@ -1076,7 +1076,7 @@ void select_k_(bool dry_run,
                IdxT* out_idx,
                bool select_min,
                cuda::stream_ref stream,
-               rmm::device_async_resource_ref mr)
+               cuda::mr::device_resource_ref mr)
 {
   rmm::device_uvector<T> tmp_val(num_of_block * k * batch_size, stream, mr);
   rmm::device_uvector<IdxT> tmp_idx(num_of_block * k * batch_size, stream, mr);
