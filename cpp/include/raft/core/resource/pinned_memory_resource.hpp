@@ -21,19 +21,25 @@ namespace resource {
 
 class pinned_memory_resource : public resource {
  public:
-  explicit pinned_memory_resource(raft::mr::host_device_resource mr) : mr_(std::move(mr)) {}
+  explicit pinned_memory_resource(cuda::mr::any_host_device_resource mr) : mr_(std::move(mr)) {}
   ~pinned_memory_resource() override = default;
   auto get_resource() -> void* override { return &mr_; }
 
  private:
-  raft::mr::host_device_resource mr_;
+  cuda::mr::any_host_device_resource mr_;
 };
 
 class pinned_memory_resource_factory : public resource_factory {
  public:
-  pinned_memory_resource_factory() : mr_(cuda::mr::legacy_pinned_memory_resource{}) {}
+  pinned_memory_resource_factory()
+    : mr_(cuda::mr::synchronous_resource_adapter{cuda::mr::legacy_pinned_memory_resource{}})
+  {
+  }
 
-  explicit pinned_memory_resource_factory(raft::mr::host_device_resource mr) : mr_(std::move(mr)) {}
+  explicit pinned_memory_resource_factory(cuda::mr::any_host_device_resource mr)
+    : mr_(std::move(mr))
+  {
+  }
 
   auto get_resource_type() -> resource_type override
   {
@@ -42,26 +48,27 @@ class pinned_memory_resource_factory : public resource_factory {
   auto make_resource() -> resource* override { return new pinned_memory_resource(mr_); }
 
  private:
-  raft::mr::host_device_resource mr_;
+  cuda::mr::any_host_device_resource mr_;
 };
 
 /**
- * @brief Get the pinned memory resource as a non-owning synchronous_host_device_resource_ref.
+ * @brief Get the pinned memory resource as a non-owning cuda::mr::host_device_resource_ref.
  *
- * Default: cuda::mr::legacy_pinned_memory_resource.
+ * Default: cuda::mr::legacy_pinned_memory_resource wrapped in
+ * cuda::mr::synchronous_resource_adapter.
  *
  * @param res raft resources object for managing resources
  * @return non-owning reference to the pinned memory resource
  */
 inline auto get_pinned_memory_resource_ref(resources const& res)
-  -> raft::mr::synchronous_host_device_resource_ref
+  -> cuda::mr::host_device_resource_ref
 {
   if (!res.has_resource_factory(resource_type::PINNED_MEMORY_RESOURCE)) {
     res.ensure_default_factory(std::make_shared<pinned_memory_resource_factory>());
   }
   auto& mr =
-    *res.get_resource<raft::mr::host_device_resource>(resource_type::PINNED_MEMORY_RESOURCE);
-  return raft::mr::synchronous_host_device_resource_ref{mr};
+    *res.get_resource<cuda::mr::any_host_device_resource>(resource_type::PINNED_MEMORY_RESOURCE);
+  return cuda::mr::host_device_resource_ref{mr};
 }
 
 /**
@@ -70,7 +77,7 @@ inline auto get_pinned_memory_resource_ref(resources const& res)
  * @param res raft resources object for managing resources
  * @param mr  host+device accessible memory resource
  */
-inline void set_pinned_memory_resource(resources& res, raft::mr::host_device_resource mr)
+inline void set_pinned_memory_resource(resources& res, cuda::mr::any_host_device_resource mr)
 {
   res.add_resource_factory(std::make_shared<pinned_memory_resource_factory>(std::move(mr)));
 }

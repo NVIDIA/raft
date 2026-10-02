@@ -206,14 +206,14 @@ class memory_stats_resources : public resources {
 
     // --- Pinned ---
     {
-      mr::statistics_adaptor<mr::synchronous_host_device_resource_ref> sa{pinned_ref};
+      mr::statistics_adaptor<cuda::mr::host_device_resource_ref> sa{pinned_ref};
       pinned_stats_ = sa.get_stats();
       resource::set_pinned_memory_resource(*this, std::move(sa));
     }
 
     // --- Managed ---
     {
-      mr::statistics_adaptor<mr::synchronous_host_device_resource_ref> sa{managed_ref};
+      mr::statistics_adaptor<cuda::mr::host_device_resource_ref> sa{managed_ref};
       managed_stats_ = sa.get_stats();
       resource::set_managed_memory_resource(*this, std::move(sa));
     }

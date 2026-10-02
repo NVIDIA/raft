@@ -183,14 +183,14 @@ class dry_run_resources : public resources {
 
     // --- Pinned ---
     {
-      mr::dry_run_resource<mr::synchronous_host_device_resource_ref> dr{pinned_ref};
+      mr::dry_run_resource<cuda::mr::host_device_resource_ref> dr{pinned_ref};
       pinned_stats_ = dr.get_counter();
       resource::set_pinned_memory_resource(*this, std::move(dr));
     }
 
     // --- Managed ---
     {
-      mr::dry_run_resource<mr::synchronous_host_device_resource_ref> dr{managed_ref};
+      mr::dry_run_resource<cuda::mr::host_device_resource_ref> dr{managed_ref};
       managed_stats_ = dr.get_counter();
       resource::set_managed_memory_resource(*this, std::move(dr));
     }

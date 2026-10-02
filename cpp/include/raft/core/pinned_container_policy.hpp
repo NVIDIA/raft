@@ -21,9 +21,8 @@ namespace RAFT_EXPORT raft {
  */
 template <typename ElementType>
 struct pinned_container_policy {
-  using element_type = ElementType;
-  using container_type =
-    host_container<element_type, raft::mr::synchronous_host_device_resource_ref>;
+  using element_type          = ElementType;
+  using container_type        = host_container<element_type, cuda::mr::host_device_resource_ref>;
   using pointer               = typename container_type::pointer;
   using const_pointer         = typename container_type::const_pointer;
   using reference             = typename container_type::reference;

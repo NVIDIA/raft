@@ -201,7 +201,7 @@ class memory_tracking_resources : public resources {
 
     // --- Pinned ---
     {
-      using stats_t  = raft::mr::statistics_adaptor<raft::mr::synchronous_host_device_resource_ref>;
+      using stats_t  = raft::mr::statistics_adaptor<cuda::mr::host_device_resource_ref>;
       using notify_t = raft::mr::notifying_adaptor<stats_t>;
       stats_t sa{pinned_ref};
       report_.register_source("pinned", sa.get_stats());
@@ -211,7 +211,7 @@ class memory_tracking_resources : public resources {
 
     // --- Managed ---
     {
-      using stats_t  = raft::mr::statistics_adaptor<raft::mr::synchronous_host_device_resource_ref>;
+      using stats_t  = raft::mr::statistics_adaptor<cuda::mr::host_device_resource_ref>;
       using notify_t = raft::mr::notifying_adaptor<stats_t>;
       stats_t sa{managed_ref};
       report_.register_source("managed", sa.get_stats());

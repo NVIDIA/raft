@@ -133,7 +133,7 @@ static constexpr std::size_t kDryRunProbeSize = 256;
  *
  * Properties are forwarded from Upstream via ADL friend get_property, so
  * dry_run_resource<synchronous_host_resource_ref> satisfies host_accessible,
- * dry_run_resource<synchronous_host_device_resource_ref> satisfies host + device accessible,
+ * dry_run_resource<cuda::mr::host_device_resource_ref> satisfies host + device accessible,
  * and dry_run_resource<cuda::mr::device_resource_ref> satisfies device_accessible.
  *
  * @tparam Upstream  Stored by value.  Use a ref type for non-owning semantics.

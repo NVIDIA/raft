@@ -12,14 +12,13 @@ namespace RAFT_EXPORT raft {
 /**
  * @brief A container policy for managed mdarray.
  *
- * Uses synchronous allocation (allocate_sync) via synchronous_host_device_resource_ref.
+ * Uses synchronous allocation (allocate_sync) via cuda::mr::host_device_resource_ref.
  * No stream; managed memory is accessible from host and device.
  */
 template <typename ElementType>
 struct managed_container_policy {
-  using element_type = ElementType;
-  using container_type =
-    host_container<element_type, raft::mr::synchronous_host_device_resource_ref>;
+  using element_type          = ElementType;
+  using container_type        = host_container<element_type, cuda::mr::host_device_resource_ref>;
   using pointer               = typename container_type::pointer;
   using const_pointer         = typename container_type::const_pointer;
   using reference             = typename container_type::reference;
