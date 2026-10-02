@@ -300,9 +300,16 @@ void select_k(raft::resources const& handle,
         select_k_impl<T, IdxT, detail::select::warpsort::warp_sort_distributed_ext, row_layout>(
           handle, in_val, in_idx, batch_size, len, k, out_val, out_idx, select_min);
     case SelectAlgo::kWarpDistributedShmStable:
-      return detail::select::warpsort::
-        select_k_impl<T, IdxT, detail::select::warpsort::warp_sort_distributed_ext, row_layout>(
-          handle, in_val, in_idx, batch_size, len, k, out_val, out_idx, select_min, nullptr, true);
+      // Only the keys that the IVF searches select on, so other instantiations do not grow.
+      if constexpr (std::is_same_v<T, float> || std::is_same_v<T, half>) {
+        return detail::select::warpsort::select_k_impl<
+          T,
+          IdxT,
+          detail::select::warpsort::warp_sort_distributed_ext_stable,
+          row_layout>(handle, in_val, in_idx, batch_size, len, k, out_val, out_idx, select_min);
+      } else {
+        RAFT_FAIL("kWarpDistributedShmStable supports float and half keys only");
+      }
     case SelectAlgo::kWarpAuto:
       return detail::select::warpsort::select_k<T, IdxT, row_layout>(
         handle, in_val, in_idx, batch_size, len, k, out_val, out_idx, select_min);

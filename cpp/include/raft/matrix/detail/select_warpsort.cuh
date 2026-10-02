@@ -136,8 +136,12 @@ _RAFT_DEVICE _RAFT_FORCEINLINE auto is_ordered(T left, T right, IdxT left_idx, I
  * @tparam IdxT
  *   the type of payload (normally, indices of elements), i.e.
  *   the content sorted alongside the keys.
+ * @tparam TieBreak
+ *   order an equal-key tie on the index rather than on arrival, so that a repeated selection
+ *   over the same input returns the same elements. Without it the code is the same as before
+ *   the parameter existed.
  */
-template <int Capacity, bool Ascending, typename T, typename IdxT>
+template <int Capacity, bool Ascending, typename T, typename IdxT, bool TieBreak = false>
 class warp_sort {
   static_assert(is_a_power_of_two(Capacity));
   static_assert(std::is_default_constructible_v<IdxT>);
@@ -155,9 +159,6 @@ class warp_sort {
 
   /** Extra memory required per-block for keeping the state (shared or global). */
   constexpr static auto mem_required(uint32_t block_size) -> size_t { return 0; }
-
-  /** Order an equal-key tie on the payload index rather than on lane arrival. */
-  _RAFT_DEVICE _RAFT_FORCEINLINE void set_tie_break(bool tie_break) { tie_break_ = tie_break; }
 
   /**
    * Construct the warp_sort empty queue.
@@ -201,8 +202,13 @@ class warp_sort {
       for (int i = kMaxArrLen - 1; i >= 0; --i, idx += kWarpWidth) {
         if (idx < k) {
           T t = in[idx];
-          if (tie_break_ ? is_ordered<Ascending>(t, val_arr_[i], in_idx[idx], idx_arr_[i])
-                         : is_ordered<Ascending>(t, val_arr_[i])) {
+          bool take;
+          if constexpr (TieBreak) {
+            take = is_ordered<Ascending>(t, val_arr_[i], in_idx[idx], idx_arr_[i]);
+          } else {
+            take = is_ordered<Ascending>(t, val_arr_[i]);
+          }
+          if (take) {
             val_arr_[i] = t;
             idx_arr_[i] = in_idx[idx];
           }
@@ -210,7 +216,7 @@ class warp_sort {
       }
     }
     if (kWarpWidth < WarpSize || do_merge) {
-      util::bitonic<kMaxArrLen>(Ascending, kWarpWidth, this->tie_break_).merge(val_arr_, idx_arr_);
+      util::bitonic<kMaxArrLen, TieBreak>(Ascending, kWarpWidth).merge(val_arr_, idx_arr_);
     }
   }
 
@@ -248,8 +254,6 @@ class warp_sort {
 
   T val_arr_[kMaxArrLen];
   IdxT idx_arr_[kMaxArrLen];
-  /** Order an equal-key tie on the index. Off by default, so the order is unchanged. */
-  bool tie_break_ = false;
 
   /**
    * Merge another array (sorted in the opposite direction) in the queue.
@@ -275,16 +279,19 @@ class warp_sort {
     for (int i = std::min(kMaxArrLen, PerThreadSizeIn); i > 0; i--) {
       T& key  = val_arr_[kMaxArrLen - i];
       T other = keys_in[PerThreadSizeIn - i];
-      if (tie_break_ ? is_ordered<Ascending>(other,
-                                             key,
-                                             ids_in[PerThreadSizeIn - i],
-                                             idx_arr_[kMaxArrLen - i])
-                     : is_ordered<Ascending>(other, key)) {
+      bool take;
+      if constexpr (TieBreak) {
+        take = is_ordered<Ascending>(
+          other, key, ids_in[PerThreadSizeIn - i], idx_arr_[kMaxArrLen - i]);
+      } else {
+        take = is_ordered<Ascending>(other, key);
+      }
+      if (take) {
         key                      = other;
         idx_arr_[kMaxArrLen - i] = ids_in[PerThreadSizeIn - i];
       }
     }
-    util::bitonic<kMaxArrLen>(Ascending, kWarpWidth, this->tie_break_).merge(val_arr_, idx_arr_);
+    util::bitonic<kMaxArrLen, TieBreak>(Ascending, kWarpWidth).merge(val_arr_, idx_arr_);
   }
 };
 
@@ -354,7 +361,7 @@ class warp_sort_filtered : public warp_sort<Capacity, Ascending, T, IdxT> {
 
   _RAFT_DEVICE _RAFT_FORCEINLINE void merge_buf_()
   {
-    util::bitonic<kMaxBufLen>(!Ascending, kWarpWidth, this->tie_break_).sort(val_buf_, idx_buf_);
+    util::bitonic<kMaxBufLen>(!Ascending, kWarpWidth).sort(val_buf_, idx_buf_);
     this->template merge_in<kMaxBufLen>(val_buf_, idx_buf_);
     buf_len_ = 0;
     set_k_th_();  // contains warp sync
@@ -479,7 +486,7 @@ class warp_sort_distributed : public warp_sort<Capacity, Ascending, T, IdxT> {
 
   _RAFT_DEVICE _RAFT_FORCEINLINE void merge_buf_()
   {
-    util::bitonic<1>(!Ascending, kWarpWidth, this->tie_break_).sort(buf_val_, buf_idx_);
+    util::bitonic<1>(!Ascending, kWarpWidth).sort(buf_val_, buf_idx_);
     this->template merge_in<1>(&buf_val_, &buf_idx_);
     set_k_th_();  // contains warp sync
     buf_val_ = kDummy;
@@ -500,12 +507,12 @@ class warp_sort_distributed : public warp_sort<Capacity, Ascending, T, IdxT> {
  * The same as `warp_sort_distributed`, but keeps the temporary value and index buffers
  * in the given external pointers (normally, a shared memory pointer should be passed in).
  */
-template <int Capacity, bool Ascending, typename T, typename IdxT>
-class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT> {
+template <int Capacity, bool Ascending, typename T, typename IdxT, bool TieBreak = false>
+class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT, TieBreak> {
  public:
-  using warp_sort<Capacity, Ascending, T, IdxT>::kDummy;
-  using warp_sort<Capacity, Ascending, T, IdxT>::kWarpWidth;
-  using warp_sort<Capacity, Ascending, T, IdxT>::k;
+  using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::kDummy;
+  using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::kWarpWidth;
+  using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::k;
 
   constexpr static auto mem_required(uint32_t block_size) -> size_t
   {
@@ -513,7 +520,7 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT>
   }
 
   _RAFT_DEVICE warp_sort_distributed_ext(int k, T* val_buf, IdxT* idx_buf, T limit = kDummy)
-    : warp_sort<Capacity, Ascending, T, IdxT>(k),
+    : warp_sort<Capacity, Ascending, T, IdxT, TieBreak>(k),
       val_buf_(val_buf),
       idx_buf_(idx_buf),
       buf_len_(0),
@@ -536,7 +543,8 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT>
     auto warp_offset = Pow2<WarpSize>::roundDown(threadIdx.x);
     val_buf += warp_offset;
     idx_buf += warp_offset;
-    return warp_sort_distributed_ext<Capacity, Ascending, T, IdxT>{k, val_buf, idx_buf, limit};
+    return warp_sort_distributed_ext<Capacity, Ascending, T, IdxT, TieBreak>{
+      k, val_buf, idx_buf, limit};
   }
 
   _RAFT_DEVICE void add(T val, IdxT idx)
@@ -591,20 +599,41 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT>
     T buf_val          = val_buf_[laneId()];
     IdxT buf_idx       = idx_buf_[laneId()];
     val_buf_[laneId()] = kDummy;
-    util::bitonic<1>(!Ascending, kWarpWidth, this->tie_break_).sort(buf_val, buf_idx);
+    util::bitonic<1, TieBreak>(!Ascending, kWarpWidth).sort(buf_val, buf_idx);
     this->template merge_in<1>(&buf_val, &buf_idx);
     set_k_th_();  // contains warp sync
   }
 
-  using warp_sort<Capacity, Ascending, T, IdxT>::kMaxArrLen;
-  using warp_sort<Capacity, Ascending, T, IdxT>::val_arr_;
-  using warp_sort<Capacity, Ascending, T, IdxT>::idx_arr_;
+  using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::kMaxArrLen;
+  using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::val_arr_;
+  using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::idx_arr_;
 
   T* val_buf_;
   IdxT* idx_buf_;
   uint32_t buf_len_;  // 0 <= buf_len_ < WarpSize
 
   T k_th_;
+};
+
+/**
+ * `warp_sort_distributed_ext` that orders an equal-key tie on the index, so a repeated selection
+ * over the same input returns the same elements. Selected by `SelectAlgo::kWarpDistributedShmStable`.
+ */
+template <int Capacity, bool Ascending, typename T, typename IdxT>
+class warp_sort_distributed_ext_stable
+  : public warp_sort_distributed_ext<Capacity, Ascending, T, IdxT, true> {
+  using base_t = warp_sort_distributed_ext<Capacity, Ascending, T, IdxT, true>;
+
+ public:
+  using base_t::base_t;
+
+  _RAFT_DEVICE static auto init_blockwide(int k, uint8_t* shmem, T limit = base_t::kDummy)
+  {
+    return warp_sort_distributed_ext_stable{base_t::init_blockwide(k, shmem, limit)};
+  }
+
+ private:
+  _RAFT_DEVICE explicit warp_sort_distributed_ext_stable(const base_t& queue) : base_t(queue) {}
 };
 
 /**
@@ -650,7 +679,7 @@ class warp_sort_immediate : public warp_sort<Capacity, Ascending, T, IdxT> {
 
     ++buf_len_;
     if (buf_len_ == kMaxArrLen) {
-      util::bitonic<kMaxArrLen>(!Ascending, kWarpWidth, this->tie_break_).sort(val_buf_, idx_buf_);
+      util::bitonic<kMaxArrLen>(!Ascending, kWarpWidth).sort(val_buf_, idx_buf_);
       this->template merge_in<kMaxArrLen>(val_buf_, idx_buf_);
 #pragma unroll
       for (int i = 0; i < kMaxArrLen; i++) {
@@ -663,7 +692,7 @@ class warp_sort_immediate : public warp_sort<Capacity, Ascending, T, IdxT> {
   _RAFT_DEVICE void done()
   {
     if (buf_len_ != 0) {
-      util::bitonic<kMaxArrLen>(!Ascending, kWarpWidth, this->tie_break_).sort(val_buf_, idx_buf_);
+      util::bitonic<kMaxArrLen>(!Ascending, kWarpWidth).sort(val_buf_, idx_buf_);
       this->template merge_in<kMaxArrLen>(val_buf_, idx_buf_);
     }
   }
@@ -698,8 +727,6 @@ class block_sort {
   _RAFT_DEVICE block_sort(int k, Args... args) : queue_(queue_t::init_blockwide(k, args...))
   {
   }
-
-  _RAFT_DEVICE void set_tie_break(bool tie_break) { queue_.set_tie_break(tie_break); }
 
   _RAFT_DEVICE void add(T val, IdxT idx) { queue_.add(val, idx); }
 
@@ -780,8 +807,7 @@ __launch_bounds__(256) RAFT_KERNEL block_kernel(const T* in,
                                                 IdxT len,
                                                 int k,
                                                 T* out,
-                                                IdxT* out_idx,
-                                                bool tie_break)
+                                                IdxT* out_idx)
 {
   // * per-block output
   {
@@ -811,7 +837,6 @@ __launch_bounds__(256) RAFT_KERNEL block_kernel(const T* in,
   using bq_t         = block_sort<WarpSortClass, Capacity, Ascending, bits_t, IdxT>;
   uint8_t* warp_smem = bq_t::queue_t::mem_required(blockDim.x) > 0 ? smem_buf_bytes : nullptr;
   bq_t queue(k, warp_smem);
-  queue.set_tie_break(tie_break);
 
   // * main loop
   const IdxT stride         = gridDim.x * blockDim.x;
@@ -889,7 +914,6 @@ struct launch_setup {
                      const IdxT* in_indptr,
                      T* out_key,
                      IdxT* out_idx,
-                     bool tie_break,
                      cuda::stream_ref stream)
   {
     const int capacity = bound_by_power_of_two(k);
@@ -907,7 +931,6 @@ struct launch_setup {
                                                                                      in_indptr,
                                                                                      out_key,
                                                                                      out_idx,
-                                                                                     tie_break,
                                                                                      stream);
       }
     }
@@ -932,8 +955,7 @@ struct launch_setup {
                             IdxT(len),
                             k,
                             out_key,
-                            out_idx,
-                            tie_break);
+                            out_idx);
       } else {
         raft::launch_kernel({stream, smem_size},
                             gs,
@@ -946,8 +968,7 @@ struct launch_setup {
                             IdxT(len),
                             k,
                             out_key,
-                            out_idx,
-                            tie_break);
+                            out_idx);
       }
       RAFT_CUDA_TRY(cudaPeekAtLastError());
       out_key += batch_chunk * num_blocks * k;
@@ -998,6 +1019,12 @@ struct LaunchThreshold<warp_sort_distributed> {
 
 template <>
 struct LaunchThreshold<warp_sort_distributed_ext> {
+  static constexpr int len_factor_for_multi_block  = 2;
+  static constexpr int len_factor_for_single_block = 32;
+};
+
+template <>
+struct LaunchThreshold<warp_sort_distributed_ext_stable> {
   static constexpr int len_factor_for_multi_block  = 2;
   static constexpr int len_factor_for_single_block = 32;
 };
@@ -1103,7 +1130,6 @@ void select_k_(bool dry_run,
                T* out,
                IdxT* out_idx,
                bool select_min,
-               bool tie_break,
                cuda::stream_ref stream,
                rmm::device_async_resource_ref mr)
 {
@@ -1134,7 +1160,6 @@ void select_k_(bool dry_run,
                                                           in_indptr,
                                                           result_val,
                                                           result_idx,
-                                                          tie_break,
                                                           stream);
 
   if (num_of_block > 1) {
@@ -1151,7 +1176,6 @@ void select_k_(bool dry_run,
                                                                              nullptr,
                                                                              out,
                                                                              out_idx,
-                                                                             tie_break,
                                                                              stream);
   }
 }
@@ -1169,8 +1193,7 @@ void select_k_impl(raft::resources const& res,
                    T* out,
                    IdxT* out_idx,
                    bool select_min,
-                   const IdxT* in_indptr = nullptr,
-                   bool tie_break        = false)
+                   const IdxT* in_indptr = nullptr)
 {
   int num_of_block = 0;
   int num_of_warp  = 0;
@@ -1189,7 +1212,6 @@ void select_k_impl(raft::resources const& res,
                                                out,
                                                out_idx,
                                                select_min,
-                                               tie_break,
                                                resource::get_cuda_stream(res),
                                                resource::get_workspace_resource_ref(res));
 }
@@ -1241,8 +1263,7 @@ void select_k(raft::resources const& res,
               T* out,
               IdxT* out_idx,
               bool select_min,
-              const IdxT* in_indptr = nullptr,
-              bool tie_break        = false)
+              const IdxT* in_indptr = nullptr)
 {
   ASSERT(k <= kMaxCapacity, "Current max k is %d (requested %d)", kMaxCapacity, k);
   ASSERT(len <= size_t(std::numeric_limits<IdxT>::max()),
@@ -1269,7 +1290,6 @@ void select_k(raft::resources const& res,
                                                        out,
                                                        out_idx,
                                                        select_min,
-                                                       tie_break,
                                                        resource::get_cuda_stream(res),
                                                        resource::get_workspace_resource_ref(res));
   } else {
@@ -1287,7 +1307,6 @@ void select_k(raft::resources const& res,
                                                       out,
                                                       out_idx,
                                                       select_min,
-                                                      tie_break,
                                                       resource::get_cuda_stream(res),
                                                       resource::get_workspace_resource_ref(res));
   }
