@@ -18,6 +18,7 @@
 #include <rmm/device_uvector.hpp>
 
 #include <cub/device/device_scan.cuh>
+#include <cuda/memory_resource>
 #include <cuda/std/cassert>
 #include <thrust/fill.h>
 
@@ -124,7 +125,7 @@ void bitset_to_csr(raft::resources const& handle,
                    sub_nnz_size,
                    bits_per_sub_col);
 
-  raft::mr::device_resource_ref device_memory = resource::get_workspace_resource_ref(handle);
+  cuda::mr::device_resource_ref device_memory = resource::get_workspace_resource_ref(handle);
   rmm::device_uvector<nnz_t> sub_nnz(sub_nnz_size + 1, stream, device_memory);
 
   size_t scan_ws_bytes = 0;

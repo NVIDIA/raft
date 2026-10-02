@@ -27,7 +27,7 @@ namespace random {
 
 template <typename ValueType>
 void multi_variable_gaussian(raft::resources const& handle,
-                             raft::mr::device_resource_ref mem_resource,
+                             cuda::mr::device_resource_ref mem_resource,
                              std::optional<raft::device_vector_view<const ValueType, int>> x,
                              raft::device_matrix_view<ValueType, int, raft::col_major> P,
                              raft::device_matrix_view<ValueType, int, raft::col_major> X,

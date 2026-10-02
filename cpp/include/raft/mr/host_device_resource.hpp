@@ -35,13 +35,11 @@ using host_resource = cuda::mr::any_synchronous_resource<cuda::mr::host_accessib
  * Mirrors the role of rmm::mr::device_memory_resource but uses concept-based
  * type erasure.  Any type satisfying cuda::mr::resource with device_accessible
  * property can be stored.
+ *
+ * @deprecated Use `cuda::mr::any_device_resource` instead.
  */
-using device_resource = cuda::mr::any_resource<cuda::mr::device_accessible>;
-
-/**
- * @brief Stream-ordered reference to a device-accessible memory resource
- */
-using device_resource_ref = cuda::mr::resource_ref<cuda::mr::device_accessible>;
+using device_resource [[deprecated("Use cuda::mr::any_device_resource instead.")]] =
+  cuda::mr::any_device_resource;
 
 /**
  * @brief Alias for a `cuda::mr::synchronous_resource_ref` with the property

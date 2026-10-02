@@ -108,7 +108,7 @@ class device_uvector {
    */
   explicit device_uvector(std::size_t size,
                           cuda::stream_ref stream,
-                          raft::mr::device_resource_ref mr)
+                          cuda::mr::device_resource_ref mr)
     : data_{size, stream, mr}
   {
   }
@@ -182,7 +182,7 @@ class device_container_policy {
   }
 
   constexpr device_container_policy() = default;
-  explicit device_container_policy(raft::mr::device_resource_ref mr) noexcept : mr_(mr) {}
+  explicit device_container_policy(cuda::mr::device_resource_ref mr) noexcept : mr_(mr) {}
 
   [[nodiscard]] constexpr auto access(container_type& c, size_t n) const noexcept -> reference
   {
@@ -198,7 +198,7 @@ class device_container_policy {
   [[nodiscard]] auto make_accessor_policy() const noexcept { return const_accessor_policy{}; }
 
  private:
-  raft::mr::device_resource_ref mr_{rmm::mr::get_current_device_resource_ref()};
+  cuda::mr::device_resource_ref mr_{rmm::mr::get_current_device_resource_ref()};
 };
 
 }  // namespace RAFT_EXPORT raft

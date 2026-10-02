@@ -31,7 +31,7 @@ namespace raft::util {
 TEST(DryRunResource, DeviceAsyncPeakTracking)
 {
   auto dev_ref = rmm::mr::get_current_device_resource_ref();
-  raft::mr::dry_run_resource<raft::mr::device_resource_ref> dr{dev_ref};
+  raft::mr::dry_run_resource<cuda::mr::device_resource_ref> dr{dev_ref};
   auto counter = dr.get_counter();
 
   constexpr std::size_t kSize1 = 100UL * 1024UL * 1024UL;
@@ -57,7 +57,7 @@ TEST(DryRunResource, DeviceAsyncPeakTracking)
 TEST(DryRunResource, DeviceAsyncLargeAllocation)
 {
   auto dev_ref = rmm::mr::get_current_device_resource_ref();
-  raft::mr::dry_run_resource<raft::mr::device_resource_ref> dr{dev_ref};
+  raft::mr::dry_run_resource<cuda::mr::device_resource_ref> dr{dev_ref};
   auto counter = dr.get_counter();
 
   constexpr std::size_t kOneGiB = 1024UL * 1024UL * 1024UL;

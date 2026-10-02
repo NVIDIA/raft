@@ -134,7 +134,7 @@ static constexpr std::size_t kDryRunProbeSize = 256;
  * Properties are forwarded from Upstream via ADL friend get_property, so
  * dry_run_resource<synchronous_host_resource_ref> satisfies host_accessible,
  * dry_run_resource<synchronous_host_device_resource_ref> satisfies host + device accessible,
- * and dry_run_resource<raft::mr::device_resource_ref> satisfies device_accessible.
+ * and dry_run_resource<cuda::mr::device_resource_ref> satisfies device_accessible.
  *
  * @tparam Upstream  Stored by value.  Use a ref type for non-owning semantics.
  */
@@ -159,7 +159,7 @@ class dry_run_resource : public cuda::forward_property<dry_run_resource<Upstream
   // NVCC injects __host__ __device__ on std::shared_ptr special members,
   // which makes the *implicit* or *defaulted* special members __host__
   // __device__ too.  That conflicts with Upstream types whose special
-  // members are __host__ only (e.g. raft::mr::device_resource_ref).
+  // members are __host__ only (e.g. cuda::mr::device_resource_ref).
   // User-defined bodies (not = default) force plain __host__ execution space.
   dry_run_resource(dry_run_resource&& other) noexcept
     : upstream_(std::move(other.upstream_)), state_(std::move(other.state_))

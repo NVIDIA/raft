@@ -893,7 +893,7 @@ void radix_topk(bool dry_run,
                 unsigned grid_dim,
                 int sm_cnt,
                 cuda::stream_ref stream,
-                raft::mr::device_resource_ref mr)
+                cuda::mr::device_resource_ref mr)
 {
   // TODO: is it possible to relax this restriction?
   static_assert(calc_num_passes<T, BitsPerPass>() > 1);
@@ -1175,7 +1175,7 @@ void radix_topk_one_block(bool dry_run,
                           const IdxT* len_i,
                           int sm_cnt,
                           cuda::stream_ref stream,
-                          raft::mr::device_resource_ref mr)
+                          cuda::mr::device_resource_ref mr)
 {
   static_assert(calc_num_passes<T, BitsPerPass>() > 1);
 

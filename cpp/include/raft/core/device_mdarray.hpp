@@ -99,7 +99,7 @@ template <typename ElementType,
           typename LayoutPolicy = layout_c_contiguous,
           size_t... Extents>
 auto make_device_mdarray(raft::resources const& handle,
-                         raft::mr::device_resource_ref mr,
+                         cuda::mr::device_resource_ref mr,
                          extents<IndexType, Extents...> exts)
 {
   using mdarray_t = device_mdarray<ElementType, decltype(exts), LayoutPolicy>;

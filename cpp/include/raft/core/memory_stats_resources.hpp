@@ -156,12 +156,12 @@ class memory_stats_resources : public resources {
   std::vector<std::shared_ptr<resource::resource_cell>> snapshot_;
 
   raft::mr::host_resource old_host_;
-  raft::mr::device_resource old_device_;
+  cuda::mr::any_device_resource old_device_;
 
   using host_stats_adaptor_t = mr::statistics_adaptor<mr::synchronous_host_resource_ref>;
   std::unique_ptr<host_stats_adaptor_t> host_adaptor_;
 
-  using device_stats_adaptor_t = mr::statistics_adaptor<raft::mr::device_resource_ref>;
+  using device_stats_adaptor_t = mr::statistics_adaptor<cuda::mr::device_resource_ref>;
   std::unique_ptr<device_stats_adaptor_t> device_adaptor_;
 
   std::shared_ptr<mr::resource_stats> host_stats_;
@@ -225,7 +225,7 @@ class memory_stats_resources : public resources {
     // the originals alive, so it gets lazily rebuilt against the new device MR.
     cells_[resource::resource_type::THRUST_POLICY] = std::make_shared<resource::resource_cell>();
     {
-      device_stats_adaptor_t sa{raft::mr::device_resource_ref{old_device_}};
+      device_stats_adaptor_t sa{cuda::mr::device_resource_ref{old_device_}};
       device_stats_   = sa.get_stats();
       device_adaptor_ = std::make_unique<device_stats_adaptor_t>(std::move(sa));
       rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
@@ -233,14 +233,14 @@ class memory_stats_resources : public resources {
     }
     // --- Workspace ---
     {
-      mr::statistics_adaptor<raft::mr::device_resource_ref> sa{ws_upstream};
+      mr::statistics_adaptor<cuda::mr::device_resource_ref> sa{ws_upstream};
       ws_stats_ = sa.get_stats();
       resource::set_workspace_resource(*this, std::move(sa), ws_free);
     }
 
     // --- Large workspace ---
     {
-      mr::statistics_adaptor<raft::mr::device_resource_ref> sa{lws_ref};
+      mr::statistics_adaptor<cuda::mr::device_resource_ref> sa{lws_ref};
       lws_stats_ = sa.get_stats();
       resource::set_large_workspace_resource(*this, std::move(sa));
     }

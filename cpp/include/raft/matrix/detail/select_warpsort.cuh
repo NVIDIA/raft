@@ -1076,7 +1076,7 @@ void select_k_(bool dry_run,
                IdxT* out_idx,
                bool select_min,
                cuda::stream_ref stream,
-               raft::mr::device_resource_ref mr)
+               cuda::mr::device_resource_ref mr)
 {
   rmm::device_uvector<T> tmp_val(num_of_block * k * batch_size, stream, mr);
   rmm::device_uvector<IdxT> tmp_idx(num_of_block * k * batch_size, stream, mr);
