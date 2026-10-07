@@ -784,7 +784,14 @@ DI void stg(const int64_t& reg, void* addr, bool guard)
  * read returns the value committed by some write). Unlike `ldg`
  * (ld.global.cg) or atomics, these do not bypass the non-coherent L1.
  */
-template <typename T, typename = std::enable_if_t<sizeof(T) == 4 || sizeof(T) == 8>>
+/**
+ * @brief Load an integer with a single instruction using the default cache policy.
+ * @tparam T A 4- or 8-byte integral type.
+ * @param[in] addr Address to load from.
+ * @return The integer stored at addr.
+ */
+template <typename T,
+          typename = std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == 4 || sizeof(T) == 8)>>
 DI T ldg_ca(const T* addr)
 {
   if constexpr (sizeof(T) == 4) {
@@ -798,7 +805,14 @@ DI T ldg_ca(const T* addr)
   }
 }
 
-template <typename T, typename = std::enable_if_t<sizeof(T) == 4 || sizeof(T) == 8>>
+/**
+ * @brief Store an integer with a single instruction using the default cache policy.
+ * @tparam T A 4- or 8-byte integral type.
+ * @param[out] addr Address to store to.
+ * @param[in] val Integer to store.
+ */
+template <typename T,
+          typename = std::enable_if_t<std::is_integral_v<T> && (sizeof(T) == 4 || sizeof(T) == 8)>>
 DI void stg_wb(T* addr, T val)
 {
   if constexpr (sizeof(T) == 4) {
