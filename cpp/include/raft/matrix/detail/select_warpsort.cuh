@@ -137,9 +137,9 @@ _RAFT_DEVICE _RAFT_FORCEINLINE auto is_ordered(T left, T right, IdxT left_idx, I
  *   the type of payload (normally, indices of elements), i.e.
  *   the content sorted alongside the keys.
  * @tparam TieBreak
- *   order an equal-key tie on the index rather than on arrival, so that a repeated selection
- *   over the same input returns the same elements. Without it the code is the same as before
- *   the parameter existed.
+ *   order an equal-key tie on the index rather than on arrival, so that the selected elements
+ *   do not depend on the input order. Without it the code is the same as before the parameter
+ *   existed.
  */
 template <int Capacity, bool Ascending, typename T, typename IdxT, bool TieBreak = false>
 class warp_sort {
@@ -152,6 +152,13 @@ class warp_sort {
    *  i.e. `Ascending ? upper_bound<T>() : lower_bound<T>()`.
    */
   static constexpr T kDummy = Ascending ? upper_bound<T>() : lower_bound<T>();
+  /**
+   * The index of an empty slot. With `TieBreak` it loses every tie, so an empty slot never
+   * outranks a real element whose key equals `kDummy`.
+   */
+  static constexpr IdxT kDummyIdx =
+    TieBreak ? (Ascending ? upper_bound<IdxT>() : lower_bound<IdxT>()) : IdxT{};
+  static constexpr bool kTieBreak = TieBreak;
   /** Width of the subwarp. */
   static constexpr int kWarpWidth = std::min<int>(Capacity, WarpSize);
   /** The number of elements to select. */
@@ -171,7 +178,7 @@ class warp_sort {
 #pragma unroll
     for (int i = 0; i < kMaxArrLen; i++) {
       val_arr_[i] = kDummy;
-      idx_arr_[i] = IdxT{};
+      idx_arr_[i] = kDummyIdx;
     }
   }
 
@@ -511,6 +518,7 @@ template <int Capacity, bool Ascending, typename T, typename IdxT, bool TieBreak
 class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT, TieBreak> {
  public:
   using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::kDummy;
+  using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::kDummyIdx;
   using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::kWarpWidth;
   using warp_sort<Capacity, Ascending, T, IdxT, TieBreak>::k;
 
@@ -524,9 +532,11 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT,
       val_buf_(val_buf),
       idx_buf_(idx_buf),
       buf_len_(0),
-      k_th_(limit)
+      k_th_(limit),
+      k_th_idx_(kDummyIdx)
   {
     val_buf_[laneId()] = kDummy;
+    if constexpr (TieBreak) { idx_buf_[laneId()] = kDummyIdx; }
   }
 
   _RAFT_DEVICE static auto init_blockwide(int k, uint8_t* shmem, T limit = kDummy)
@@ -549,7 +559,12 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT,
 
   _RAFT_DEVICE void add(T val, IdxT idx)
   {
-    bool do_add = is_ordered<Ascending>(val, k_th_);
+    bool do_add;
+    if constexpr (TieBreak) {
+      do_add = is_ordered<Ascending>(val, k_th_, idx, k_th_idx_);
+    } else {
+      do_add = is_ordered<Ascending>(val, k_th_);
+    }
     // mask tells which lanes in the warp have valid items to be added
     uint32_t mask = ballot(do_add);
     if (mask == 0) { return; }
@@ -591,6 +606,7 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT,
     // NB on using srcLane: it's ok if it is outside the warp size / width;
     //                      the modulo op will be done inside the __shfl_sync.
     k_th_ = shfl(val_arr_[kMaxArrLen - 1], k - 1, kWarpWidth);
+    if constexpr (TieBreak) { k_th_idx_ = shfl(idx_arr_[kMaxArrLen - 1], k - 1, kWarpWidth); }
   }
 
   _RAFT_DEVICE _RAFT_FORCEINLINE void merge_buf_()
@@ -599,6 +615,7 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT,
     T buf_val          = val_buf_[laneId()];
     IdxT buf_idx       = idx_buf_[laneId()];
     val_buf_[laneId()] = kDummy;
+    if constexpr (TieBreak) { idx_buf_[laneId()] = kDummyIdx; }
     util::bitonic<1, TieBreak>(!Ascending, kWarpWidth).sort(buf_val, buf_idx);
     this->template merge_in<1>(&buf_val, &buf_idx);
     set_k_th_();  // contains warp sync
@@ -613,11 +630,12 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT,
   uint32_t buf_len_;  // 0 <= buf_len_ < WarpSize
 
   T k_th_;
+  IdxT k_th_idx_;  // read only with TieBreak
 };
 
 /**
- * `warp_sort_distributed_ext` that orders an equal-key tie on the index, so a repeated selection
- * over the same input returns the same elements. Selected by `SelectAlgo::kWarpDistributedShmStable`.
+ * `warp_sort_distributed_ext` that orders an equal-key tie on the index, so the selected elements
+ * do not depend on the input order. Selected by `SelectAlgo::kWarpDistributedShmStable`.
  */
 template <int Capacity, bool Ascending, typename T, typename IdxT>
 class warp_sort_distributed_ext_stable
@@ -835,6 +853,7 @@ __launch_bounds__(256) RAFT_KERNEL block_kernel(const T* in,
   //   2. Fewer expensive template instantiations
   using bits_t       = typename cub::Traits<T>::UnsignedBits;
   using bq_t         = block_sort<WarpSortClass, Capacity, Ascending, bits_t, IdxT>;
+  using warp_sort_t  = WarpSortClass<Capacity, Ascending, bits_t, IdxT>;
   uint8_t* warp_smem = bq_t::queue_t::mem_required(blockDim.x) > 0 ? smem_buf_bytes : nullptr;
   bq_t queue(k, warp_smem);
 
@@ -844,8 +863,10 @@ __launch_bounds__(256) RAFT_KERNEL block_kernel(const T* in,
   for (IdxT i = threadIdx.x + blockIdx.x * blockDim.x; i < per_thread_lim; i += stride) {
     // Twiddle the input value to ensure proper comparison of floating-point and signed int values
     queue.add(i < len ? cub::Traits<T>::TwiddleIn(__ldcs(reinterpret_cast<const bits_t*>(in) + i))
-                      : WarpSortClass<Capacity, Ascending, bits_t, IdxT>::kDummy,
-              (i < len && in_idx != nullptr) ? __ldcs(in_idx + i) : i);
+                      : warp_sort_t::kDummy,
+              (i < len && in_idx != nullptr)         ? __ldcs(in_idx + i)
+              : (warp_sort_t::kTieBreak && i >= len) ? warp_sort_t::kDummyIdx
+                                                     : i);
   }
 
   // * write out the result
