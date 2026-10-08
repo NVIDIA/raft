@@ -249,7 +249,7 @@ MSTResultHost<weight_t> run_mst_gpu(raft::resources const& handle,
                                                                         v,
                                                                         e,
                                                                         colors_d.data(),
-                                                                        stream,
+                                                                        stream.get(),
                                                                         symmetrize_output,
                                                                         initialize_colors,
                                                                         iterations);
@@ -764,7 +764,7 @@ TEST(MST, DeprecatedStreamOverload)
                                                             v,
                                                             e,
                                                             colors_old.data(),
-                                                            stream,
+                                                            stream.get(),
                                                             false);
 #pragma GCC diagnostic pop
 

@@ -78,7 +78,7 @@ Graph_COO<vertex_t, edge_t, weight_t> mst(raft::resources const& handle,
                            v,
                            e,
                            color,
-                           resource::get_cuda_stream(handle),
+                           resource::get_cuda_stream(handle).get(),
                            symmetrize_output,
                            initialize_colors,
                            iterations);
