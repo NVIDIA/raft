@@ -11,8 +11,7 @@
 #include <raft/core/resources.hpp>
 #include <raft/util/cuda_rt_essentials.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
-
+#include <cuda/stream>
 #include <cuda_runtime.h>
 
 #include <array>

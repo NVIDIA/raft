@@ -22,9 +22,10 @@
 #include <raft/linalg/transpose.cuh>
 #include <raft/util/cudart_utils.hpp>
 
-#include <rmm/cuda_stream_view.hpp>
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
+
+#include <cuda/stream>
 
 namespace raft {
 namespace linalg {

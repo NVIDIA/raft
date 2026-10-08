@@ -67,21 +67,22 @@ DI void get_mu_sigma(DataT& mu,
     cid = idx % n_rows;
     fid = idx / n_rows;
   }
-  IdxT center_id;
+  IdxT cluster_id;
   if (cid < n_rows) {
-    center_id = labels[cid];
+    cluster_id = labels[cid];
   } else {
-    center_id = 0;
+    cluster_id = 0;
   }
 
   if (fid >= n_cols) { fid = 0; }
 
+  IdxT center_id;
   if (row_major) {
-    center_id = center_id * n_cols + fid;
+    center_id = cluster_id * n_cols + fid;
   } else {
-    center_id += fid * n_clusters;
+    center_id = cluster_id + fid * n_clusters;
   }
-  sigma = cluster_std == nullptr ? cluster_std_scalar : cluster_std[cid];
+  sigma = cluster_std == nullptr ? cluster_std_scalar : cluster_std[cluster_id];
   mu    = centers[center_id];
 }
 

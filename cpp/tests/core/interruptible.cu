@@ -120,7 +120,7 @@ class capturing_stream {
   auto operator=(capturing_stream const&) -> capturing_stream& = delete;
   auto operator=(capturing_stream&&) -> capturing_stream&      = delete;
 
-  [[nodiscard]] auto view() const -> cuda::stream_ref { return stream_.view(); }
+  [[nodiscard]] auto view() const -> cuda::stream_ref { return stream_; }
 
  private:
   rmm::cuda_stream stream_{};
