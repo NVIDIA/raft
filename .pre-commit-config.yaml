@@ -19,9 +19,7 @@ repos:
     hooks:
       - id: mypy
         additional_dependencies: [types-cachetools]
-        args: ["--config-file=pyproject.toml",
-               "python/pylibraft/pylibraft",
-               "python/raft-dask/raft_dask"]
+        args: ["--config-file=pyproject.toml", "python/pylibraft/pylibraft", "python/raft-dask/raft_dask"]
         pass_filenames: false
   - repo: https://github.com/PyCQA/pydocstyle
     rev: 6.1.1
@@ -144,6 +142,10 @@ repos:
             cpp/include/raft/core/detail/mdspan_numpy_serializer[.]hpp$
           )
       - id: verify-alpha-spec
+        args:
+          - --fix
+          - --mode
+          - release
       - id: verify-codeowners
         args: [--fix, --org=NVIDIA, --project-prefix=raft]
       - id: verify-hardcoded-version
@@ -203,6 +205,5 @@ repos:
     rev: v1.24.1
     hooks:
       - id: zizmor
-
 default_language_version:
   python: python3
