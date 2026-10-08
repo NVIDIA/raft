@@ -15,6 +15,10 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
+#include <type_traits>
+#include <vector>
+
 namespace raft {
 namespace random {
 
@@ -211,6 +215,102 @@ INSTANTIATE_TEST_CASE_P(MakeBlobsTests, MakeBlobsTestD_RowMajor, ::testing::Valu
 
 TEST_P(MakeBlobsTestD_ColMajor, Result) { check(); }
 INSTANTIATE_TEST_CASE_P(MakeBlobsTests, MakeBlobsTestD_ColMajor, ::testing::ValuesIn(inputsd_t));
+
+template <typename T, typename Layout>
+void check_cluster_std_by_label()
+{
+  // More rows than clusters exercises the per-cluster vector beyond its first two sample rows.
+  constexpr int n_rows     = 65;
+  constexpr int n_cols     = 2;
+  constexpr int n_clusters = 2;
+  raft::resources handle;
+  auto stream         = resource::get_cuda_stream(handle).get();
+  auto data           = make_device_matrix<T, int, Layout>(handle, n_rows, n_cols);
+  auto labels         = make_device_vector<int, int>(handle, n_rows);
+  auto control        = make_device_matrix<T, int, Layout>(handle, n_rows, n_cols);
+  auto control_labels = make_device_vector<int, int>(handle, n_rows);
+  auto centers        = make_device_matrix<T, int, Layout>(handle, n_clusters, n_cols);
+  auto cluster_std    = make_device_vector<T, int>(handle, n_clusters);
+
+  std::vector<T> host_centers(n_clusters * n_cols, T(0));
+  std::vector<T> host_std{T(0), T(0.8)};
+  raft::update_device(centers.data_handle(), host_centers.data(), host_centers.size(), stream);
+  raft::update_device(cluster_std.data_handle(), host_std.data(), host_std.size(), stream);
+
+  make_blobs<T, int, Layout>(handle,
+                             data.view(),
+                             labels.view(),
+                             n_clusters,
+                             std::make_optional(centers.view()),
+                             std::make_optional(cluster_std.view()),
+                             T(1),
+                             false,
+                             T(-10),
+                             T(10),
+                             1234ULL,
+                             raft::random::GenPC);
+  make_blobs<T, int, Layout>(handle,
+                             control.view(),
+                             control_labels.view(),
+                             n_clusters,
+                             std::make_optional(centers.view()),
+                             std::nullopt,
+                             T(1),
+                             false,
+                             T(-10),
+                             T(10),
+                             1234ULL,
+                             raft::random::GenPC);
+
+  std::vector<T> host_data(n_rows * n_cols);
+  std::vector<T> host_control(n_rows * n_cols);
+  std::vector<int> host_labels(n_rows);
+  std::vector<int> host_control_labels(n_rows);
+  raft::update_host(host_data.data(), data.data_handle(), host_data.size(), stream);
+  raft::update_host(host_control.data(), control.data_handle(), host_control.size(), stream);
+  raft::update_host(host_labels.data(), labels.data_handle(), host_labels.size(), stream);
+  raft::update_host(
+    host_control_labels.data(), control_labels.data_handle(), host_control_labels.size(), stream);
+  resource::sync_stream(handle);
+
+  bool second_cluster_varies = false;
+  constexpr bool row_major   = std::is_same<Layout, raft::layout_c_contiguous>::value;
+  for (int row = 0; row < n_rows; ++row) {
+    ASSERT_EQ(host_labels[row], row % n_clusters);
+    ASSERT_EQ(host_labels[row], host_control_labels[row]);
+    for (int col = 0; col < n_cols; ++col) {
+      auto offset   = row_major ? row * n_cols + col : col * n_rows + row;
+      auto expected = host_control[offset] * host_std[host_labels[row]];
+      if (host_labels[row] == 0) {
+        EXPECT_EQ(host_data[offset], T(0));
+      } else {
+        second_cluster_varies |= host_data[offset] != T(0);
+      }
+      EXPECT_NEAR(host_data[offset], expected, T(1e-5));
+    }
+  }
+  EXPECT_TRUE(second_cluster_varies);
+}
+
+TEST(MakeBlobsClusterStd, FloatRowMajor)
+{
+  check_cluster_std_by_label<float, raft::layout_c_contiguous>();
+}
+
+TEST(MakeBlobsClusterStd, FloatColMajor)
+{
+  check_cluster_std_by_label<float, raft::layout_f_contiguous>();
+}
+
+TEST(MakeBlobsClusterStd, DoubleRowMajor)
+{
+  check_cluster_std_by_label<double, raft::layout_c_contiguous>();
+}
+
+TEST(MakeBlobsClusterStd, DoubleColMajor)
+{
+  check_cluster_std_by_label<double, raft::layout_f_contiguous>();
+}
 
 }  // end namespace random
 }  // end namespace raft
