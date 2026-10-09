@@ -23,6 +23,7 @@
 #include <rmm/resource_ref.hpp>
 
 #include <cub/util_type.cuh>  // cub::Traits
+#include <cuda/std/variant>    // cuda::std::monostate
 #include <cuda/stream>
 
 #include <algorithm>
@@ -532,11 +533,13 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT,
       val_buf_(val_buf),
       idx_buf_(idx_buf),
       buf_len_(0),
-      k_th_(limit),
-      k_th_idx_(kDummyIdx)
+      k_th_(limit)
   {
     val_buf_[laneId()] = kDummy;
-    if constexpr (TieBreak) { idx_buf_[laneId()] = kDummyIdx; }
+    if constexpr (TieBreak) {
+      k_th_idx_          = kDummyIdx;
+      idx_buf_[laneId()] = kDummyIdx;
+    }
   }
 
   _RAFT_DEVICE static auto init_blockwide(int k, uint8_t* shmem, T limit = kDummy)
@@ -630,7 +633,7 @@ class warp_sort_distributed_ext : public warp_sort<Capacity, Ascending, T, IdxT,
   uint32_t buf_len_;  // 0 <= buf_len_ < WarpSize
 
   T k_th_;
-  IdxT k_th_idx_;  // read only with TieBreak
+  [[no_unique_address]] std::conditional_t<TieBreak, IdxT, cuda::std::monostate> k_th_idx_;
 };
 
 /**
