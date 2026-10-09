@@ -9,12 +9,12 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cuda_stream_pool.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
+#include <raft/mr/host_device_resource.hpp>
 
 #include <rmm/cuda_device.hpp>
 #include <rmm/device_buffer.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/mr/pool_memory_resource.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cuda/stream>
 #include <cuda_runtime.h>
@@ -272,11 +272,11 @@ TEST(Raft, WorkspaceResource)
   raft::handle_t handle;
 
   // The returned resource is always a limiting adaptor
-  rmm::device_async_resource_ref orig_mr{
+  cuda::mr::device_resource_ref orig_mr{
     resource::get_workspace_resource(handle)->get_upstream_resource()};
 
   // Let's create a pooled resource
-  raft::mr::device_resource pool_mr{rmm::mr::pool_memory_resource(
+  cuda::mr::any_device_resource pool_mr{rmm::mr::pool_memory_resource(
     rmm::mr::get_current_device_resource_ref(), rmm::percent_of_free_device_memory(50))};
 
   // A tiny workspace of 1MB
@@ -309,7 +309,7 @@ TEST(Raft, WorkspaceResourceCopy)
     raft::resources tmp_res(res);
     resource::set_workspace_resource(
       tmp_res,
-      raft::mr::device_resource{rmm::mr::pool_memory_resource(
+      cuda::mr::any_device_resource{rmm::mr::pool_memory_resource(
         rmm::mr::get_current_device_resource_ref(), rmm::percent_of_free_device_memory(50))},
       orig_size * 2);
 

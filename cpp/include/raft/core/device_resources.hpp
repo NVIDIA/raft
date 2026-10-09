@@ -24,10 +24,10 @@
 #include <raft/core/resource/sub_comms.hpp>
 #include <raft/core/resource/thrust_policy.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/mr/host_device_resource.hpp>
 
 #include <rmm/cuda_stream_pool.hpp>
 #include <rmm/exec_policy.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cuda/stream>
 #include <cuda_runtime.h>
@@ -53,7 +53,7 @@ namespace RAFT_EXPORT raft {
 class device_resources : public resources {
  public:
   device_resources(const device_resources& handle,
-                   raft::mr::device_resource workspace_resource,
+                   cuda::mr::any_device_resource workspace_resource,
                    std::optional<std::size_t> allocation_limit = std::nullopt)
     : resources{handle}
   {
@@ -77,9 +77,9 @@ class device_resources : public resources {
    *            workspace resources.
    */
   device_resources(cuda::stream_ref stream_view = cuda::stream_ref{cudaStreamPerThread},
-                   std::shared_ptr<rmm::cuda_stream_pool> stream_pool          = {nullptr},
-                   std::optional<raft::mr::device_resource> workspace_resource = std::nullopt,
-                   std::optional<std::size_t> allocation_limit                 = std::nullopt)
+                   std::shared_ptr<rmm::cuda_stream_pool> stream_pool              = {nullptr},
+                   std::optional<cuda::mr::any_device_resource> workspace_resource = std::nullopt,
+                   std::optional<std::size_t> allocation_limit                     = std::nullopt)
     : resources{}
   {
     resources::add_resource_factory(std::make_shared<resource::device_id_resource_factory>());

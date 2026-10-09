@@ -122,7 +122,7 @@ struct device_resources_manager {
     // Optional specification of separate workspace memory resources for each
     // device. The integer in each pair indicates the device for this memory
     // resource.
-    std::vector<std::pair<raft::mr::device_resource, int>> workspace_mrs{};
+    std::vector<std::pair<cuda::mr::any_device_resource, int>> workspace_mrs{};
   } params_;
 
   // This struct stores the underlying resources to be shared among
@@ -175,7 +175,7 @@ struct device_resources_manager {
           return result;
         }()},
         workspace_mr_{[&params, this]() {
-          auto result = std::optional<raft::mr::device_resource>{};
+          auto result = std::optional<cuda::mr::any_device_resource>{};
           auto iter   = std::find_if(std::begin(params.workspace_mrs),
                                    std::end(params.workspace_mrs),
                                    [this](auto&& pair) { return pair.second == device_id_; });
@@ -233,7 +233,7 @@ struct device_resources_manager {
     std::unique_ptr<rmm::cuda_stream_pool> streams_;
     std::vector<std::shared_ptr<rmm::cuda_stream_pool>> pools_;
     std::optional<rmm::mr::pool_memory_resource> pool_mr_;
-    std::optional<raft::mr::device_resource> workspace_mr_;
+    std::optional<cuda::mr::any_device_resource> workspace_mr_;
     std::optional<std::size_t> workspace_allocation_limit_{std::nullopt};
   };
 
@@ -372,7 +372,7 @@ struct device_resources_manager {
   }
 
   // Thread-safe setter for workspace memory resources
-  void set_workspace_memory_resource_(raft::mr::device_resource mr, int device_id)
+  void set_workspace_memory_resource_(cuda::mr::any_device_resource mr, int device_id)
   {
     auto lock = get_lock();
     if (params_finalized_) {
@@ -554,7 +554,7 @@ struct device_resources_manager {
    * `raft::device_resources_manager::get_device_resources`, no change will be made,
    * and a warning will be emitted.
    */
-  static void set_workspace_memory_resource(raft::mr::device_resource mr,
+  static void set_workspace_memory_resource(cuda::mr::any_device_resource mr,
                                             int device_id = device_setter::get_current_device())
   {
     get_manager().set_workspace_memory_resource_(std::move(mr), device_id);
