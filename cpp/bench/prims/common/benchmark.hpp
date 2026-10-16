@@ -20,6 +20,7 @@
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/mr/pool_memory_resource.hpp>
 
+#include <cuda/memory_resource>
 #include <cuda/stream>
 
 #include <benchmark/benchmark.h>
@@ -35,7 +36,7 @@ namespace raft::bench {
 struct using_pool_memory_res {
  private:
   rmm::mr::pool_memory_resource pool_res_;
-  cuda::mr::any_resource<cuda::mr::device_accessible> prev_res_;
+  cuda::mr::any_device_resource prev_res_;
 
  public:
   using_pool_memory_res(size_t initial_size, size_t max_size)

@@ -8,6 +8,7 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_resources.hpp>
 
+#include <cuda/memory_resource>
 #include <cuda/stream>
 
 namespace RAFT_EXPORT raft {
@@ -24,7 +25,7 @@ namespace RAFT_EXPORT raft {
  */
 class handle_t : public raft::device_resources {
  public:
-  handle_t(const handle_t& handle, raft::mr::device_resource workspace_resource)
+  handle_t(const handle_t& handle, cuda::mr::any_device_resource workspace_resource)
     : device_resources(handle, std::move(workspace_resource))
   {
   }
@@ -44,8 +45,8 @@ class handle_t : public raft::device_resources {
    *            temporary workspaces.
    */
   handle_t(cuda::stream_ref stream_view = cuda::stream_ref{cudaStreamPerThread},
-           std::shared_ptr<rmm::cuda_stream_pool> stream_pool          = {nullptr},
-           std::optional<raft::mr::device_resource> workspace_resource = std::nullopt)
+           std::shared_ptr<rmm::cuda_stream_pool> stream_pool              = {nullptr},
+           std::optional<cuda::mr::any_device_resource> workspace_resource = std::nullopt)
     : device_resources{stream_view, stream_pool, std::move(workspace_resource)}
   {
   }
