@@ -27,6 +27,26 @@ _RAFT_DEVICE _RAFT_FORCEINLINE void conditional_assign(bool cond, T& ptr, T x)
   if (cond) { ptr = x; }
 }
 
+/** First element of a payload pack. k-selection always passes the index first. */
+template <typename P0, typename... Rest>
+_RAFT_DEVICE _RAFT_FORCEINLINE P0 first_payload(P0 head, Rest...)
+{
+  return head;
+}
+
+/** Whether `a` must move after `b`, breaking an equal-key tie on the index. */
+template <typename KeyT, typename IdxT>
+_RAFT_DEVICE _RAFT_FORCEINLINE bool swap_needed(bool ascending,
+                                                KeyT a,
+                                                KeyT b,
+                                                IdxT ia,
+                                                IdxT ib)
+{
+  if (a != b) { return ascending ? (a > b) : (a < b); }
+  // Must flip with `ascending`, or paired lanes disagree on a tie and duplicate an element.
+  return ascending ? (ia > ib) : (ia < ib);
+}
+
 }  // namespace
 
 /**
@@ -67,9 +87,13 @@ _RAFT_DEVICE _RAFT_FORCEINLINE void conditional_assign(bool cond, T& ptr, T x)
  *   number of elements processed in each thread;
  *   i.e. the total data size is `Size * warp_width`.
  *   Must be power-of-two.
+ * @tparam TieBreak
+ *   order an equal-key tie on the first payload, which k-selection uses for the index, so
+ *   that a repeated sort of the same input gives the same order. Without it the code is the
+ *   same as before the parameter existed.
  *
  */
-template <int Size = 1>
+template <int Size = 1, bool TieBreak = false>
 class bitonic {
   static_assert(isPo2(Size));
 
@@ -115,7 +139,7 @@ class bitonic {
   _RAFT_DEVICE _RAFT_FORCEINLINE void merge(KeyT* __restrict__ keys,
                                             PayloadTs* __restrict__... payloads) const
   {
-    return bitonic<Size>::merge_impl(ascending_, warp_width_, keys, payloads...);
+    return bitonic<Size, TieBreak>::merge_impl(ascending_, warp_width_, keys, payloads...);
   }
 
   /**
@@ -134,7 +158,7 @@ class bitonic {
   _RAFT_DEVICE _RAFT_FORCEINLINE void sort(KeyT* __restrict__ keys,
                                            PayloadTs* __restrict__... payloads) const
   {
-    return bitonic<Size>::sort_impl(ascending_, warp_width_, keys, payloads...);
+    return bitonic<Size, TieBreak>::sort_impl(ascending_, warp_width_, keys, payloads...);
   }
 
   /**
@@ -173,7 +197,7 @@ class bitonic {
   const int warp_width_;
   const bool ascending_;
 
-  template <int AnotherSize>
+  template <int AnotherSize, bool AnotherTieBreak>
   friend class bitonic;
 
   template <typename KeyT, typename... PayloadTs>
@@ -192,7 +216,17 @@ class bitonic {
           const int other_i = i + stride;
           KeyT& key         = keys[i];
           KeyT& other       = keys[other_i];
-          if (ascending ? key > other : key < other) {
+          bool do_swap;
+          if constexpr (TieBreak && sizeof...(PayloadTs) > 0) {
+            do_swap = swap_needed(ascending,
+                                  key,
+                                  other,
+                                  first_payload(payloads[i]...),
+                                  first_payload(payloads[other_i]...));
+          } else {
+            do_swap = ascending ? key > other : key < other;
+          }
+          if (do_swap) {
             swap(key, other);
             (swap(payloads[i], payloads[other_i]), ...);
           }
@@ -206,7 +240,16 @@ class bitonic {
       for (int stride = (warp_width >> 1); stride > 0; stride >>= 1) {
         const bool is_second = lane & stride;
         const KeyT other     = shfl_xor(key, stride, warp_width);
-        const bool do_assign = (ascending != is_second) ? key > other : key < other;
+        const bool asc       = (ascending != is_second);
+        bool do_assign;
+        if constexpr (TieBreak && sizeof...(PayloadTs) > 0) {
+          // The shuffle is unconditional: it is a warp-collective operation.
+          const auto my_id    = first_payload(payloads[i]...);
+          const auto other_id = shfl_xor(my_id, stride, warp_width);
+          do_assign           = swap_needed(asc, key, other, my_id, other_id);
+        } else {
+          do_assign = asc ? key > other : key < other;
+        }
 
         conditional_assign(do_assign, key, other);
         // NB: don't put shfl_xor in a conditional; it must be called by all threads in a warp.
@@ -225,14 +268,15 @@ class bitonic {
     if constexpr (Size == 1) {
       const int lane = laneId();
       for (int width = 2; width < warp_width; width <<= 1) {
-        bitonic<1>::merge_impl(lane & width, width, keys, payloads...);
+        bitonic<1, TieBreak>::merge_impl(lane & width, width, keys, payloads...);
       }
     } else {
       constexpr int kSize2 = Size / 2;
-      bitonic<kSize2>::sort_impl(false, warp_width, keys, payloads...);
-      bitonic<kSize2>::sort_impl(true, warp_width, keys + kSize2, (payloads + kSize2)...);
+      bitonic<kSize2, TieBreak>::sort_impl(false, warp_width, keys, payloads...);
+      bitonic<kSize2, TieBreak>::sort_impl(
+        true, warp_width, keys + kSize2, (payloads + kSize2)...);
     }
-    bitonic<Size>::merge_impl(ascending, warp_width, keys, payloads...);
+    bitonic<Size, TieBreak>::merge_impl(ascending, warp_width, keys, payloads...);
   }
 };
 

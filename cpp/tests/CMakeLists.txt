@@ -219,7 +219,7 @@ if(BUILD_TESTS)
   )
 
   ConfigureTest(
-    NAME MATRIX_SELECT_TEST PATH matrix/select_k.cu matrix/select_k_edgecases.cu LIB
+    NAME MATRIX_SELECT_TEST PATH matrix/select_k.cu matrix/select_k_edgecases.cu matrix/select_k_stable.cu LIB
     EXPLICIT_INSTANTIATE_ONLY GPUS 1 PERCENT 100
   )
 
