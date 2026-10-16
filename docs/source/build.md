@@ -73,8 +73,8 @@ pip install raft-dask-cu12
 ## Building C++ and Python from source
 
 ### CUDA/GPU Requirements
-- cmake 3.26.4+
-- GCC 9.3+ (9.5.0+ recommended)
+- cmake 4.0+
+- GCC 13.3+
 - CUDA Toolkit 12.2+
 - NVIDIA driver 450.80.02+
 - Ampere architecture or better (compute capability >= 8.0)
@@ -85,10 +85,10 @@ In addition to the libraries included with cudatoolkit 12.2+, there are some oth
 
 #### Required
 - [NVIDIA RMM](https://github.com/rapidsai/rmm) corresponding to RAFT version.
-- [Thrust](https://github.com/NVIDIA/thrust) v1.17 / [CUB](https://github.com/NVIDIA/cub)
+- [CCCL](https://github.com/NVIDIA/cccl) (Thrust/CUB/libcu++)
 
 #### Optional
-- [NCCL](https://github.com/NVIDIA/nccl) - Used in `raft::comms` API and needed to build `raft-dask`.
+- [NCCL](https://github.com/NVIDIA/nccl) 2.19+ - Used in `raft::comms` API and needed to build `raft-dask`.
 - [UCX](https://github.com/openucx/ucx) - Used in `raft::comms` API and needed to build `raft-dask`.
 - [Googletest](https://github.com/google/googletest) - Needed to build tests
 - [Googlebench](https://github.com/google/benchmark) - Needed to build benchmarks
