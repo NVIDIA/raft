@@ -10,6 +10,7 @@
 
 #include <cuda_runtime.h>
 
+#include <cstdint>
 #include <memory>
 #include <vector>
 
