@@ -539,7 +539,8 @@ struct PhiloxGenerator {
   DI half next_half()
   {
     float ret = next_float();
-    return __float2half(ret);
+    // Round down: rounding to nearest maps values in [1 - 2^-12, 1) to 1.0.
+    return __float2half_rd(ret);
   }
 
   DI void next(float& ret)
@@ -683,7 +684,8 @@ struct PCGenerator {
   HDI half next_half()
   {
     float ret = next_float();
-    return __float2half(ret);
+    // Round down: rounding to nearest maps values in [1 - 2^-12, 1) to 1.0.
+    return __float2half_rd(ret);
   }
 
   HDI void next(uint32_t& ret) { ret = next_u32(); }
