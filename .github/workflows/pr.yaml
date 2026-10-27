@@ -28,7 +28,6 @@ jobs:
       - wheel-build-raft-dask
       - wheel-tests-raft-dask
       - devcontainer
-      - telemetry-setup
     permissions:
       actions: read
       contents: read
@@ -40,19 +39,6 @@ jobs:
     if: always()
     with:
       needs: ${{ toJSON(needs) }}
-  telemetry-setup:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-    continue-on-error: true
-    env:
-      OTEL_SERVICE_NAME: "pr-raft"
-    steps:
-      - name: Telemetry setup
-        # This gate is here and not at the job level because we need the job to not be skipped,
-        # since other jobs depend on it.
-        if: ${{ vars.TELEMETRY_ENABLED == 'true' }}
-        uses: rapidsai/shared-actions/telemetry-dispatch-stash-base-env-vars@main
   build-details:
     uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
   check-nightly-ci:
@@ -74,7 +60,6 @@ jobs:
           repo: ${{ github.repository }}
           target-branch: ${{ fromJSON(steps.get-pr-info.outputs.pr-info).base.ref }}
   changed-files:
-    needs: telemetry-setup
     permissions:
       actions: read
       contents: read
@@ -219,7 +204,6 @@ jobs:
           - '!img/**'
           - '!thirdparty/LICENSES/**'
   checks:
-    needs: telemetry-setup
     permissions:
       actions: read
       contents: read
@@ -230,7 +214,6 @@ jobs:
     uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@main
     with:
       enable_check_generated_files: false
-      ignored_pr_jobs: telemetry-summarize
   conda-cpp-build:
     needs: [build-details, checks]
     permissions:
@@ -439,7 +422,6 @@ jobs:
       build_type: pull-request
       script: ci/test_wheel_raft_dask.sh
   devcontainer:
-    needs: telemetry-setup
     permissions:
       actions: read
       contents: read
@@ -458,18 +440,5 @@ jobs:
         SCCACHE_DIST_FALLBACK_TO_LOCAL_COMPILE=false
       build_command: |
         sccache --zero-stats;
-        build-all -j0 -DBUILD_PRIMS_BENCH=ON --verbose 2>&1 | tee telemetry-artifacts/build.log;
-        sccache --show-adv-stats | tee telemetry-artifacts/sccache-stats.txt;
-  telemetry-summarize:
-    # This job must use a self-hosted runner to record telemetry traces.
-    runs-on: linux-amd64-cpu4
-    needs: pr-builder
-    permissions:
-      actions: write
-    if: ${{ vars.TELEMETRY_ENABLED == 'true' && !cancelled() }}
-    continue-on-error: true
-    steps:
-      - name: Telemetry summarize
-        uses: rapidsai/shared-actions/telemetry-dispatch-summarize@main
-    env:
-      GH_TOKEN: ${{ github.token }}
+        build-all -j0 -DBUILD_PRIMS_BENCH=ON --verbose;
+        sccache --show-adv-stats;
