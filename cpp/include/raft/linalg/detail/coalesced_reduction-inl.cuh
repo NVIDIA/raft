@@ -532,6 +532,50 @@ RAFT_KERNEL __launch_bounds__(Policy::ThreadsPerBlock) coalescedSumThickKernel(
   }
 }
 
+/** Launch the first reduction stage independently of the final transform. */
+template <typename ThickPolicy,
+          typename InType,
+          typename OutType,
+          typename IdxType,
+          typename MainLambda,
+          typename ReduceLambda>
+void coalescedReductionThickLaunch(OutType* buffer,
+                                   const InType* data,
+                                   IdxType D,
+                                   IdxType N,
+                                   OutType init,
+                                   cudaStream_t stream,
+                                   MainLambda main_op,
+                                   ReduceLambda reduce_op)
+{
+  dim3 threads(ThickPolicy::ThreadsPerBlock, 1, 1);
+  dim3 blocks(N, ThickPolicy::BlocksPerRow, 1);
+  if constexpr (std::is_same_v<ReduceLambda, raft::add_op>) {
+    raft::launch_kernel(stream,
+                        blocks,
+                        threads,
+                        coalescedSumThickKernel<ThickPolicy>,
+                        buffer,
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op);
+  } else {
+    raft::launch_kernel(stream,
+                        blocks,
+                        threads,
+                        coalescedReductionThickKernel<ThickPolicy>,
+                        buffer,
+                        data,
+                        D,
+                        N,
+                        init,
+                        main_op,
+                        reduce_op);
+  }
+}
+
 template <typename ThickPolicy,
           typename ThinPolicy,
           typename InType,
@@ -555,9 +599,6 @@ void coalescedReductionThick(bool dry_run,
   common::nvtx::range<common::nvtx::domain::raft> fun_scope(
     "coalescedReductionThick<%d,%d>", ThickPolicy::ThreadsPerBlock, ThickPolicy::BlocksPerRow);
 
-  dim3 threads(ThickPolicy::ThreadsPerBlock, 1, 1);
-  dim3 blocks(N, ThickPolicy::BlocksPerRow, 1);
-
   rmm::device_uvector<OutType> buffer(N * ThickPolicy::BlocksPerRow, stream);
 
   if (dry_run) { return; }
@@ -568,30 +609,8 @@ void coalescedReductionThick(bool dry_run,
    *  2. coalescedReductionThinKernel reduces [N x BlocksPerRow] to [N x 1]. It doesn't apply any
    *     main_op but applies final_op. If in-place, the existing and new values are reduced.
    */
-  if constexpr (std::is_same_v<ReduceLambda, raft::add_op>) {
-    raft::launch_kernel(stream,
-                        blocks,
-                        threads,
-                        coalescedSumThickKernel<ThickPolicy>,
-                        buffer.data(),
-                        data,
-                        D,
-                        N,
-                        init,
-                        main_op);
-  } else {
-    raft::launch_kernel(stream,
-                        blocks,
-                        threads,
-                        coalescedReductionThickKernel<ThickPolicy>,
-                        buffer.data(),
-                        data,
-                        D,
-                        N,
-                        init,
-                        main_op,
-                        reduce_op);
-  }
+  coalescedReductionThickLaunch<ThickPolicy>(
+    buffer.data(), data, D, N, init, stream, main_op, reduce_op);
 
   coalescedReductionThin<ThinPolicy>(dots,
                                      buffer.data(),
