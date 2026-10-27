@@ -262,5 +262,22 @@ INSTANTIATE_TEST_CASE_P(ReduceRowTests,
                         ReduceRowTestManyClusters,
                         ::testing::ValuesIn(inputsf_many_cluster));
 
+// ReduceRowTestVectorized
+// 100000 Obs, 16 cols, 2048 clusters: Should trigger the vectorized kernel on GPU newer than 9.0.
+const std::vector<ReduceRowsInputs<float>> inputsf_vectorized = {
+  {0.00001f, 100000, 16, 2048, 1234ULL, false},
+  {0.00001f, 100000, 16, 2048, 1234ULL, true, 32.0},
+  {0.00001f, 100000, 16, 2048, 1234ULL, true, 16.0}};
+typedef ReduceRowTest<float> ReduceRowTestVectorized;
+TEST_P(ReduceRowTestVectorized, Result)
+{
+  ASSERT_TRUE(raft::devArrMatch(out_ref.data(),
+                                out.data(),
+                                params.cols * params.nkeys,
+                                raft::CompareApprox<float>(params.tolerance)));
+}
+INSTANTIATE_TEST_CASE_P(ReduceRowTests,
+                        ReduceRowTestVectorized,
+                        ::testing::ValuesIn(inputsf_vectorized));
 }  // end namespace linalg
 }  // end namespace raft

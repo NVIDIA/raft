@@ -149,36 +149,38 @@ void reduce_rows_by_key(
   std::optional<raft::device_vector_view<const WeightType, IndexType>> d_weights = std::nullopt,
   bool reset_sums                                                                = true)
 {
-  if (resource::get_dry_run_flag(handle)) { return; }
   RAFT_EXPECTS(d_A.extent(0) == d_A.extent(0) && d_sums.extent(1) == n_unique_keys,
                "Output is not of size ncols * n_unique_keys");
   RAFT_EXPECTS(d_keys.extent(0) == d_A.extent(1), "Keys is not of size nrows");
 
+  const bool dry_run = resource::get_dry_run_flag(handle);
   if (d_weights) {
     RAFT_EXPECTS(d_weights.value().extent(0) == d_A.extent(1), "Weights is not of size nrows");
 
-    reduce_rows_by_key(d_A.data_handle(),
-                       d_A.extent(0),
-                       d_keys.data_handle(),
-                       d_weights.value().data_handle(),
-                       d_keys_char.data_handle(),
-                       d_A.extent(1),
-                       d_A.extent(0),
-                       n_unique_keys,
-                       d_sums.data_handle(),
-                       resource::get_cuda_stream(handle).get(),
-                       reset_sums);
+    detail::reduce_rows_by_key(d_A.data_handle(),
+                               d_A.extent(0),
+                               d_keys.data_handle(),
+                               d_weights.value().data_handle(),
+                               d_keys_char.data_handle(),
+                               d_A.extent(1),
+                               d_A.extent(0),
+                               n_unique_keys,
+                               d_sums.data_handle(),
+                               resource::get_cuda_stream(handle).get(),
+                               reset_sums,
+                               dry_run);
   } else {
-    reduce_rows_by_key(d_A.data_handle(),
-                       d_A.extent(0),
-                       d_keys.data_handle(),
-                       d_keys_char.data_handle(),
-                       d_A.extent(1),
-                       d_A.extent(0),
-                       n_unique_keys,
-                       d_sums.data_handle(),
-                       resource::get_cuda_stream(handle).get(),
-                       reset_sums);
+    detail::reduce_rows_by_key(d_A.data_handle(),
+                               d_A.extent(0),
+                               d_keys.data_handle(),
+                               d_keys_char.data_handle(),
+                               d_A.extent(1),
+                               d_A.extent(0),
+                               n_unique_keys,
+                               d_sums.data_handle(),
+                               resource::get_cuda_stream(handle).get(),
+                               reset_sums,
+                               dry_run);
   }
 }
 
