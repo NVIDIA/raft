@@ -9,6 +9,7 @@
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
+#include <raft/util/vectorized.cuh>
 
 #include <rmm/device_buffer.hpp>
 #include <rmm/device_uvector.hpp>
@@ -333,22 +334,15 @@ RAFT_KERNEL sum_rows_by_key_large_nkeys_kernel_rowmajor_per_float4(const float* 
   const IdxT vecs_per_row = ncols / 4;
   const IdxT i            = q / vecs_per_row;
   const IdxT j            = (q - i * vecs_per_row) * 4;
-  float4 a                = __ldg(reinterpret_cast<const float4*>(d_A + lda * i + j));
-  const float w           = d_weights != nullptr ? static_cast<float>(d_weights[i]) : 1.0f;
-  a.x *= w;
-  a.y *= w;
-  a.z *= w;
-  a.w *= w;
+  TxN_t<float, 4> a;
+  a.load(d_A, lda * i + j);
+  const float w = d_weights != nullptr ? static_cast<float>(d_weights[i]) : 1.0f;
+#pragma unroll
+  for (int c = 0; c < a.Ratio; ++c) {
+    a.val.data[c] *= w;
+  }
   float* dst = d_sums + ncols * static_cast<IdxT>(d_keys[i]) + j;
-#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
-  // vectorized atomic add only available since Hopper
-  atomicAdd(reinterpret_cast<float4*>(dst), a);
-#else
-  raft::myAtomicAdd(dst, a.x);
-  raft::myAtomicAdd(dst + 1, a.y);
-  raft::myAtomicAdd(dst + 2, a.z);
-  raft::myAtomicAdd(dst + 3, a.w);
-#endif
+  raft::myAtomicAdd(reinterpret_cast<float4*>(dst), *a.vectorized_data());
 }
 
 /**

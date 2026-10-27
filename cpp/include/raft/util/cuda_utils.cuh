@@ -43,6 +43,22 @@ DI void myAtomicAdd(int64_t* address, int64_t val)
   } while (assumed != old);
 }
 
+// Specialization for float4
+template <>
+DI void myAtomicAdd(float4* address, float4 val)
+{
+#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 900
+  // Vectorized atomic write is only available from Hopper.
+  atomicAdd(address, val);
+#else
+  float* elements = reinterpret_cast<float*>(address);
+  myAtomicAdd(elements, val.x);
+  myAtomicAdd(elements + 1, val.y);
+  myAtomicAdd(elements + 2, val.z);
+  myAtomicAdd(elements + 3, val.w);
+#endif
+}
+
 #if defined(__CUDA_ARCH__) && (__CUDA_ARCH__ < 600)
 // Ref:
 // http://on-demand.gputechconf.com/gtc/2013/presentations/S3101-Atomic-Memory-Operations.pdf
