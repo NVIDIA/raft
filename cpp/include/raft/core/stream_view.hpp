@@ -11,9 +11,9 @@
 #include <raft/core/interruptible.hpp>
 #endif
 
-#include <cuda/stream>
+#include <raft/core/source_location.hpp>
 
-#include <source_location>
+#include <cuda/stream>
 
 namespace RAFT_EXPORT raft {
 
@@ -125,7 +125,7 @@ struct stream_view {
    * synchronizing on behalf of a caller, in which case forward the caller's location.
    */
   void interruptible_synchronize(
-    [[maybe_unused]] std::source_location location = std::source_location::current()) const
+    [[maybe_unused]] raft::source_location location = raft::source_location::current()) const
   {
 #ifndef RAFT_DISABLE_CUDA
     interruptible::synchronize(base_view_, location);

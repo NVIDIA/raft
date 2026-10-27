@@ -96,6 +96,7 @@ if(BUILD_TESTS)
     core/device_resources_manager.cpp
     core/device_setter.cpp
     core/error.cpp
+    core/diagnostics.cu
     core/math_device.cu
     core/math_host.cpp
     core/operators_device.cu

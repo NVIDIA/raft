@@ -12,7 +12,7 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #endif
 
-#include <source_location>
+#include <raft/core/source_location.hpp>
 
 namespace RAFT_EXPORT raft {
 namespace resource {
@@ -82,7 +82,7 @@ inline void set_stream_view(resources& res, raft::stream_view view)
  */
 inline void sync_stream_view(const resources& res,
                              raft::stream_view stream,
-                             std::source_location location = std::source_location::current())
+                             raft::source_location location = raft::source_location::current())
 {
   if (raft::resource::get_dry_run_flag(res)) { return; }
   stream.interruptible_synchronize(location);
@@ -96,7 +96,7 @@ inline void sync_stream_view(const resources& res,
  * synchronizing on behalf of a caller, in which case forward the caller's location.
  */
 inline void sync_stream_view(const resources& res,
-                             std::source_location location = std::source_location::current())
+                             raft::source_location location = raft::source_location::current())
 {
   sync_stream_view(res, get_stream_view(res), location);
 }

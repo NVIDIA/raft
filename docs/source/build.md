@@ -250,6 +250,27 @@ RAFT's CMake has the following configurable flags available:
 | RAFT_ENABLE_CUSPARSE_DEPENDENCY | ON, OFF              | ON  | Link against cusparse library in `raft::raft`                                |
 | RAFT_ENABLE_CUSOLVER_DEPENDENCY | ON, OFF              | ON  | Link against curand library in `raft::raft`                                  |
 | RAFT_NVTX                       | ON, OFF              | OFF | Enable NVTX Markers                                                          |
+| RAFT_COMPACT_DIAGNOSTICS         | ON, OFF              | Build-dependent; see below | Capture diagnostic file and line without function signatures                  |
+
+With single-config generators, `RAFT_COMPACT_DIAGNOSTICS` initially defaults to `OFF` when
+`CMAKE_BUILD_TYPE` is `Debug` or `RelWithDebInfo`, and `ON` otherwise. Multi-config generators
+normally leave `CMAKE_BUILD_TYPE` unset, so the option defaults to `ON` for all configurations,
+including `Debug` and `RelWithDebInfo`.
+
+Set `-DRAFT_COMPACT_DIAGNOSTICS=ON` or `OFF` to override the default. This setting applies to all
+configurations in a multi-config build. Existing cached values are preserved when the build type
+changes.
+
+With compact diagnostics enabled, errors retain the original file, line, exception type,
+and reason; the diagnostic location's `function_name()` is empty and `column()` is zero. Explicit
+`std::source_location` arguments remain accepted, but their callers may still retain function names.
+
+The `raft::raft` target propagates the mode to linked consumers, including through installed CMake
+packages. Downstream projects such as cuVS need no additional option. An installed package retains
+the mode selected when RAFT was built. All translation units and libraries using RAFT together must
+use the same mode; the modes have different RAFT diagnostic helper signatures. Rebuild RAFT and its
+consumers together when changing the setting. Set `-DRAFT_COMPACT_DIAGNOSTICS=OFF` to alias
+`std::source_location` and restore full function names in diagnostics.
 
 ### Build documentation
 

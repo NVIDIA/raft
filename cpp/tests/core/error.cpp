@@ -37,9 +37,13 @@ auto expected_message(char const* prefix,
   re += reg_escape(prefix);
   re += R"(file=.*error\.cpp line=)";
   re += line_pattern;
+#if defined(RAFT_COMPACT_DIAGNOSTICS) && RAFT_COMPACT_DIAGNOSTICS
+  re += ": ";
+#else
   re += " function=.*";
   re += function;
   re += ".*: ";
+#endif
   re += reg_escape(reason);
   re += "$";
   return std::regex{re};
@@ -54,7 +58,7 @@ auto line_of(std::source_location location) -> std::string
 constexpr char const* k_any_line = R"(\d+)";
 
 /** A utility reporting an error on behalf of its caller. */
-auto report_on_behalf_of_caller(std::source_location location = std::source_location::current())
+auto report_on_behalf_of_caller(raft::source_location location = raft::source_location::current())
   -> std::string
 {
   return format_error_message(location, "RAFT failure at ", "%s", "reported by a utility");
