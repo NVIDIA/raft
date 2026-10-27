@@ -86,6 +86,11 @@ struct quadSum {
 // The labels are not adjacent
 //
 
+/** Floating point including the extended types, which std::is_floating_point does not cover. */
+template <typename T>
+inline constexpr bool is_floating_point_v =
+  std::is_floating_point_v<T> || std::is_same_v<T, __half> || std::is_same_v<T, __nv_bfloat16>;
+
 //
 // Reduce by keys - for keys <= 4
 //
@@ -683,6 +688,11 @@ void reduce_rows_by_key(const DataIteratorT d_A,
                         bool reset_sums)
 {
   typedef typename std::iterator_traits<KeysIteratorT>::value_type KeyType;
+  static_assert(
+    !is_floating_point_v<WeightT> ||
+      (is_floating_point_v<SumsT> && sizeof(WeightT) <= sizeof(SumsT)),
+    "Floating weight type is broader than the sum type. Instead of silently casting down the "
+    "weight precision, we throw an error here.");
 
   // Following kernel needs memset
   if (reset_sums) { cudaMemsetAsync(d_sums, 0, ncols * nkeys * sizeof(SumsT), stream); }
