@@ -191,8 +191,11 @@ TEST_P(ReduceRowTestD, Result)
 INSTANTIATE_TEST_CASE_P(ReduceRowTests, ReduceRowTestD, ::testing::ValuesIn(inputsd2));
 
 // ReduceRowTestSmallnKey
-// 128 Obs, 32 cols, 3 clusters
+// 128 Obs, 8 or 32 cols, 3 clusters (small-k kernel with 8 cols, row-major kernel with 32)
 const std::vector<ReduceRowsInputs<float>> inputsf_small_nkey = {
+  {0.000001f, 128, 8, 3, 1234ULL, false},
+  {0.000001f, 128, 8, 3, 1234ULL, true, 5.0},
+  {0.000001f, 128, 8, 3, 1234ULL, true, 8.0},
   {0.000001f, 128, 32, 3, 1234ULL, false},
   {0.000001f, 128, 32, 3, 1234ULL, true, 5.0},
   {0.000001f, 128, 32, 3, 1234ULL, true, 8.0}};

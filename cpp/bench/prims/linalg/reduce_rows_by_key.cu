@@ -54,6 +54,10 @@ struct reduce_rows_by_key : public fixture {
 };  // struct reduce_rows_by_key
 
 const std::vector<rrbk_params> kInputSizes{
+  {1000000, 8, 3},
+  {1000000, 32, 3},
+  {1000000, 256, 3},
+  {100000, 1000, 3},
   {10000, 128, 64},
   {100000, 128, 64},
   {1000000, 128, 64},
