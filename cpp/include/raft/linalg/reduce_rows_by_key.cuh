@@ -42,7 +42,7 @@ void convert_array(IteratorT1 dst, IteratorT2 src, int n, cudaStream_t st)
  * @param[in]  lda         Real row size for input data, d_A
  * @param[in]  d_keys      Keys for each row (1 x nrows)
  * @param[in]  d_weights   Weights for each observation in d_A (1 x nrows)
- * @param[out] d_keys_char Scratch memory for conversion of keys to char
+ * @param[out] d_keys_char Unused, kept for API compatibility
  * @param[in]  nrows       Number of rows in d_A and d_keys
  * @param[in]  ncols       Number of data columns in d_A
  * @param[in]  nkeys       Number of unique keys in d_keys
@@ -82,7 +82,7 @@ void reduce_rows_by_key(const DataIteratorT d_A,
  * @param[in]  d_A         Input data array (lda x nrows)
  * @param[in]  lda         Real row size for input data, d_A
  * @param[in]  d_keys      Keys for each row (1 x nrows)
- * @param      d_keys_char Scratch memory for conversion of keys to char
+ * @param      d_keys_char Unused, kept for API compatibility
  * @param[in]  nrows       Number of rows in d_A and d_keys
  * @param[in]  ncols       Number of data columns in d_A
  * @param[in]  nkeys       Number of unique keys in d_keys
@@ -133,7 +133,7 @@ void reduce_rows_by_key(const DataIteratorT d_A,
  * @param[in]  d_keys      Keys for each row raft::device_vector_view (1 x nrows)
  * @param[out] d_sums      Row sums by key raft::device_matrix_view (ncols x d_keys)
  * @param[in]  n_unique_keys       Number of unique keys in d_keys
- * @param[out] d_keys_char Scratch memory for conversion of keys to char, raft::device_vector_view
+ * @param[out] d_keys_char Unused, kept for API compatibility, raft::device_vector_view
  * @param[in]  d_weights   Weights for each observation in d_A raft::device_vector_view optional (1
  * x nrows)
  * @param[in]  reset_sums  Whether to reset the output sums to zero before reducing
