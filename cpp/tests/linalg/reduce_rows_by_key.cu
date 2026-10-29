@@ -279,5 +279,51 @@ TEST_P(ReduceRowTestVectorized, Result)
 INSTANTIATE_TEST_CASE_P(ReduceRowTests,
                         ReduceRowTestVectorized,
                         ::testing::ValuesIn(inputsf_vectorized));
+
+TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
+{
+  raft::resources handle;
+  auto stream           = resource::get_cuda_stream(handle).get();
+  constexpr int nrows   = 100000;
+  constexpr int ncols   = 64;
+  constexpr int nkeys   = 256;
+  constexpr int end_bit = 8;  // should fit nkeys
+  rmm::device_uvector<float> in(nrows * ncols, stream);
+  rmm::device_uvector<float> sums(nkeys * ncols, stream);
+  rmm::device_uvector<uint32_t> keys(nrows, stream);
+  raft::random::RngState r(1234ULL);
+  uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t{nkeys});
+  RAFT_CUDA_TRY(cudaMemsetAsync(in.data(), 0, in.size() * sizeof(float), stream));
+
+  size_t sort_bytes = 0;
+  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs( static_cast<void*>(nullptr),
+                                                sort_bytes,
+                                                static_cast<const uint32_t*>(nullptr),
+                                                static_cast<uint32_t*>(nullptr),
+                                                static_cast<const uint32_t*>(nullptr),
+                                                static_cast<uint32_t*>(nullptr),
+                                                nrows,
+                                                0,
+                                                end_bit,
+                                                stream));
+  const size_t expected = 4 * nrows * sizeof(uint32_t) + sort_bytes;
+
+  auto action = [&](raft::resources const& res) {
+    detail::sum_rows_by_key_large_nkeys_rowmajor_sorted(in.data(),
+                                                        ncols,
+                                                        keys.data(),
+                                                        static_cast<const float*>(nullptr),
+                                                        nrows,
+                                                        ncols,
+                                                        nkeys,
+                                                        sums.data(),
+                                                        resource::get_cuda_stream(res).get(),
+                                                        resource::get_dry_run_flag(res));
+  };
+  const auto dry = raft::util::dry_run_execute(handle, action);
+  EXPECT_EQ(dry.device_global, expected);
+  execute_with_dry_run_check(handle, action, alloc_behavior::ARGUMENT_DRIVEN, expected);
+}
+
 }  // end namespace linalg
 }  // end namespace raft
