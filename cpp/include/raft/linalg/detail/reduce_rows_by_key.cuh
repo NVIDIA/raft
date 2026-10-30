@@ -436,7 +436,7 @@ RAFT_KERNEL sum_rows_by_key_sort_input_kernel(KeysIteratorT d_keys,
 
 /**
  * Radix-sort the row ids by key and then call per-warp kernel.
- * Requires nrows and nkeys to fit in uint32_t; uses 16 bytes per row of temporary memory.
+ * Batching defines upper limit for peak memory allocation.
  */
 template <typename DataIteratorT,
           typename KeysIteratorT,
@@ -454,65 +454,60 @@ void sum_rows_by_key_large_nkeys_rowmajor_sorted(const DataIteratorT d_A,
                                                  cudaStream_t st,
                                                  bool dry_run)
 {
-  rmm::device_uvector<uint32_t> keys(nrows, st), row_ids(nrows, st);
-  rmm::device_uvector<uint32_t> sorted_keys(nrows, st), sorted_row_ids(nrows, st);
+  // Limit batch size to 4M rows
+  const IdxT batch_rows = std::min<IdxT>(nrows, 4000000);
+  rmm::device_uvector<uint32_t> keys(batch_rows, st), keys_alt(batch_rows, st);
+  rmm::device_uvector<uint32_t> row_ids(batch_rows, st), row_ids_alt(batch_rows, st);
+  // Double buffering avoids additional scratch space when radix sorts undergoes > 1 pass.
+  // 1 pass corresponds to 8-bit (selected by the CUB library)
+  cub::DoubleBuffer<uint32_t> keys_db(keys.data(), keys_alt.data());
+  cub::DoubleBuffer<uint32_t> row_ids_db(row_ids.data(), row_ids_alt.data());
   // Only the bits that can be set in a key in [0, nkeys) take part in the sort.
   int end_bit = 1;
   while (end_bit < 32 && (IdxT{1} << end_bit) < nkeys) {
     ++end_bit;
   }
   size_t tmp_bytes = 0;
-  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(nullptr,
-                                                tmp_bytes,
-                                                keys.data(),
-                                                sorted_keys.data(),
-                                                row_ids.data(),
-                                                sorted_row_ids.data(),
-                                                static_cast<int>(nrows),
-                                                0,
-                                                end_bit,
-                                                st));
+  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
+    nullptr, tmp_bytes, keys_db, row_ids_db, static_cast<int>(batch_rows), 0, end_bit, st));
   rmm::device_buffer tmp(tmp_bytes, st);
   if (dry_run) { return; }
 
-  constexpr uint32_t block_dim = 256;
-  raft::launch_kernel(st,
-                      static_cast<uint32_t>(ceildiv<IdxT>(nrows, IdxT{block_dim})),
-                      block_dim,
-                      sum_rows_by_key_sort_input_kernel,
-                      d_keys,
-                      nrows,
-                      keys.data(),
-                      row_ids.data());
-  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(tmp.data(),
-                                                tmp_bytes,
-                                                keys.data(),
-                                                sorted_keys.data(),
-                                                row_ids.data(),
-                                                sorted_row_ids.data(),
-                                                static_cast<int>(nrows),
-                                                0,
-                                                end_bit,
-                                                st));
-  sum_rows_by_key_large_nkeys_rowmajor_per_warp(d_A,
-                                                lda,
-                                                static_cast<const uint32_t*>(sorted_keys.data()),
-                                                sorted_row_ids.data(),
-                                                d_weights,
-                                                nrows,
-                                                ncols,
-                                                d_sums,
-                                                st);
+  for (IdxT batch_start = 0; batch_start < nrows; batch_start += batch_rows) {
+    // Rows [batch_start, batch_start + n_batch_rows); row ids are local to the batch.
+    const IdxT n_batch_rows      = std::min<IdxT>(batch_rows, nrows - batch_start);
+    keys_db                      = cub::DoubleBuffer<uint32_t>(keys.data(), keys_alt.data());
+    row_ids_db                   = cub::DoubleBuffer<uint32_t>(row_ids.data(), row_ids_alt.data());
+    constexpr uint32_t block_dim = 256;
+    const auto grid_dim = static_cast<uint32_t>(ceildiv<IdxT>(n_batch_rows, IdxT{block_dim}));
+    raft::launch_kernel(st,
+                        grid_dim,
+                        block_dim,
+                        sum_rows_by_key_sort_input_kernel,
+                        d_keys + batch_start,
+                        n_batch_rows,
+                        keys_db.Current(),
+                        row_ids_db.Current());
+    RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
+      tmp.data(), tmp_bytes, keys_db, row_ids_db, static_cast<int>(n_batch_rows), 0, end_bit, st));
+    sum_rows_by_key_large_nkeys_rowmajor_per_warp(
+      d_A + batch_start * lda,
+      lda,
+      static_cast<const uint32_t*>(keys_db.Current()),
+      row_ids_db.Current(),
+      d_weights != nullptr ? d_weights + batch_start : nullptr,
+      n_batch_rows,
+      ncols,
+      d_sums,
+      st);
+  }
 }
 
 template <typename SumsT, typename IdxT>
 bool sum_rows_by_key_use_sorted(IdxT nrows, IdxT ncols, IdxT nkeys, int l2_bytes, int cc_major)
 {
-  // The sort indexes rows with int and stores keys and row ids as uint32_t.
-  if (static_cast<uint64_t>(nrows) > static_cast<uint64_t>(std::numeric_limits<int>::max()) ||
-      static_cast<uint64_t>(nkeys) > std::numeric_limits<uint32_t>::max()) {
-    return false;
-  }
+  if (static_cast<uint64_t>(nkeys) > std::numeric_limits<uint32_t>::max()) { return false; }
+
   const double row_bytes   = static_cast<double>(ncols) * sizeof(SumsT);
   const double input_bytes = row_bytes * nrows;
   const double sums_bytes  = row_bytes * nkeys;

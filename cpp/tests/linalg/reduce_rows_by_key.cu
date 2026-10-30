@@ -286,8 +286,8 @@ TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
   auto stream           = resource::get_cuda_stream(handle).get();
   constexpr int nrows   = 100000;
   constexpr int ncols   = 64;
-  constexpr int nkeys   = 256;
-  constexpr int end_bit = 8;  // should fit nkeys
+  constexpr int nkeys   = 1024;
+  constexpr int end_bit = 10;  // > 8 bits so that >1 radix passes
   rmm::device_uvector<float> in(nrows * ncols, stream);
   rmm::device_uvector<float> sums(nkeys * ncols, stream);
   rmm::device_uvector<uint32_t> keys(nrows, stream);
@@ -296,16 +296,9 @@ TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
   RAFT_CUDA_TRY(cudaMemsetAsync(in.data(), 0, in.size() * sizeof(float), stream));
 
   size_t sort_bytes = 0;
-  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs( static_cast<void*>(nullptr),
-                                                sort_bytes,
-                                                static_cast<const uint32_t*>(nullptr),
-                                                static_cast<uint32_t*>(nullptr),
-                                                static_cast<const uint32_t*>(nullptr),
-                                                static_cast<uint32_t*>(nullptr),
-                                                nrows,
-                                                0,
-                                                end_bit,
-                                                stream));
+  cub::DoubleBuffer<uint32_t> sort_keys, sort_values;
+  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
+    nullptr, sort_bytes, sort_keys, sort_values, nrows, 0, end_bit, stream));
   const size_t expected = 4 * nrows * sizeof(uint32_t) + sort_bytes;
 
   auto action = [&](raft::resources const& res) {
