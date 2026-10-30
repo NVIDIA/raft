@@ -262,5 +262,61 @@ INSTANTIATE_TEST_CASE_P(ReduceRowTests,
                         ReduceRowTestManyClusters,
                         ::testing::ValuesIn(inputsf_many_cluster));
 
+// ReduceRowTestVectorized
+// 100000 Obs, 16 cols, 2048 clusters: Should trigger the vectorized kernel on GPU newer than 9.0.
+const std::vector<ReduceRowsInputs<float>> inputsf_vectorized = {
+  {0.00001f, 100000, 16, 2048, 1234ULL, false},
+  {0.00001f, 100000, 16, 2048, 1234ULL, true, 32.0},
+  {0.00001f, 100000, 16, 2048, 1234ULL, true, 16.0}};
+typedef ReduceRowTest<float> ReduceRowTestVectorized;
+TEST_P(ReduceRowTestVectorized, Result)
+{
+  ASSERT_TRUE(raft::devArrMatch(out_ref.data(),
+                                out.data(),
+                                params.cols * params.nkeys,
+                                raft::CompareApprox<float>(params.tolerance)));
+}
+INSTANTIATE_TEST_CASE_P(ReduceRowTests,
+                        ReduceRowTestVectorized,
+                        ::testing::ValuesIn(inputsf_vectorized));
+
+TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
+{
+  raft::resources handle;
+  auto stream           = resource::get_cuda_stream(handle).get();
+  constexpr int nrows   = 100000;
+  constexpr int ncols   = 64;
+  constexpr int nkeys   = 1024;
+  constexpr int end_bit = 10;  // > 8 bits so that >1 radix passes
+  rmm::device_uvector<float> in(nrows * ncols, stream);
+  rmm::device_uvector<float> sums(nkeys * ncols, stream);
+  rmm::device_uvector<uint32_t> keys(nrows, stream);
+  raft::random::RngState r(1234ULL);
+  uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t{nkeys});
+  RAFT_CUDA_TRY(cudaMemsetAsync(in.data(), 0, in.size() * sizeof(float), stream));
+
+  size_t sort_bytes = 0;
+  cub::DoubleBuffer<uint32_t> sort_keys, sort_values;
+  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
+    nullptr, sort_bytes, sort_keys, sort_values, nrows, 0, end_bit, stream));
+  const size_t expected = 4 * nrows * sizeof(uint32_t) + sort_bytes;
+
+  auto action = [&](raft::resources const& res) {
+    detail::sum_rows_by_key_large_nkeys_rowmajor_sorted(in.data(),
+                                                        ncols,
+                                                        keys.data(),
+                                                        static_cast<const float*>(nullptr),
+                                                        nrows,
+                                                        ncols,
+                                                        nkeys,
+                                                        sums.data(),
+                                                        resource::get_cuda_stream(res).get(),
+                                                        resource::get_dry_run_flag(res));
+  };
+  const auto dry = raft::util::dry_run_execute(handle, action);
+  EXPECT_EQ(dry.device_global, expected);
+  execute_with_dry_run_check(handle, action, alloc_behavior::ARGUMENT_DRIVEN, expected);
+}
+
 }  // end namespace linalg
 }  // end namespace raft

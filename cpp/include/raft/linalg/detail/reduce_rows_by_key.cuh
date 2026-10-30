@@ -7,12 +7,21 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
+#include <raft/util/vectorized.cuh>
+
+#include <rmm/device_buffer.hpp>
+#include <rmm/device_uvector.hpp>
 
 #include <cub/block/block_reduce.cuh>
+#include <cub/device/device_radix_sort.cuh>
 #include <cub/util_ptx.cuh>
 
+#include <algorithm>
+#include <cstdint>
 #include <limits>
+#include <type_traits>
 
 #define MAX_BLOCKS 65535u
 namespace raft {
@@ -77,6 +86,11 @@ struct quadSum {
 // We need to sum each dimension by labels
 // The labels are not adjacent
 //
+
+/** Floating point including the extended types, which std::is_floating_point does not cover. */
+template <typename T>
+inline constexpr bool is_floating_point_v =
+  std::is_floating_point_v<T> || std::is_same_v<T, __half> || std::is_same_v<T, __nv_bfloat16>;
 
 //
 // Reduce by keys - for keys <= 4
@@ -276,18 +290,21 @@ void sum_rows_by_key_large_nkeys_colmajor(const DataIteratorT d_A,
                       d_sums);
 }
 
+/**
+ * One thread does one element, one key and one weight load. Then, one atomic write.
+ */
 template <typename DataIteratorT,
           typename KeysIteratorT,
           typename WeightT,
           typename SumsT,
           typename IdxT>
-RAFT_KERNEL sum_rows_by_key_large_nkeys_kernel_rowmajor(const DataIteratorT d_A,
-                                                        IdxT lda,
-                                                        const WeightT* d_weights,
-                                                        KeysIteratorT d_keys,
-                                                        IdxT nrows,
-                                                        IdxT ncols,
-                                                        SumsT* d_sums)
+RAFT_KERNEL sum_rows_by_key_large_nkeys_kernel_rowmajor_per_element(const DataIteratorT d_A,
+                                                                    IdxT lda,
+                                                                    const WeightT* d_weights,
+                                                                    KeysIteratorT d_keys,
+                                                                    IdxT nrows,
+                                                                    IdxT ncols,
+                                                                    SumsT* d_sums)
 {
   IdxT gid = threadIdx.x + (blockDim.x * static_cast<IdxT>(blockIdx.x));
   IdxT j   = gid % ncols;
@@ -297,6 +314,263 @@ RAFT_KERNEL sum_rows_by_key_large_nkeys_kernel_rowmajor(const DataIteratorT d_A,
   SumsT val = d_A[j + lda * i];
   if (d_weights != nullptr) val *= d_weights[i];
   raft::myAtomicAdd(&d_sums[j + ncols * l], val);
+}
+
+/**
+ * One thread does one vectorized float4 load, one key and weight load and one float4 atomic
+ * (sm_90+) write.
+ */
+template <typename KeysIteratorT, typename WeightT, typename IdxT>
+RAFT_KERNEL sum_rows_by_key_large_nkeys_kernel_rowmajor_per_float4(const float* d_A,
+                                                                   IdxT lda,
+                                                                   const WeightT* d_weights,
+                                                                   KeysIteratorT d_keys,
+                                                                   IdxT nvecs,
+                                                                   IdxT ncols,
+                                                                   float* d_sums)
+{
+  const IdxT q = threadIdx.x + blockDim.x * static_cast<IdxT>(blockIdx.x);
+  if (q >= nvecs) return;
+  const IdxT vecs_per_row = ncols / 4;
+  const IdxT i            = q / vecs_per_row;
+  const IdxT j            = (q - i * vecs_per_row) * 4;
+  TxN_t<float, 4> a;
+  a.load(d_A, lda * i + j);
+  const float w = d_weights != nullptr ? static_cast<float>(d_weights[i]) : 1.0f;
+#pragma unroll
+  for (int c = 0; c < a.Ratio; ++c) {
+    a.val.data[c] *= w;
+  }
+  float* dst = d_sums + ncols * static_cast<IdxT>(d_keys[i]) + j;
+  raft::myAtomicAdd(reinterpret_cast<float4*>(dst), *a.vectorized_data());
+}
+
+/**
+ * One warp processes one row. Key and weight are loaded once per row.
+ */
+template <typename DataIteratorT,
+          typename KeysIteratorT,
+          typename WeightT,
+          typename SumsT,
+          typename IdxT>
+RAFT_KERNEL sum_rows_by_key_large_nkeys_kernel_rowmajor_per_warp(const DataIteratorT d_A,
+                                                                 IdxT lda,
+                                                                 const WeightT* d_weights,
+                                                                 KeysIteratorT d_keys,
+                                                                 const uint32_t* d_row_ids,
+                                                                 IdxT nrows,
+                                                                 IdxT ncols,
+                                                                 SumsT* d_sums)
+{
+  // Plain pointers are read through the read-only cache; other iterators (e.g. a transform
+  // iterator converting the input type) are dereferenced as is.
+  constexpr bool kIsPlainPointer =
+    std::is_same_v<DataIteratorT, const SumsT*> || std::is_same_v<DataIteratorT, SumsT*>;
+  const int64_t warp_id = (static_cast<int64_t>(blockIdx.x) * blockDim.x + threadIdx.x) / WarpSize;
+  const int64_t n_warps = static_cast<int64_t>(gridDim.x) * blockDim.x / WarpSize;
+  for (int64_t r = warp_id; r < static_cast<int64_t>(nrows); r += n_warps) {
+    const auto i   = static_cast<IdxT>(r);
+    const IdxT row = d_row_ids != nullptr ? static_cast<IdxT>(d_row_ids[i]) : i;
+    const auto key = static_cast<IdxT>(d_keys[i]);
+    const SumsT w  = d_weights != nullptr ? static_cast<SumsT>(d_weights[row]) : SumsT(1);
+    for (IdxT j = laneId(); j < ncols; j += WarpSize) {
+      SumsT a;
+      if constexpr (kIsPlainPointer) {
+        a = __ldg(d_A + lda * row + j);
+      } else {
+        a = static_cast<SumsT>(d_A[lda * row + j]);
+      }
+      raft::myAtomicAdd(d_sums + ncols * key + j, a * w);
+    }
+  }
+}
+
+template <typename DataIteratorT,
+          typename KeysIteratorT,
+          typename WeightT,
+          typename SumsT,
+          typename IdxT>
+void sum_rows_by_key_large_nkeys_rowmajor_per_warp(const DataIteratorT d_A,
+                                                   IdxT lda,
+                                                   const KeysIteratorT d_keys,
+                                                   const uint32_t* d_row_ids,
+                                                   const WeightT* d_weights,
+                                                   IdxT nrows,
+                                                   IdxT ncols,
+                                                   SumsT* d_sums,
+                                                   cudaStream_t st)
+{
+  constexpr uint32_t block_dim       = 128;
+  constexpr uint32_t warps_per_block = block_dim / WarpSize;
+  const auto grid_dim =
+    static_cast<uint32_t>(std::min<IdxT>(ceildiv<IdxT>(nrows, warps_per_block), IdxT{1} << 30));
+  raft::launch_kernel(st,
+                      grid_dim,
+                      block_dim,
+                      sum_rows_by_key_large_nkeys_kernel_rowmajor_per_warp,
+                      d_A,
+                      lda,
+                      d_weights,
+                      d_keys,
+                      d_row_ids,
+                      nrows,
+                      ncols,
+                      d_sums);
+}
+
+/**
+ * Prepare inputs for radix-sort
+ */
+template <typename KeysIteratorT, typename IdxT>
+RAFT_KERNEL sum_rows_by_key_sort_input_kernel(KeysIteratorT d_keys,
+                                              IdxT nrows,
+                                              uint32_t* keys,
+                                              uint32_t* row_ids)
+{
+  const IdxT i = static_cast<IdxT>(blockIdx.x) * blockDim.x + threadIdx.x;
+  if (i < nrows) {
+    keys[i]    = static_cast<uint32_t>(d_keys[i]);
+    row_ids[i] = static_cast<uint32_t>(i);
+  }
+}
+
+/**
+ * Radix-sort the row ids by key and then call per-warp kernel.
+ * Batching defines upper limit for peak memory allocation.
+ */
+template <typename DataIteratorT,
+          typename KeysIteratorT,
+          typename WeightT,
+          typename SumsT,
+          typename IdxT>
+void sum_rows_by_key_large_nkeys_rowmajor_sorted(const DataIteratorT d_A,
+                                                 IdxT lda,
+                                                 const KeysIteratorT d_keys,
+                                                 const WeightT* d_weights,
+                                                 IdxT nrows,
+                                                 IdxT ncols,
+                                                 IdxT nkeys,
+                                                 SumsT* d_sums,
+                                                 cudaStream_t st,
+                                                 bool dry_run)
+{
+  // Limit batch size to 4M rows
+  const IdxT batch_rows = std::min<IdxT>(nrows, 4000000);
+  rmm::device_uvector<uint32_t> keys(batch_rows, st), keys_alt(batch_rows, st);
+  rmm::device_uvector<uint32_t> row_ids(batch_rows, st), row_ids_alt(batch_rows, st);
+  // Double buffering avoids additional scratch space when radix sorts undergoes > 1 pass.
+  // 1 pass corresponds to 8-bit (selected by the CUB library)
+  cub::DoubleBuffer<uint32_t> keys_db(keys.data(), keys_alt.data());
+  cub::DoubleBuffer<uint32_t> row_ids_db(row_ids.data(), row_ids_alt.data());
+  // Only the bits that can be set in a key in [0, nkeys) take part in the sort.
+  int end_bit = 1;
+  while (end_bit < 32 && (IdxT{1} << end_bit) < nkeys) {
+    ++end_bit;
+  }
+  size_t tmp_bytes = 0;
+  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
+    nullptr, tmp_bytes, keys_db, row_ids_db, static_cast<int>(batch_rows), 0, end_bit, st));
+  rmm::device_buffer tmp(tmp_bytes, st);
+  if (dry_run) { return; }
+
+  for (IdxT batch_start = 0; batch_start < nrows; batch_start += batch_rows) {
+    // Rows [batch_start, batch_start + n_batch_rows); row ids are local to the batch.
+    const IdxT n_batch_rows      = std::min<IdxT>(batch_rows, nrows - batch_start);
+    keys_db                      = cub::DoubleBuffer<uint32_t>(keys.data(), keys_alt.data());
+    row_ids_db                   = cub::DoubleBuffer<uint32_t>(row_ids.data(), row_ids_alt.data());
+    constexpr uint32_t block_dim = 256;
+    const auto grid_dim = static_cast<uint32_t>(ceildiv<IdxT>(n_batch_rows, IdxT{block_dim}));
+    raft::launch_kernel(st,
+                        grid_dim,
+                        block_dim,
+                        sum_rows_by_key_sort_input_kernel,
+                        d_keys + batch_start,
+                        n_batch_rows,
+                        keys_db.Current(),
+                        row_ids_db.Current());
+    RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
+      tmp.data(), tmp_bytes, keys_db, row_ids_db, static_cast<int>(n_batch_rows), 0, end_bit, st));
+    sum_rows_by_key_large_nkeys_rowmajor_per_warp(
+      d_A + batch_start * lda,
+      lda,
+      static_cast<const uint32_t*>(keys_db.Current()),
+      row_ids_db.Current(),
+      d_weights != nullptr ? d_weights + batch_start : nullptr,
+      n_batch_rows,
+      ncols,
+      d_sums,
+      st);
+  }
+}
+
+template <typename SumsT, typename IdxT>
+bool sum_rows_by_key_use_sorted(IdxT nrows, IdxT ncols, IdxT nkeys, int l2_bytes, int cc_major)
+{
+  if (static_cast<uint64_t>(nkeys) > std::numeric_limits<uint32_t>::max()) { return false; }
+
+  const double row_bytes   = static_cast<double>(ncols) * sizeof(SumsT);
+  const double input_bytes = row_bytes * nrows;
+  const double sums_bytes  = row_bytes * nkeys;
+  // On Ampere, unsorted atomics still mostly hit L2 until the sums exceed the whole L2. On RTX
+  // Blackwell (cc 12, GDDR7) sorting already wins for small inputs and sums of a quarter of L2.
+  const double sums_limit  = cc_major == 12  ? 0.25 * l2_bytes
+                             : cc_major >= 9 ? 0.5 * l2_bytes
+                                             : 1.0 * l2_bytes;
+  const double input_limit = cc_major == 12 ? 6.0 * l2_bytes : 40.0 * l2_bytes;
+  return row_bytes >= 2048 && input_bytes >= input_limit && sums_bytes > sums_limit;
+}
+
+enum class sum_rows_by_key_kernel { per_element, per_float4, per_warp, sorted };
+
+struct sum_rows_by_key_plan {
+  sum_rows_by_key_kernel kernel;
+  uint32_t block_dim;
+};
+
+/**
+ * Kernel selection decision point: (Heuristically tuned on A100, H100, B100 and RTX PRO 6000)
+ *  - per_float4: float rows of whole 16-byte vectors narrower than max_cols_float4 and 16-byte
+ * alignment holds;
+ *  - per_element: other narrow rows (ncols < min_cols_per_warp), where a warp per row idles lanes
+ * or 16-byte alignment doesn't hold.
+ *  - sorted: long rows whose sums do not fit in L2 (sum_rows_by_key_use_sorted);
+ *  - per_warp: everything else.
+ */
+template <typename DataIteratorT, typename SumsT, typename IdxT>
+sum_rows_by_key_plan sum_rows_by_key_select_kernel(
+  const DataIteratorT d_A, IdxT lda, IdxT nrows, IdxT ncols, IdxT nkeys, const SumsT* d_sums)
+{
+  int dev_id, cc_major, l2_bytes;
+  RAFT_CUDA_TRY(cudaGetDevice(&dev_id));
+  RAFT_CUDA_TRY(cudaDeviceGetAttribute(&cc_major, cudaDevAttrComputeCapabilityMajor, dev_id));
+  RAFT_CUDA_TRY(cudaDeviceGetAttribute(&l2_bytes, cudaDevAttrL2CacheSize, dev_id));
+
+  // Fewest columns for which the per-warp kernel beats the per-element one
+  const IdxT min_cols_per_warp = sizeof(SumsT) > 4                   ? 64
+                                 : cc_major == 10                    ? 42
+                                 : (cc_major >= 9 && cc_major != 12) ? 32
+                                                                     : 48;
+
+  const IdxT max_cols_float4 = cc_major == 10   ? 256
+                               : cc_major == 12 ? 64
+                               : cc_major >= 9  ? min_cols_per_warp
+                                                : 0;
+
+  if constexpr (std::is_same_v<SumsT, float> && (std::is_same_v<DataIteratorT, const float*> ||
+                                                 std::is_same_v<DataIteratorT, float*>)) {
+    if (ncols < max_cols_float4 && ncols % 4 == 0 && lda % 4 == 0 && raft::is_aligned(d_A, 16) &&
+        raft::is_aligned(d_sums, 16)) {
+      return {sum_rows_by_key_kernel::per_float4, 128};
+    }
+  }
+  if (ncols < min_cols_per_warp) {
+    // Larger blocks help on cc 10 and 12, where short-lived 128-thread blocks are launch-bound.
+    return {sum_rows_by_key_kernel::per_element, (cc_major == 10 || cc_major == 12) ? 256u : 128u};
+  }
+  if (sum_rows_by_key_use_sorted<SumsT>(nrows, ncols, nkeys, l2_bytes, cc_major)) {
+    return {sum_rows_by_key_kernel::sorted, 0};
+  }
+  return {sum_rows_by_key_kernel::per_warp, 0};
 }
 
 template <typename DataIteratorT,
@@ -310,22 +584,62 @@ void sum_rows_by_key_large_nkeys_rowmajor(const DataIteratorT d_A,
                                           const WeightT* d_weights,
                                           IdxT nrows,
                                           IdxT ncols,
+                                          IdxT nkeys,
                                           SumsT* d_sums,
-                                          cudaStream_t st)
+                                          cudaStream_t st,
+                                          bool dry_run)
 {
-  uint32_t block_dim = 128;
-  auto grid_dim      = static_cast<uint32_t>(ceildiv<IdxT>(nrows * ncols, (IdxT)block_dim));
-  raft::launch_kernel(st,
-                      grid_dim,
-                      block_dim,
-                      sum_rows_by_key_large_nkeys_kernel_rowmajor,
-                      d_A,
-                      lda,
-                      d_weights,
-                      d_keys,
-                      nrows,
-                      ncols,
-                      d_sums);
+  const auto plan = sum_rows_by_key_select_kernel(d_A, lda, nrows, ncols, nkeys, d_sums);
+  if (dry_run && plan.kernel != sum_rows_by_key_kernel::sorted) { return; }
+  switch (plan.kernel) {
+    case sum_rows_by_key_kernel::per_float4:
+      if constexpr (std::is_same_v<SumsT, float> && (std::is_same_v<DataIteratorT, const float*> ||
+                                                     std::is_same_v<DataIteratorT, float*>)) {
+        const IdxT nvecs = nrows * ncols / 4;
+        raft::launch_kernel(
+          st,
+          static_cast<uint32_t>(ceildiv<IdxT>(nvecs, static_cast<IdxT>(plan.block_dim))),
+          plan.block_dim,
+          sum_rows_by_key_large_nkeys_kernel_rowmajor_per_float4,
+          static_cast<const float*>(d_A),
+          lda,
+          d_weights,
+          d_keys,
+          nvecs,
+          ncols,
+          d_sums);
+      }
+      break;
+    case sum_rows_by_key_kernel::per_element:
+      raft::launch_kernel(
+        st,
+        static_cast<uint32_t>(ceildiv<IdxT>(nrows * ncols, static_cast<IdxT>(plan.block_dim))),
+        plan.block_dim,
+        sum_rows_by_key_large_nkeys_kernel_rowmajor_per_element,
+        d_A,
+        lda,
+        d_weights,
+        d_keys,
+        nrows,
+        ncols,
+        d_sums);
+      break;
+    case sum_rows_by_key_kernel::sorted:
+      sum_rows_by_key_large_nkeys_rowmajor_sorted(
+        d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st, dry_run);
+      break;
+    case sum_rows_by_key_kernel::per_warp:
+      sum_rows_by_key_large_nkeys_rowmajor_per_warp(d_A,
+                                                    lda,
+                                                    d_keys,
+                                                    static_cast<const uint32_t*>(nullptr),
+                                                    d_weights,
+                                                    nrows,
+                                                    ncols,
+                                                    d_sums,
+                                                    st);
+      break;
+  }
 }
 
 /**
@@ -365,14 +679,21 @@ void reduce_rows_by_key(const DataIteratorT d_A,
                         IdxT nkeys,
                         SumsT* d_sums,
                         cudaStream_t stream,
-                        bool reset_sums)
+                        bool reset_sums,
+                        bool dry_run = false)
 {
   typedef typename std::iterator_traits<KeysIteratorT>::value_type KeyType;
+  static_assert(
+    !is_floating_point_v<WeightT> ||
+      (is_floating_point_v<SumsT> && sizeof(WeightT) <= sizeof(SumsT)),
+    "Floating weight type is broader than the sum type. Instead of silently casting down the "
+    "weight precision, we throw an error here.");
 
   // Following kernel needs memset
-  if (reset_sums) { cudaMemsetAsync(d_sums, 0, ncols * nkeys * sizeof(SumsT), stream); }
+  if (reset_sums && !dry_run) { cudaMemsetAsync(d_sums, 0, ncols * nkeys * sizeof(SumsT), stream); }
 
   if (d_keys_char != nullptr && nkeys <= SUM_ROWS_BY_KEY_SMALL_K_MAX_K) {
+    if (dry_run) { return; }
     // sum_rows_by_key_small_k is BW bounded. d_keys is loaded ncols time - avoiding wasting BW
     // with doubles we have ~20% speed up - with floats we can hope something around 2x
     // Converting d_keys to char
@@ -380,7 +701,8 @@ void reduce_rows_by_key(const DataIteratorT d_A,
     sum_rows_by_key_small_nkeys(
       d_A, lda, d_keys_char, d_weights, nrows, ncols, nkeys, d_sums, stream);
   } else {
-    sum_rows_by_key_large_nkeys_rowmajor(d_A, lda, d_keys, d_weights, nrows, ncols, d_sums, stream);
+    sum_rows_by_key_large_nkeys_rowmajor(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, stream, dry_run);
   }
 }
 
@@ -401,6 +723,7 @@ void reduce_rows_by_key(const DataIteratorT d_A,
  * @param[in]  nkeys       Number of unique keys in d_keys
  * @param[out] d_sums      Row sums by key (ncols x d_keys)
  * @param[in]  stream      CUDA stream
+ * @param[in]  reset_sums  Whether to reset the output sums to zero before reducing
  */
 template <typename DataIteratorT, typename KeysIteratorT, typename SumsT, typename IdxT>
 void reduce_rows_by_key(const DataIteratorT d_A,
@@ -412,7 +735,8 @@ void reduce_rows_by_key(const DataIteratorT d_A,
                         IdxT nkeys,
                         SumsT* d_sums,
                         cudaStream_t stream,
-                        bool reset_sums)
+                        bool reset_sums,
+                        bool dry_run = false)
 {
   typedef typename std::iterator_traits<DataIteratorT>::value_type DataType;
   reduce_rows_by_key(d_A,
@@ -425,7 +749,8 @@ void reduce_rows_by_key(const DataIteratorT d_A,
                      nkeys,
                      d_sums,
                      stream,
-                     reset_sums);
+                     reset_sums,
+                     dry_run);
 }
 
 };  // end namespace detail
