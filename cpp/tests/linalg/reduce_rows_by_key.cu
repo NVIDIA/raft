@@ -191,11 +191,16 @@ TEST_P(ReduceRowTestD, Result)
 INSTANTIATE_TEST_CASE_P(ReduceRowTests, ReduceRowTestD, ::testing::ValuesIn(inputsd2));
 
 // ReduceRowTestSmallnKey
-// 128 Obs, 32 cols, 3 clusters
+// 1 to 4 clusters, 1 to 1000 cols (all the column tile widths of the small nkeys kernel)
 const std::vector<ReduceRowsInputs<float>> inputsf_small_nkey = {
   {0.000001f, 128, 32, 3, 1234ULL, false},
   {0.000001f, 128, 32, 3, 1234ULL, true, 5.0},
-  {0.000001f, 128, 32, 3, 1234ULL, true, 8.0}};
+  {0.000001f, 128, 32, 3, 1234ULL, true, 8.0},
+  {0.00001f, 10000, 1, 2, 1234ULL, false},
+  {0.00001f, 10000, 3, 4, 1234ULL, true, 4.0},
+  {0.00001f, 10000, 37, 1, 1234ULL, false},
+  {0.00001f, 10000, 100, 3, 1234ULL, true, 4.0},
+  {0.00001f, 10000, 1000, 4, 1234ULL, false}};
 typedef ReduceRowTest<float> ReduceRowTestSmallnKey;
 TEST_P(ReduceRowTestSmallnKey, Result)
 {
@@ -207,6 +212,22 @@ TEST_P(ReduceRowTestSmallnKey, Result)
 INSTANTIATE_TEST_CASE_P(ReduceRowTests,
                         ReduceRowTestSmallnKey,
                         ::testing::ValuesIn(inputsf_small_nkey));
+
+// ReduceRowTestSmallnKeyD
+// 10000 Obs, 5 or 300 cols, 3 or 4 clusters, double precision
+const std::vector<ReduceRowsInputs<double>> inputsd_small_nkey = {
+  {0.00000001, 10000, 5, 3, 1234ULL, false}, {0.00000001, 10000, 300, 4, 1234ULL, true, 8.0}};
+typedef ReduceRowTest<double> ReduceRowTestSmallnKeyD;
+TEST_P(ReduceRowTestSmallnKeyD, Result)
+{
+  ASSERT_TRUE(raft::devArrMatch(out_ref.data(),
+                                out.data(),
+                                params.cols * params.nkeys,
+                                raft::CompareApprox<double>(params.tolerance)));
+}
+INSTANTIATE_TEST_CASE_P(ReduceRowTests,
+                        ReduceRowTestSmallnKeyD,
+                        ::testing::ValuesIn(inputsd_small_nkey));
 
 // ReduceRowTestBigSpace
 // 512 Obs, 1024 cols, 32 clusters, double precision

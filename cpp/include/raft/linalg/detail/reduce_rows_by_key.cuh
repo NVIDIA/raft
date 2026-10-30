@@ -7,11 +7,13 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/util/cuda_utils.cuh>
+#include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
 
 #include <cub/block/block_reduce.cuh>
 #include <cub/util_ptx.cuh>
 
+#include <algorithm>
 #include <limits>
 
 #define MAX_BLOCKS 65535u
@@ -49,29 +51,6 @@ void convert_array(IteratorT1 dst, IteratorT2 src, int n, cudaStream_t st)
   raft::launch_kernel(st, grid, block, convert_array_kernel, dst, src, n);
 }
 
-template <typename T>
-struct quad {
-  T x, y, z, w;
-};
-
-//
-// Functor for reduce by key, small k
-//
-template <typename T>
-struct quadSum {
-  __host__ __device__ __forceinline__ quad<T> operator()(const quad<T>& a, const quad<T>& b) const
-  {
-    // wasting a double4..
-    quad<T> c;
-    c.x = a.x + b.x;
-    c.y = a.y + b.y;
-    c.z = a.z + b.z;
-    c.w = a.w + b.w;
-
-    return c;
-  }
-};
-
 //
 // Reduce by keys
 // We need to sum each dimension by labels
@@ -81,97 +60,117 @@ struct quadSum {
 //
 // Reduce by keys - for keys <= 4
 //
+// Each block sums a tile of TileCols columns over a chunk of rows. Thread t reads column
+// t % TileCols of rows t / TileCols, t / TileCols + RowLanes, ..., so the loads of a warp are
+// coalesced on row-major data, and keeps one running sum per key in registers. The block then
+// reduces them over its RowLanes row lanes in shared memory, which leaves one global atomic per
+// key and column for each block.
+//
 
 #define SUM_ROWS_SMALL_K_DIMX         256
 #define SUM_ROWS_BY_KEY_SMALL_K_MAX_K 4
-template <typename DataIteratorT, typename WeightT, typename SumsT, typename IdxT>
-__launch_bounds__(SUM_ROWS_SMALL_K_DIMX, 4)
+template <int TileCols,
+          typename DataIteratorT,
+          typename KeysIteratorT,
+          typename WeightT,
+          typename SumsT,
+          typename IdxT>
+__launch_bounds__(SUM_ROWS_SMALL_K_DIMX)
 
   RAFT_KERNEL sum_rows_by_key_small_nkeys_kernel(const DataIteratorT d_A,
                                                  IdxT lda,
-                                                 const char* d_keys,
+                                                 KeysIteratorT d_keys,
                                                  const WeightT* d_weights,
                                                  IdxT nrows,
                                                  IdxT ncols,
                                                  IdxT nkeys,
+                                                 IdxT rows_per_block,
                                                  SumsT* d_sums)
 {
-  typedef typename std::iterator_traits<DataIteratorT>::value_type DataType;
-  typedef cub::BlockReduce<quad<SumsT>, SUM_ROWS_SMALL_K_DIMX> BlockReduce;
-  __shared__ typename BlockReduce::TempStorage temp_storage;
+  constexpr int RowLanes = SUM_ROWS_SMALL_K_DIMX / TileCols;
+  const int tile_col     = threadIdx.x % TileCols;
+  const int row_lane     = threadIdx.x / TileCols;
+  const IdxT col         = static_cast<IdxT>(blockIdx.x) * TileCols + tile_col;
+  const IdxT row_start   = static_cast<IdxT>(blockIdx.y) * rows_per_block;
+  const IdxT row_end     = raft::min(nrows, row_start + rows_per_block);
 
-  for (IdxT idim = static_cast<IdxT>(blockIdx.y); idim < ncols; idim += gridDim.y) {
-    if (idim != static_cast<IdxT>(blockIdx.y)) __syncthreads();  // we're reusing temp_storage
-
-    // threadIdx.x stores partial sum for current dim and key=threadIdx.x in this reg
-    quad<SumsT> thread_sums;
-    thread_sums.x = 0.0;
-    thread_sums.y = 0.0;
-    thread_sums.z = 0.0;
-    thread_sums.w = 0.0;
-
-    // May use vectorized load - not necessary for doubles
-    for (IdxT block_offset_irow = blockIdx.x * blockDim.x;
-         block_offset_irow < nrows;  // we will syncthreads() inside the loop, no CTA divergence
-         block_offset_irow += blockDim.x * gridDim.x) {
-      IdxT irow    = block_offset_irow + threadIdx.x;
-      DataType val = (irow < nrows) ? d_A[irow * lda + idim] : DataType(0);
-      if (d_weights && irow < nrows) { val = val * d_weights[irow]; }
-      // we are not reusing the keys - after profiling
-      // d_keys is mainly loaded from L2, and this kernel is DRAM BW bounded
-      // (experimentation gave a 10% speed up - not worth the many code lines added)
-      IdxT row_key = (irow < nrows) ? d_keys[irow] : std::numeric_limits<IdxT>::max();
-
-      thread_sums.x += (row_key == 0) ? static_cast<SumsT>(val) : SumsT(0);
-      thread_sums.y += (row_key == 1) ? static_cast<SumsT>(val) : SumsT(0);
-      thread_sums.z += (row_key == 2) ? static_cast<SumsT>(val) : SumsT(0);
-      thread_sums.w += (row_key == 3) ? static_cast<SumsT>(val) : SumsT(0);
-    }
-
-    // End of column
-    // Saving local sums back to global mem
-
-    // Strided access
-
-    // Reducing by key
-    thread_sums = BlockReduce(temp_storage).Reduce(thread_sums, quadSum<SumsT>());
-
-    if (threadIdx.x < 32) {
-      // We only need 4
-      thread_sums = cub::ShuffleIndex<32>(thread_sums, 0, 0xffffffff);
-      if (static_cast<IdxT>(threadIdx.x) < nkeys) {
-        if (threadIdx.x == 0) raft::myAtomicAdd(&d_sums[threadIdx.x * ncols + idim], thread_sums.x);
-        if (threadIdx.x == 1) raft::myAtomicAdd(&d_sums[threadIdx.x * ncols + idim], thread_sums.y);
-        if (threadIdx.x == 2) raft::myAtomicAdd(&d_sums[threadIdx.x * ncols + idim], thread_sums.z);
-        if (threadIdx.x == 3) raft::myAtomicAdd(&d_sums[threadIdx.x * ncols + idim], thread_sums.w);
+  SumsT sums[SUM_ROWS_BY_KEY_SMALL_K_MAX_K] = {};
+  if (col < ncols) {
+#pragma unroll 4
+    for (IdxT irow = row_start + row_lane; irow < row_end; irow += RowLanes) {
+      const IdxT key = static_cast<IdxT>(d_keys[irow]);
+      SumsT val      = d_A[irow * lda + col];
+      if (d_weights != nullptr) val *= d_weights[irow];
+#pragma unroll
+      for (int k = 0; k < SUM_ROWS_BY_KEY_SMALL_K_MAX_K; k++) {
+        sums[k] += (key == static_cast<IdxT>(k)) ? val : SumsT(0);
       }
+    }
+  }
+
+  __shared__ SumsT block_sums[SUM_ROWS_BY_KEY_SMALL_K_MAX_K][RowLanes][TileCols];
+#pragma unroll
+  for (int k = 0; k < SUM_ROWS_BY_KEY_SMALL_K_MAX_K; k++) {
+    block_sums[k][row_lane][tile_col] = sums[k];
+  }
+  __syncthreads();
+  for (int stride = RowLanes / 2; stride > 0; stride /= 2) {
+    if (row_lane < stride) {
+#pragma unroll
+      for (int k = 0; k < SUM_ROWS_BY_KEY_SMALL_K_MAX_K; k++) {
+        block_sums[k][row_lane][tile_col] += block_sums[k][row_lane + stride][tile_col];
+      }
+    }
+    __syncthreads();
+  }
+
+  if (row_lane == 0 && col < ncols) {
+    for (IdxT k = 0; k < nkeys; k++) {
+      raft::myAtomicAdd(&d_sums[k * ncols + col], block_sums[k][0][tile_col]);
     }
   }
 }
 
-template <typename DataIteratorT, typename WeightT, typename SumsT, typename IdxT>
-void sum_rows_by_key_small_nkeys(const DataIteratorT d_A,
-                                 IdxT lda,
-                                 const char* d_keys,
-                                 const WeightT* d_weights,
-                                 IdxT nrows,
-                                 IdxT ncols,
-                                 IdxT nkeys,
-                                 SumsT* d_sums,
-                                 cudaStream_t st)
+template <int TileCols,
+          typename DataIteratorT,
+          typename KeysIteratorT,
+          typename WeightT,
+          typename SumsT,
+          typename IdxT>
+void sum_rows_by_key_small_nkeys_tiled(const DataIteratorT d_A,
+                                       IdxT lda,
+                                       KeysIteratorT d_keys,
+                                       const WeightT* d_weights,
+                                       IdxT nrows,
+                                       IdxT ncols,
+                                       IdxT nkeys,
+                                       SumsT* d_sums,
+                                       cudaStream_t st)
 {
-  dim3 grid, block;
-  block.x = SUM_ROWS_SMALL_K_DIMX;
-  block.y = 1;  // Necessary
+  constexpr IdxT RowLanes = SUM_ROWS_SMALL_K_DIMX / TileCols;
+  auto kernel             = sum_rows_by_key_small_nkeys_kernel<TileCols,
+                                                               DataIteratorT,
+                                                               KeysIteratorT,
+                                                               WeightT,
+                                                               SumsT,
+                                                               IdxT>;
+  int blocks_per_sm       = 0;
+  RAFT_CUDA_TRY(cudaOccupancyMaxActiveBlocksPerMultiprocessor(
+    &blocks_per_sm, kernel, SUM_ROWS_SMALL_K_DIMX, 0));
 
-  grid.x = raft::ceildiv(nrows, (IdxT)block.x);
-  grid.x = std::min(grid.x, 32u);
-  grid.y = ncols;
-  grid.y = std::min(grid.y, MAX_BLOCKS);
+  // Two waves of blocks: the column tiles first, then enough row chunks to fill the GPU.
+  const IdxT n_tiles  = raft::ceildiv(ncols, static_cast<IdxT>(TileCols));
+  const IdxT n_blocks = 2 * static_cast<IdxT>(blocks_per_sm) * raft::getMultiProcessorCount();
+  IdxT n_chunks       = std::min(raft::ceildiv(n_blocks, n_tiles), raft::ceildiv(nrows, RowLanes));
+  n_chunks            = std::clamp(n_chunks, IdxT(1), static_cast<IdxT>(MAX_BLOCKS));
+  const IdxT rows_per_block = raft::ceildiv(raft::ceildiv(nrows, n_chunks), RowLanes) * RowLanes;
+  n_chunks                  = raft::ceildiv(nrows, rows_per_block);
+
+  dim3 grid(n_tiles, n_chunks);
   raft::launch_kernel(st,
                       grid,
-                      block,
-                      sum_rows_by_key_small_nkeys_kernel,
+                      SUM_ROWS_SMALL_K_DIMX,
+                      kernel,
                       d_A,
                       lda,
                       d_keys,
@@ -179,7 +178,55 @@ void sum_rows_by_key_small_nkeys(const DataIteratorT d_A,
                       nrows,
                       ncols,
                       nkeys,
+                      rows_per_block,
                       d_sums);
+}
+
+template <typename DataIteratorT,
+          typename KeysIteratorT,
+          typename WeightT,
+          typename SumsT,
+          typename IdxT>
+void sum_rows_by_key_small_nkeys(const DataIteratorT d_A,
+                                 IdxT lda,
+                                 KeysIteratorT d_keys,
+                                 const WeightT* d_weights,
+                                 IdxT nrows,
+                                 IdxT ncols,
+                                 IdxT nkeys,
+                                 SumsT* d_sums,
+                                 cudaStream_t st)
+{
+  if (nrows == 0 || ncols == 0) return;
+  // Narrow tiles for narrow rows, so that the lanes of a warp still read contiguous memory.
+  if (ncols <= 1) {
+    sum_rows_by_key_small_nkeys_tiled<1>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  } else if (ncols <= 2) {
+    sum_rows_by_key_small_nkeys_tiled<2>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  } else if (ncols <= 4) {
+    sum_rows_by_key_small_nkeys_tiled<4>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  } else if (ncols <= 8) {
+    sum_rows_by_key_small_nkeys_tiled<8>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  } else if (ncols <= 16) {
+    sum_rows_by_key_small_nkeys_tiled<16>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  } else if (ncols <= 32) {
+    sum_rows_by_key_small_nkeys_tiled<32>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  } else if (ncols <= 64) {
+    sum_rows_by_key_small_nkeys_tiled<64>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  } else if (ncols <= 128) {
+    sum_rows_by_key_small_nkeys_tiled<128>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  } else {
+    sum_rows_by_key_small_nkeys_tiled<256>(
+      d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+  }
 }
 
 //
@@ -342,7 +389,7 @@ void sum_rows_by_key_large_nkeys_rowmajor(const DataIteratorT d_A,
  * @param[in]  lda         Real row size for input data, d_A
  * @param[in]  d_keys      Keys for each row (1 x nrows)
  * @param[in]  d_weights   Weights for each observation in d_A (1 x nrows)
- * @param[out] d_keys_char Scratch memory for conversion of keys to char
+ * @param[out] d_keys_char Unused, kept for API compatibility
  * @param[in]  nrows       Number of rows in d_A and d_keys
  * @param[in]  ncols       Number of data columns in d_A
  * @param[in]  nkeys       Number of unique keys in d_keys
@@ -359,7 +406,7 @@ void reduce_rows_by_key(const DataIteratorT d_A,
                         IdxT lda,
                         KeysIteratorT d_keys,
                         const WeightT* d_weights,
-                        char* d_keys_char,
+                        [[maybe_unused]] char* d_keys_char,
                         IdxT nrows,
                         IdxT ncols,
                         IdxT nkeys,
@@ -372,13 +419,8 @@ void reduce_rows_by_key(const DataIteratorT d_A,
   // Following kernel needs memset
   if (reset_sums) { cudaMemsetAsync(d_sums, 0, ncols * nkeys * sizeof(SumsT), stream); }
 
-  if (d_keys_char != nullptr && nkeys <= SUM_ROWS_BY_KEY_SMALL_K_MAX_K) {
-    // sum_rows_by_key_small_k is BW bounded. d_keys is loaded ncols time - avoiding wasting BW
-    // with doubles we have ~20% speed up - with floats we can hope something around 2x
-    // Converting d_keys to char
-    convert_array(d_keys_char, d_keys, nrows, stream);
-    sum_rows_by_key_small_nkeys(
-      d_A, lda, d_keys_char, d_weights, nrows, ncols, nkeys, d_sums, stream);
+  if (nkeys <= SUM_ROWS_BY_KEY_SMALL_K_MAX_K) {
+    sum_rows_by_key_small_nkeys(d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, stream);
   } else {
     sum_rows_by_key_large_nkeys_rowmajor(d_A, lda, d_keys, d_weights, nrows, ncols, d_sums, stream);
   }
@@ -395,7 +437,7 @@ void reduce_rows_by_key(const DataIteratorT d_A,
  * @param[in]  d_A         Input data array (lda x nrows)
  * @param[in]  lda         Real row size for input data, d_A
  * @param[in]  d_keys      Keys for each row (1 x nrows)
- * @param      d_keys_char Scratch memory for conversion of keys to char
+ * @param      d_keys_char Unused, kept for API compatibility
  * @param[in]  nrows       Number of rows in d_A and d_keys
  * @param[in]  ncols       Number of data columns in d_A
  * @param[in]  nkeys       Number of unique keys in d_keys
