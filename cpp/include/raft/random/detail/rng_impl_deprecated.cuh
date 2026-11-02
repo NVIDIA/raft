@@ -23,8 +23,6 @@
 
 #include <cub/device/device_radix_sort.cuh>
 
-#include <curand_kernel.h>
-
 #include <random>
 
 namespace raft {

@@ -238,6 +238,7 @@ if(BUILD_TESTS)
     random/rng_pcg_host_api.cu
     random/permute.cu
     random/rng.cu
+    random/rng_philox.cu
     random/rng_discrete.cu
     random/rng_int.cu
     random/rmat_rectangular_generator.cu
