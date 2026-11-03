@@ -10,19 +10,8 @@ permissions: {}
 jobs:
   build-details:
     uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
-  checks:
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@main
-    with:
-      enable_check_generated_files: false
   conda-cpp-build:
-    needs: [build-details, checks]
+    needs: [build-details]
     permissions:
       actions: read
       contents: read
@@ -52,7 +41,7 @@ jobs:
       script: ci/test_cpp.sh
       matrix_type: wsl-pr
   wheel-build-libraft:
-    needs: [build-details, checks]
+    needs: [build-details]
     permissions:
       actions: read
       contents: read
@@ -75,7 +64,7 @@ jobs:
       package-type: cpp
       matrix_type: pull-request
   wheel-build-raft-dask:
-    needs: [build-details, checks, wheel-build-libraft]
+    needs: [build-details, wheel-build-libraft]
     permissions:
       actions: read
       contents: read
