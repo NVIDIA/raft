@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2025-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -81,7 +81,7 @@ constexpr int kMmapFileBacked = 0x2;
 /**
  * @brief A cuda::mr::synchronous_resource backed by mmap.
  *
- * Host-only; binds to raft::mr::host_resource_ref.
+ * Host-only; binds to raft::mr::synchronous_host_resource_ref.
  */
 class mmap_memory_resource {
  public:
