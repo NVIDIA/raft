@@ -52,7 +52,9 @@ MEMMON_PID=$!
 kill "${MEMMON_PID}" || true
 dmesg 2>&1 | tail -20 || true
 popd
-exit 1
+if [[ "${RAFT_WSL_DIAG_ONLY:-1}" == "1" ]]; then
+    exit 1
+fi
 
 export GTEST_OUTPUT=xml:${RAPIDS_TESTS_DIR}/
 # Run libraft gtests from libraft-tests package
