@@ -229,7 +229,7 @@ jobs:
       build-datetime: ${{ needs.build-details.outputs.build-datetime }}
       script: ci/build_cpp.sh
       node_type: cpu16
-      matrix_type: cuda-13-4-pr
+      matrix_type: pull-request
   conda-cpp-tests:
     needs: [conda-cpp-build, changed-files]
     permissions:
@@ -244,7 +244,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_cpp.sh
-      matrix_type: cuda-13-4-pr,pull-request
+      matrix_type: pull-request
   conda-cpp-checks:
     needs: conda-cpp-build
     permissions:
@@ -274,7 +274,7 @@ jobs:
       script: ci/build_python.sh
       # Build a conda package for each CUDA x ARCH x minimum supported Python version
       matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
-      matrix_type: cuda-13-4-pr
+      matrix_type: pull-request
   conda-python-tests:
     needs: [conda-python-build, changed-files]
     permissions:
@@ -289,7 +289,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_python.sh
-      matrix_type: cuda-13-4-pr,pull-request
+      matrix_type: pull-request
   docs-build-matrix:
     permissions:
       contents: read
@@ -297,7 +297,7 @@ jobs:
     with:
       build_type: pull-request
       matrix_name: docs-build
-      matrix_type: cuda-13-4-pr
+      matrix_type: pull-request
   docs-build:
     needs: [docs-build-matrix, conda-python-build, changed-files]
     permissions:
@@ -360,7 +360,7 @@ jobs:
       matrix_filter: group_by([.ARCH, (.CUDA_VER|split(".")|map(tonumber)|.[0])]) | map(max_by(.PY_VER|split(".")|map(tonumber)))
       package-name: libraft
       package-type: cpp
-      matrix_type: cuda-13-4-pr
+      matrix_type: pull-request
   wheel-build-pylibraft:
     needs: [build-details, checks, wheel-build-libraft]
     permissions:
@@ -380,7 +380,7 @@ jobs:
       package-type: python
       # Build a wheel for each CUDA x ARCH x minimum supported Python version
       matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
-      matrix_type: cuda-13-4-pr
+      matrix_type: pull-request
   wheel-tests-pylibraft:
     needs: [wheel-build-pylibraft, changed-files]
     permissions:
@@ -395,7 +395,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel_pylibraft.sh
-      matrix_type: cuda-13-4-pr,pull-request
+      matrix_type: pull-request
   wheel-build-raft-dask:
     needs: [build-details, checks, wheel-build-libraft]
     permissions:
@@ -415,7 +415,7 @@ jobs:
       package-type: python
       # Build a wheel for each CUDA x ARCH x minimum supported Python version
       matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
-      matrix_type: cuda-13-4-pr
+      matrix_type: pull-request
   wheel-tests-raft-dask:
     needs: [wheel-build-raft-dask, changed-files]
     permissions:
@@ -430,7 +430,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel_raft_dask.sh
-      matrix_type: cuda-13-4-pr,pull-request
+      matrix_type: pull-request
   devcontainer:
     permissions:
       actions: read
