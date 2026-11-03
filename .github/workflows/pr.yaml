@@ -63,6 +63,26 @@ jobs:
       package-name: libraft
       package-type: cpp
       matrix_type: pull-request
+  wheel-build-pylibraft:
+    needs: [build-details, wheel-build-libraft]
+    permissions:
+      actions: read
+      contents: read
+      id-token: write
+      packages: read
+      pull-requests: read
+    secrets: inherit # zizmor: ignore[secrets-inherit]
+    uses: rapidsai/shared-workflows/.github/workflows/wheels-build.yaml@main
+    with:
+      build_type: pull-request
+      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
+      node_type: cpu8
+      script: ci/build_wheel_pylibraft.sh
+      package-name: pylibraft
+      package-type: python
+      # Build a wheel for each CUDA x ARCH x minimum supported Python version
+      matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
+      matrix_type: pull-request
   wheel-build-raft-dask:
     needs: [build-details, wheel-build-libraft]
     permissions:
@@ -84,7 +104,7 @@ jobs:
       matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
       matrix_type: pull-request
   wheel-tests-raft-dask:
-    needs: [wheel-build-raft-dask]
+    needs: [wheel-build-pylibraft, wheel-build-raft-dask]
     permissions:
       actions: read
       contents: read
