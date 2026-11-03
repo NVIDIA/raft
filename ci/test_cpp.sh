@@ -1,5 +1,5 @@
 #!/bin/bash
-# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 set -euo pipefail
@@ -35,6 +35,24 @@ rapids-print-env
 
 rapids-logger "Check GPU usage"
 nvidia-smi
+
+rapids-logger "TEMP: WSL diagnostics"
+uname -a
+nproc
+free -m
+cat /sys/fs/cgroup/memory.max || true
+cat /proc/sys/vm/overcommit_memory || true
+pushd "${CONDA_PREFIX}/bin/gtests/libraft"
+rapids-logger "TEMP: InterruptibleOpenMP x50"
+./CORE_TEST --gtest_filter='Raft.InterruptibleOpenMP' --gtest_repeat=50 2>&1 | grep -E "FAILED  \]|Which is|OK \]" | sort | uniq -c || true
+rapids-logger "TEMP: select_k LargeSize alone"
+(while sleep 2; do echo "MEMMON $(date +%T) $(free -m | sed -n 2p)"; done) &
+MEMMON_PID=$!
+./MATRIX_SELECT_TEST --gtest_filter='SelectK/ReferencedRandomDoubleInt.LargeSize/4*:SelectK/ReferencedRandomDoubleInt.LargeSize/5*' && echo "select_k exit=0" || echo "select_k exit=$?"
+kill "${MEMMON_PID}" || true
+dmesg 2>&1 | tail -20 || true
+popd
+exit 1
 
 export GTEST_OUTPUT=xml:${RAPIDS_TESTS_DIR}/
 # Run libraft gtests from libraft-tests package
