@@ -33,7 +33,10 @@ test_dir="python/raft-dask/raft_dask/tests"
 
 rapids-logger "TEMP: NCCL debug for one test"
 nvidia-smi
-NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=ALL timeout 600 python -m pytest --import-mode=append -x -s "${test_dir}/test_comms.py::test_comms_init_no_p2p" 2>&1 | grep -v "Channel [0-9]*/" | tail -300 || true
+for cumem in 1 0; do
+    rapids-logger "TEMP: NCCL_CUMEM_ENABLE=${cumem}"
+    NCCL_CUMEM_ENABLE=${cumem} NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=INIT,ALLOC,ENV timeout 600 python -m pytest --import-mode=append -x -s "${test_dir}/test_comms.py::test_comms_init_no_p2p" 2>&1 | grep -v -E "Channel [0-9]*/|Tree [0-9]|Ring [0-9]|Calloc" | grep -E "NCCL version|cuMem|CUMEM|WARN|PASSED|FAILED|passed|failed|Init COMPLETE" | head -40 || true
+done
 if [[ "${RAFT_WSL_DIAG_ONLY:-1}" == "1" ]]; then
     exit 1
 fi
