@@ -388,7 +388,7 @@ void sum_rows_by_key_rowmajor_few_keys(const DataIteratorT d_A,
   const auto block_dim     = static_cast<uint32_t>(n_copies * ncols);
   const int blocks_per_sm  = block_dim >= 256 ? 2 : 4;
   const IdxT rows_per_block =
-    ceildiv<IdxT>(nrows, IdxT{blocks_per_sm} * raft::getMultiProcessorCount());
+    ceildiv<IdxT>(nrows, static_cast<IdxT>(blocks_per_sm) * raft::getMultiProcessorCount());
   const auto grid_dim = static_cast<uint32_t>(ceildiv<IdxT>(nrows, rows_per_block));
   raft::launch_kernel({st, copy_bytes * n_copies},
                       grid_dim,
@@ -680,8 +680,9 @@ sum_rows_by_key_plan sum_rows_by_key_select_kernel(
   constexpr double kSortedMinRowBytes   = 512;
   constexpr double kSortedMinInputBytes = 128.0 * 1024 * 1024;
   // Few keys and narrow rows: per-block sums in shared memory.
-  constexpr IdxT kFewKeysMaxCols = 32;
-  constexpr IdxT kFewKeysMaxKeys = 100;
+  constexpr IdxT kFewKeysMaxCols        = 128;
+  constexpr IdxT kFewKeysMaxKeys        = 100;
+  constexpr size_t kFewKeysMaxCopyBytes = kFewKeysSmemBytes / 2;  // at least 2 copies
 
   int dev_id, cc_major;
   RAFT_CUDA_TRY(cudaGetDevice(&dev_id));
@@ -701,7 +702,8 @@ sum_rows_by_key_plan sum_rows_by_key_select_kernel(
 
   // Select kernel
   if (ncols > 0 && ncols <= kFewKeysMaxCols && nkeys <= kFewKeysMaxKeys &&
-      sum_rows_by_key_few_keys_fits<SumsT>(nkeys, ncols)) {
+      sizeof(SumsT) * static_cast<size_t>(nkeys) * static_cast<size_t>(ncols) <=
+        kFewKeysMaxCopyBytes) {
     return {sum_rows_by_key_kernel::few_keys, 1, 0};
   }
   const double row_bytes = static_cast<double>(ncols) * sizeof(SumsT);
