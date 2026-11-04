@@ -13,6 +13,7 @@
 #include <cub/util_ptx.cuh>
 
 #include <limits>
+#include <type_traits>
 
 #define MAX_BLOCKS 65535u
 namespace raft {
@@ -372,7 +373,12 @@ void reduce_rows_by_key(const DataIteratorT d_A,
   // Following kernel needs memset
   if (reset_sums) { cudaMemsetAsync(d_sums, 0, ncols * nkeys * sizeof(SumsT), stream); }
 
-  if (d_keys_char != nullptr && nkeys <= SUM_ROWS_BY_KEY_SMALL_K_MAX_K) {
+  // The small-k kernel gives one column to each block, so its loads aren't coalesced on row-major
+  // data: it's only faster than the row-major kernel with few columns. Thresholds measured on an
+  // L4, where double atomics are slow enough to move the crossover up.
+  constexpr IdxT small_nkeys_ncols_limit = std::is_same_v<SumsT, double> ? 256 : 32;
+  if (d_keys_char != nullptr && nkeys <= SUM_ROWS_BY_KEY_SMALL_K_MAX_K &&
+      ncols < small_nkeys_ncols_limit) {
     // sum_rows_by_key_small_k is BW bounded. d_keys is loaded ncols time - avoiding wasting BW
     // with doubles we have ~20% speed up - with floats we can hope something around 2x
     // Converting d_keys to char
