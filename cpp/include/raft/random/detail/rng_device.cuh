@@ -14,7 +14,7 @@
 
 #include <cuda_fp16.h>
 
-#include <curand_kernel.h>
+#include <curand_philox4x32_x.h>
 
 #include <limits>
 #include <random>
@@ -474,12 +474,12 @@ struct PhiloxGenerator {
    */
   DI PhiloxGenerator(uint64_t seed, uint64_t subsequence, uint64_t offset)
   {
-    curand_init(seed, subsequence, offset, &philox_state);
+    initialize(seed, subsequence, offset);
   }
 
   DI PhiloxGenerator(const DeviceState<PhiloxGenerator>& rng_state, const uint64_t subsequence)
   {
-    curand_init(rng_state.seed, rng_state.base_subsequence + subsequence, 0, &philox_state);
+    initialize(rng_state.seed, rng_state.base_subsequence + subsequence, 0);
   }
 
   /**
@@ -488,8 +488,19 @@ struct PhiloxGenerator {
    */
   DI uint32_t next_u32()
   {
-    uint32_t ret = curand(&(this->philox_state));
-    return ret;
+    uint32_t result;
+    switch (philox_state.STATE) {
+      case 0: result = philox_state.output.x; break;
+      case 1: result = philox_state.output.y; break;
+      case 2: result = philox_state.output.z; break;
+      default: result = philox_state.output.w; break;
+    }
+    if (++philox_state.STATE == 4) {
+      Philox_State_Incr(&philox_state);
+      philox_state.output = curand_Philox4x32_10(philox_state.ctr, philox_state.key);
+      philox_state.STATE  = 0;
+    }
+    return result;
   }
 
   DI uint64_t next_u64()
@@ -568,6 +579,20 @@ struct PhiloxGenerator {
   /** @} */
 
  private:
+  DI void initialize(uint64_t seed, uint64_t subsequence, uint64_t offset)
+  {
+    // Philox uses four output words per counter, with the sequence in its upper half.
+    auto const block = offset / 4;
+    philox_state     = {};
+    philox_state.key = make_uint2(static_cast<uint32_t>(seed), static_cast<uint32_t>(seed >> 32));
+    philox_state.ctr = make_uint4(static_cast<uint32_t>(block),
+                                  static_cast<uint32_t>(block >> 32),
+                                  static_cast<uint32_t>(subsequence),
+                                  static_cast<uint32_t>(subsequence >> 32));
+    philox_state.output = curand_Philox4x32_10(philox_state.ctr, philox_state.key);
+    philox_state.STATE  = static_cast<uint32_t>(offset % 4);
+  }
+
   /** the state for RNG */
   curandStatePhilox4_32_10_t philox_state;
 };
