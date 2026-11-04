@@ -210,11 +210,9 @@ TEST(Raft, InterruptedExceptionBlamesTheCallSite)
 TEST(Raft, InterruptibleOpenMP)
 {
   // number of threads must be smaller than max number of resident grids for GPU
-  // and no larger than the default CUDA_DEVICE_MAX_CONNECTIONS (8); on WSL, streams sharing a
-  // hardware queue serialize their kernels, which breaks the expected completion order.
-  const int n_threads = 8;
+  const int n_threads = 10;
   // 1 <= n_expected_succeed <= n_threads
-  const int n_expected_succeed = 4;
+  const int n_expected_succeed = 5;
   // How many milliseconds passes between a thread i and i+1 finishes.
   // i.e. thread i executes (C + i*n_expected_succeed) milliseconds in total.
   const int thread_delay_millis = 20;
