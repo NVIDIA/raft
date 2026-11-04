@@ -233,10 +233,15 @@ TEST(Raft, InterruptibleOpenMP)
     interruptible::synchronize(stream);
     thread_tokens[i] = interruptible::get_token();
 
-#pragma omp barrier
+    // Launch in thread order: streams may share a hardware queue (observed on WSL), which
+    // serializes kernels in submission order and would otherwise break the completion order.
+#pragma omp for ordered schedule(static, 1)
+    for (int j = 0; j < n_threads; j++) {
+#pragma omp ordered
+      raft::launch_kernel(stream.value(), 1, 1, gpu_wait, (1 + i) * thread_delay_millis);
+    }
     try {
       common::nvtx::range wait_scope("interruptible::wait-%d", i);
-      raft::launch_kernel(stream.value(), 1, 1, gpu_wait, (1 + i) * thread_delay_millis);
       interruptible::synchronize(stream);
       n_finished = 1;
     } catch (interrupted_exception&) {
