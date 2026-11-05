@@ -102,7 +102,5 @@ jobs:
       branch: ${{ inputs.branch }}
       date: ${{ inputs.date }}
       sha: ${{ inputs.sha }}
-      # NCCL allocates a ~68 MB proxy ops pool in /dev/shm; Docker defaults to 64 MB.
-      container-options: "--shm-size=1g"
       script: ci/test_wheel_raft_dask.sh
       matrix_type: nightly,wsl-nightly
