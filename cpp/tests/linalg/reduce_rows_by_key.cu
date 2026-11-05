@@ -159,7 +159,7 @@ class ReduceRowTest : public ::testing::TestWithParam<ReduceRowsInputs<T>> {
   rmm::device_uvector<char> scratch_buf;
 };
 
-// ReduceRowTestF
+// ReduceRowTestFloat
 // 128 Obs, 32 cols, 6 clusters
 const std::vector<ReduceRowsInputs<float>> inputsf2 = {{0.000001f, 128, 32, 6, 1234ULL, false},
                                                        {0.000001f, 128, 32, 6, 1234ULL, true, 1.0},
@@ -174,7 +174,7 @@ TEST_P(ReduceRowTestF, Result)
 }
 INSTANTIATE_TEST_CASE_P(ReduceRowTests, ReduceRowTestF, ::testing::ValuesIn(inputsf2));
 
-// ReduceRowTestD
+// ReduceRowTestDouble
 // 128 Obs, 32 cols, 6 clusters, double precision
 const std::vector<ReduceRowsInputs<double>> inputsd2 = {
   {0.00000001, 128, 32, 6, 1234ULL, false},
@@ -190,14 +190,15 @@ TEST_P(ReduceRowTestD, Result)
 }
 INSTANTIATE_TEST_CASE_P(ReduceRowTests, ReduceRowTestD, ::testing::ValuesIn(inputsd2));
 
-// ReduceRowTestSmallnKey
-// 128 Obs, 32 cols, 3 clusters
+// ReduceRowTestFewKeys
+// 128 Obs, 32-128 cols, 3-10 clusters
 const std::vector<ReduceRowsInputs<float>> inputsf_small_nkey = {
   {0.000001f, 128, 32, 3, 1234ULL, false},
   {0.000001f, 128, 32, 3, 1234ULL, true, 5.0},
-  {0.000001f, 128, 32, 3, 1234ULL, true, 8.0}};
-typedef ReduceRowTest<float> ReduceRowTestSmallnKey;
-TEST_P(ReduceRowTestSmallnKey, Result)
+  {0.000001f, 128, 32, 3, 1234ULL, true, 8.0},
+  {0.00001f, 10000, 128, 10, 1234ULL, true, 4.0}};  // widest few-keys rows
+typedef ReduceRowTest<float> ReduceRowTestFewKeys;
+TEST_P(ReduceRowTestFewKeys, Result)
 {
   ASSERT_TRUE(raft::devArrMatch(out_ref.data(),
                                 out.data(),
@@ -205,7 +206,7 @@ TEST_P(ReduceRowTestSmallnKey, Result)
                                 raft::CompareApprox<float>(params.tolerance)));
 }
 INSTANTIATE_TEST_CASE_P(ReduceRowTests,
-                        ReduceRowTestSmallnKey,
+                        ReduceRowTestFewKeys,
                         ::testing::ValuesIn(inputsf_small_nkey));
 
 // ReduceRowTestBigSpace
@@ -261,6 +262,62 @@ TEST_P(ReduceRowTestManyClusters, Result)
 INSTANTIATE_TEST_CASE_P(ReduceRowTests,
                         ReduceRowTestManyClusters,
                         ::testing::ValuesIn(inputsf_many_cluster));
+
+// ReduceRowTestLargeClustersAndCols
+// 100000 Obs, 5000 cols, 3072 clusters: Should trigger the vectorized kernel on GPU newer than 9.0.
+const std::vector<ReduceRowsInputs<float>> inputsf_vectorized = {
+  {0.00001f, 100000, 5000, 3072, 1234ULL, false},
+  {0.00001f, 100000, 5000, 3072, 1234ULL, true, 32.0},
+  {0.00001f, 100000, 5000, 3072, 1234ULL, true, 16.0}};
+typedef ReduceRowTest<float> ReduceRowTestLargeClustersAndCols;
+TEST_P(ReduceRowTestLargeClustersAndCols, Result)
+{
+  ASSERT_TRUE(raft::devArrMatch(out_ref.data(),
+                                out.data(),
+                                params.cols * params.nkeys,
+                                raft::CompareApprox<float>(params.tolerance)));
+}
+INSTANTIATE_TEST_CASE_P(ReduceRowTests,
+                        ReduceRowTestLargeClustersAndCols,
+                        ::testing::ValuesIn(inputsf_vectorized));
+
+TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
+{
+  raft::resources handle;
+  auto stream           = resource::get_cuda_stream(handle).get();
+  constexpr int nrows   = 100000;
+  constexpr int ncols   = 64;
+  constexpr int nkeys   = 1024;
+  constexpr int end_bit = 10;  // > 8 bits so that >1 radix passes
+  rmm::device_uvector<float> in(nrows * ncols, stream);
+  rmm::device_uvector<float> sums(nkeys * ncols, stream);
+  rmm::device_uvector<uint32_t> keys(nrows, stream);
+  raft::random::RngState r(1234ULL);
+  uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t{nkeys});
+  RAFT_CUDA_TRY(cudaMemsetAsync(in.data(), 0, in.size() * sizeof(float), stream));
+
+  size_t sort_bytes = 0;
+  cub::DoubleBuffer<uint32_t> sort_keys, sort_values;
+  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
+    nullptr, sort_bytes, sort_keys, sort_values, nrows, 0, end_bit, stream));
+  const size_t expected = 4 * nrows * sizeof(uint32_t) + sort_bytes;
+
+  auto action = [&](raft::resources const& res) {
+    detail::sum_rows_by_key_rowmajor_sorted(in.data(),
+                                            ncols,
+                                            keys.data(),
+                                            static_cast<const float*>(nullptr),
+                                            nrows,
+                                            ncols,
+                                            nkeys,
+                                            sums.data(),
+                                            resource::get_cuda_stream(res).get(),
+                                            resource::get_dry_run_flag(res));
+  };
+  const auto dry = raft::util::dry_run_execute(handle, action);
+  EXPECT_EQ(dry.device_global, expected);
+  execute_with_dry_run_check(handle, action, alloc_behavior::ARGUMENT_DRIVEN, expected);
+}
 
 }  // end namespace linalg
 }  // end namespace raft
