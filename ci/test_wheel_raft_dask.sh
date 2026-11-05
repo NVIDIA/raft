@@ -37,6 +37,11 @@ if grep -qi microsoft /proc/version; then
     export NCCL_CUMEM_ENABLE=0
 fi
 
+rapids-logger "TEMP: WSL driver VMM RDMA attribute"
+nvidia-smi
+python -c "from cuda.bindings import driver as d; d.cuInit(0); print('GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED =', d.cuDeviceGetAttribute(d.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, 0))" || true
+echo "NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-unset}"
+
 rapids-logger "pytest raft-dask"
 python -m pytest --import-mode=append ${test_dir}
 
