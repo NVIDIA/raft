@@ -41,6 +41,12 @@ rapids-logger "TEMP: WSL driver VMM RDMA attribute"
 nvidia-smi
 python -c "from cuda.bindings import driver as d; d.cuInit(0); print('GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED =', d.cuDeviceGetAttribute(d.CUdevice_attribute.CU_DEVICE_ATTRIBUTE_GPU_DIRECT_RDMA_WITH_CUDA_VMM_SUPPORTED, 0))" || true
 echo "NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-unset}"
+df -h /dev/shm
+for extra in "" "NCCL_SHM_DISABLE=1 NCCL_P2P_DISABLE=1" "NCCL_CUMEM_HOST_ENABLE=0"; do
+    rapids-logger "TEMP: NCCL debug with NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-unset} ${extra}"
+    env ${extra} NCCL_DEBUG=INFO NCCL_DEBUG_SUBSYS=ALL timeout 300 python -m pytest --import-mode=append -x -s "${test_dir}/test_comms.py::test_comms_init_no_p2p" 2>&1 | grep -v -E "Channel [0-9]*/|Tree [0-9]|Ring [0-9]|Calloc" | grep -B30 -A15 -E "WARN|passed|failed" | head -150 || true
+done
+exit 1
 
 rapids-logger "pytest raft-dask"
 python -m pytest --import-mode=append ${test_dir}
