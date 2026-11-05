@@ -8,338 +8,10 @@ concurrency:
   cancel-in-progress: true
 permissions: {}
 jobs:
-  pr-builder:
-    needs:
-      - build-details
-      - check-nightly-ci
-      - changed-files
-      - checks
-      - conda-cpp-build
-      - conda-cpp-tests
-      - conda-cpp-checks
-      - conda-python-build
-      - conda-python-tests
-      - docs-build
-      - docs-build-matrix
-      - publish-api-docs
-      - wheel-build-libraft
-      - wheel-build-pylibraft
-      - wheel-tests-pylibraft
-      - wheel-build-raft-dask
-      - wheel-tests-raft-dask
-      - devcontainer
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/pr-builder.yaml@main
-    if: always()
-    with:
-      needs: ${{ toJSON(needs) }}
   build-details:
     uses: rapidsai/shared-workflows/.github/workflows/compute-build-details.yaml@main
-  check-nightly-ci:
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      pull-requests: read
-    env:
-      GH_TOKEN: ${{ github.token }}
-    steps:
-      - name: Get PR Info
-        id: get-pr-info
-        uses: nv-gha-runners/get-pr-info@090577647b8ddc4e06e809e264f7881650ecdccf # main
-      - name: Check if nightly CI is passing
-        uses: rapidsai/shared-actions/check_nightly_success/dispatch@main
-        with:
-          repo: ${{ github.repository }}
-          target-branch: ${{ fromJSON(steps.get-pr-info.outputs.pr-info).base.ref }}
-  changed-files:
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/changed-files.yaml@main
-    with:
-      files_yaml: |
-        build_docs:
-          - '**'
-          - '!**/*/REVIEW_GUIDELINES.md'
-          - '!.coderabbit.yaml'
-          - '!.devcontainer/**'
-          - '!.github/CODEOWNERS'
-          - '!.github/ISSUE_TEMPLATE/**'
-          - '!.github/PULL_REQUEST_TEMPLATE.md'
-          - '!.github/copy-pr-bot.yaml'
-          - '!.github/labeler.yml'
-          - '!.github/ops-bot.yml'
-          - '!.github/release.yml'
-          - '!.github/workflows/build.yaml'
-          - '!.github/workflows/labeler.yml'
-          - '!.github/workflows/test.yaml'
-          - '!.github/workflows/trigger-breaking-change-alert.yaml'
-          - '!.github/zizmor.yml'
-          - '!.pre-commit-config.yaml'
-          - '!.shellcheckrc'
-          - '!.yamllint.yaml'
-          - '!SECURITY.md'
-          - '!ci/check_style.sh'
-          - '!ci/release/update-version.sh'
-          - '!ci/run_*.sh'
-          - '!ci/test_*.sh'
-          - '!ci/validate_wheel.sh'
-          - '!thirdparty/LICENSES/**'
-        test_cpp:
-          - '**'
-          - '!**/*/REVIEW_GUIDELINES.md'
-          - '!.coderabbit.yaml'
-          - '!.devcontainer/**'
-          - '!.github/CODEOWNERS'
-          - '!.github/ISSUE_TEMPLATE/**'
-          - '!.github/PULL_REQUEST_TEMPLATE.md'
-          - '!.github/copy-pr-bot.yaml'
-          - '!.github/labeler.yml'
-          - '!.github/ops-bot.yml'
-          - '!.github/release.yml'
-          - '!.github/workflows/build.yaml'
-          - '!.github/workflows/labeler.yml'
-          - '!.github/workflows/test.yaml'
-          - '!.github/workflows/trigger-breaking-change-alert.yaml'
-          - '!.github/zizmor.yml'
-          - '!.pre-commit-config.yaml'
-          - '!.shellcheckrc'
-          - '!.yamllint.yaml'
-          - '!CONTRIBUTING.md'
-          - '!README.md'
-          - '!SECURITY.md'
-          - '!ci/build_docs.sh'
-          - '!ci/build_python.sh'
-          - '!ci/build_wheel*.sh'
-          - '!ci/check-style.sh'
-          - '!ci/release/update-version.sh'
-          - '!ci/run_*_pytests.sh'
-          - '!ci/test_python.sh'
-          - '!ci/test_wheel*.sh'
-          - '!ci/validate_wheel.sh'
-          - '!docs/**'
-          - '!img/**'
-          - '!python/**'
-          - '!thirdparty/LICENSES/**'
-        test_python_conda:
-          - '**'
-          - '!**/*/REVIEW_GUIDELINES.md'
-          - '!.coderabbit.yaml'
-          - '!.devcontainer/**'
-          - '!.github/CODEOWNERS'
-          - '!.github/ISSUE_TEMPLATE/**'
-          - '!.github/PULL_REQUEST_TEMPLATE.md'
-          - '!.github/copy-pr-bot.yaml'
-          - '!.github/labeler.yml'
-          - '!.github/ops-bot.yml'
-          - '!.github/release.yml'
-          - '!.github/workflows/build.yaml'
-          - '!.github/workflows/labeler.yml'
-          - '!.github/workflows/test.yaml'
-          - '!.github/workflows/trigger-breaking-change-alert.yaml'
-          - '!.github/zizmor.yml'
-          - '!.pre-commit-config.yaml'
-          - '!.shellcheckrc'
-          - '!.yamllint.yaml'
-          - '!CONTRIBUTING.md'
-          - '!README.md'
-          - '!SECURITY.md'
-          - '!ci/build_docs.sh'
-          - '!ci/build_wheel*.sh'
-          - '!ci/check_style.sh'
-          - '!ci/release/update-version.sh'
-          - '!ci/run_ctests.sh'
-          - '!ci/test_cpp.sh'
-          - '!ci/test_wheel*.sh'
-          - '!ci/validate_wheel.sh'
-          - '!cpp/.clang-format'
-          - '!docs/**'
-          - '!img/**'
-          - '!thirdparty/LICENSES/**'
-        test_python_wheels:
-          - '**'
-          - '!**/*/REVIEW_GUIDELINES.md'
-          - '!.coderabbit.yaml'
-          - '!.devcontainer/**'
-          - '!.github/CODEOWNERS'
-          - '!.github/ISSUE_TEMPLATE/**'
-          - '!.github/PULL_REQUEST_TEMPLATE.md'
-          - '!.github/copy-pr-bot.yaml'
-          - '!.github/labeler.yml'
-          - '!.github/ops-bot.yml'
-          - '!.github/release.yml'
-          - '!.github/workflows/build.yaml'
-          - '!.github/workflows/labeler.yml'
-          - '!.github/workflows/test.yaml'
-          - '!.github/workflows/trigger-breaking-change-alert.yaml'
-          - '!.github/zizmor.yml'
-          - '!.pre-commit-config.yaml'
-          - '!.shellcheckrc'
-          - '!.yamllint.yaml'
-          - '!CONTRIBUTING.md'
-          - '!README.md'
-          - '!SECURITY.md'
-          - '!ci/build_cpp.sh'
-          - '!ci/build_docs.sh'
-          - '!ci/build_python.sh'
-          - '!ci/check_style.sh'
-          - '!ci/release/update-version.sh'
-          - '!ci/run_ctests.sh'
-          - '!ci/test_cpp.sh'
-          - '!conda/**'
-          - '!cpp/.clang-format'
-          - '!docs/**'
-          - '!img/**'
-          - '!thirdparty/LICENSES/**'
-  checks:
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/checks.yaml@main
-    with:
-      enable_check_generated_files: false
-  conda-cpp-build:
-    needs: [build-details, checks]
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-build.yaml@main
-    with:
-      build_type: pull-request
-      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
-      script: ci/build_cpp.sh
-      node_type: cpu16
-      matrix_type: pull-request
-  conda-cpp-tests:
-    needs: [conda-cpp-build, changed-files]
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-tests.yaml@main
-    if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_cpp
-    with:
-      build_type: pull-request
-      script: ci/test_cpp.sh
-      matrix_type: pull-request,wsl-pr
-  conda-cpp-checks:
-    needs: conda-cpp-build
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-cpp-post-build-checks.yaml@main
-    with:
-      build_type: pull-request
-      package_name: libraft
-  conda-python-build:
-    needs: [build-details, conda-cpp-build]
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-build.yaml@main
-    with:
-      build_type: pull-request
-      build-datetime: ${{ needs.build-details.outputs.build-datetime }}
-      script: ci/build_python.sh
-      # Build a conda package for each CUDA x ARCH x minimum supported Python version
-      matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
-      matrix_type: pull-request
-  conda-python-tests:
-    needs: [conda-python-build, changed-files]
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/conda-python-tests.yaml@main
-    if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_conda
-    with:
-      build_type: pull-request
-      script: ci/test_python.sh
-      matrix_type: pull-request
-  docs-build-matrix:
-    permissions:
-      contents: read
-    uses: rapidsai/shared-workflows/.github/workflows/compute-matrix.yaml@main
-    with:
-      build_type: pull-request
-      matrix_name: docs-build
-      matrix_type: pull-request
-  docs-build:
-    needs: [docs-build-matrix, conda-python-build, changed-files]
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/custom-job.yaml@main
-    strategy:
-      fail-fast: false
-      matrix: ${{ fromJSON(needs.docs-build-matrix.outputs.matrix) }}
-    if: fromJSON(needs.changed-files.outputs.changed_file_groups).build_docs
-    with:
-      build_type: pull-request
-      node_type: "gpu-${{ matrix.GPU }}-${{ matrix.DRIVER }}-1"
-      arch: "${{ matrix.arch }}"
-      container_image: "rapidsai/ci-conda:26.12-cuda${{ matrix.CUDA_VER }}-${{ matrix.LINUX_VER }}-py${{ matrix.PY_VER }}"
-      script: "ci/build_docs.sh"
-  publish-api-docs:
-    needs: [docs-build]
-    permissions:
-      contents: read
-      id-token: write
-    secrets:
-      akamai-access-token: ${{ secrets.NVIDIA_DOCS_AKAMAI_ACCESS_TOKEN }}
-      akamai-client-token: ${{ secrets.NVIDIA_DOCS_AKAMAI_CLIENT_TOKEN }}
-      akamai-client-secret: ${{ secrets.NVIDIA_DOCS_AKAMAI_CLIENT_SECRET }}
-      akamai-emails-to-notify: ${{ secrets.NVIDIA_DOCS_AKAMAI_EMAILS_TO_NOTIFY }}
-      akamai-host: ${{ secrets.NVIDIA_DOCS_AKAMAI_HOST }}
-      target-aws-access-key-id: ${{ secrets.NVIDIA_DOCS_AWS_ACCESS_KEY_ID }}
-      target-aws-region: ${{ secrets.NVIDIA_DOCS_AWS_REGION }}
-      target-aws-secret-access-key: ${{ secrets.NVIDIA_DOCS_AWS_SECRET_ACCESS_KEY }}
-      target-archive-s3-bucket: ${{ secrets.NVIDIA_DOCS_ARCHIVE_S3_BUCKET }}
-      target-s3-bucket: ${{ secrets.NVIDIA_DOCS_S3_BUCKET }}
-    uses: rapidsai/shared-workflows/.github/workflows/publish-api-docs.yaml@main
-    with:
-      docs-projects: raft
-      dry-run: true
   wheel-build-libraft:
-    needs: [build-details, checks]
+    needs: [build-details]
     permissions:
       actions: read
       contents: read
@@ -362,7 +34,7 @@ jobs:
       package-type: cpp
       matrix_type: pull-request
   wheel-build-pylibraft:
-    needs: [build-details, checks, wheel-build-libraft]
+    needs: [build-details, wheel-build-libraft]
     permissions:
       actions: read
       contents: read
@@ -381,23 +53,8 @@ jobs:
       # Build a wheel for each CUDA x ARCH x minimum supported Python version
       matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
       matrix_type: pull-request
-  wheel-tests-pylibraft:
-    needs: [wheel-build-pylibraft, changed-files]
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@main
-    if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_wheels
-    with:
-      build_type: pull-request
-      script: ci/test_wheel_pylibraft.sh
-      matrix_type: pull-request,wsl-pr
   wheel-build-raft-dask:
-    needs: [build-details, checks, wheel-build-libraft]
+    needs: [build-details, wheel-build-libraft]
     permissions:
       actions: read
       contents: read
@@ -417,7 +74,7 @@ jobs:
       matrix_filter: group_by({CUDA_VER, ARCH}) | map(min_by(.PY_VER | split(".") | map(tonumber)))
       matrix_type: pull-request
   wheel-tests-raft-dask:
-    needs: [wheel-build-raft-dask, changed-files]
+    needs: [wheel-build-pylibraft, wheel-build-raft-dask]
     permissions:
       actions: read
       contents: read
@@ -426,31 +83,9 @@ jobs:
       pull-requests: read
     secrets: inherit # zizmor: ignore[secrets-inherit]
     uses: rapidsai/shared-workflows/.github/workflows/wheels-test.yaml@main
-    if: fromJSON(needs.changed-files.outputs.changed_file_groups).test_python_wheels
     with:
       build_type: pull-request
       # NCCL allocates a ~68 MB proxy ops pool in /dev/shm; Docker defaults to 64 MB.
       container-options: "--shm-size=1g"
       script: ci/test_wheel_raft_dask.sh
-      matrix_type: pull-request,wsl-pr
-  devcontainer:
-    permissions:
-      actions: read
-      contents: read
-      id-token: write
-      packages: read
-      pull-requests: read
-    secrets: inherit # zizmor: ignore[secrets-inherit]
-    uses: rapidsai/shared-workflows/.github/workflows/build-in-devcontainer.yaml@main
-    with:
-      arch: '["amd64", "arm64"]'
-      cuda: '["13.4"]'
-      node_type: "cpu8"
-      env: |
-        SCCACHE_DIST_MAX_RETRIES=inf
-        SCCACHE_SERVER_LOG=sccache=debug
-        SCCACHE_DIST_FALLBACK_TO_LOCAL_COMPILE=false
-      build_command: |
-        sccache --zero-stats;
-        build-all -j0 -DBUILD_PRIMS_BENCH=ON --verbose;
-        sccache --show-adv-stats;
+      matrix_type: wsl-pr

@@ -37,6 +37,10 @@ if grep -qi microsoft /proc/version; then
     export NCCL_CUMEM_ENABLE=0
 fi
 
+rapids-logger "TEMP: shm and NCCL init probe"
+df -h /dev/shm
+NCCL_DEBUG=WARN timeout 300 python -m pytest --import-mode=append -x -s "${test_dir}/test_comms.py::test_comms_init_no_p2p" 2>&1 | tail -40 || true
+
 rapids-logger "pytest raft-dask"
 python -m pytest --import-mode=append ${test_dir}
 
