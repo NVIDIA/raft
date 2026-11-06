@@ -212,7 +212,7 @@ struct SelectK  // NOLINT
   explicit SelectK(Params<typename ParamsReader<KeyT, IdxT>::io_t> ps)
     : spec(std::get<0>(ps)),
       algo(std::get<1>(ps)),                                 // NOLINT
-      ref(std::get<2>(ps)),                                  // NOLINT
+      ref(std::move(std::get<2>(ps))),                       // NOLINT
       res(spec, algo, ref.get_in_dists(), ref.get_in_ids())  // NOLINT
   {
   }
