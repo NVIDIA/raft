@@ -144,7 +144,7 @@ void transpose_half(raft::resources const& handle,
 
 template <typename math_t>
 void transpose(raft::resources const& handle,
-               math_t* in,
+               const math_t* in,
                math_t* out,
                int n_rows,
                int n_cols,
@@ -199,11 +199,10 @@ void transpose(math_t* inout, int n, cudaStream_t stream)
   });
 }
 
-template <typename T, typename IndexType, typename LayoutPolicy, typename AccessorPolicy>
-void transpose_row_major_impl(
-  raft::resources const& handle,
-  raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
-  raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
+template <typename T, typename IndexType, typename LayoutPolicy>
+void transpose_row_major_impl(raft::resources const& handle,
+                              raft::device_matrix_view<const T, IndexType, LayoutPolicy> in,
+                              raft::device_matrix_view<T, IndexType, LayoutPolicy> out)
 {
   if (resource::get_dry_run_flag(handle)) { return; }
   auto out_n_rows   = in.extent(1);
@@ -227,11 +226,10 @@ void transpose_row_major_impl(
                         resource::get_cuda_stream(handle).get()));
 }
 
-template <typename IndexType, typename LayoutPolicy, typename AccessorPolicy>
-void transpose_row_major_impl(
-  raft::resources const& handle,
-  raft::mdspan<half, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
-  raft::mdspan<half, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
+template <typename IndexType, typename LayoutPolicy>
+void transpose_row_major_impl(raft::resources const& handle,
+                              raft::device_matrix_view<const half, IndexType, LayoutPolicy> in,
+                              raft::device_matrix_view<half, IndexType, LayoutPolicy> out)
 {
   transpose_half<IndexType>(handle,
                             in.extent(0),
@@ -242,11 +240,10 @@ void transpose_row_major_impl(
                             out.stride(0));
 }
 
-template <typename T, typename IndexType, typename LayoutPolicy, typename AccessorPolicy>
-void transpose_col_major_impl(
-  raft::resources const& handle,
-  raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
-  raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
+template <typename T, typename IndexType, typename LayoutPolicy>
+void transpose_col_major_impl(raft::resources const& handle,
+                              raft::device_matrix_view<const T, IndexType, LayoutPolicy> in,
+                              raft::device_matrix_view<T, IndexType, LayoutPolicy> out)
 {
   if (resource::get_dry_run_flag(handle)) { return; }
   auto out_n_rows   = in.extent(1);
@@ -270,11 +267,10 @@ void transpose_col_major_impl(
                         resource::get_cuda_stream(handle).get()));
 }
 
-template <typename IndexType, typename LayoutPolicy, typename AccessorPolicy>
-void transpose_col_major_impl(
-  raft::resources const& handle,
-  raft::mdspan<half, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
-  raft::mdspan<half, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
+template <typename IndexType, typename LayoutPolicy>
+void transpose_col_major_impl(raft::resources const& handle,
+                              raft::device_matrix_view<const half, IndexType, LayoutPolicy> in,
+                              raft::device_matrix_view<half, IndexType, LayoutPolicy> out)
 {
   transpose_half<IndexType>(handle,
                             in.extent(1),

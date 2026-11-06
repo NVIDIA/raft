@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __TRANSPOSE_H
@@ -11,6 +11,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/device_mdarray.hpp>
+#include <raft/core/device_mdspan.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/core/type_traits.hpp>
 
@@ -28,7 +29,7 @@ namespace linalg {
  */
 template <typename math_t>
 void transpose(raft::resources const& handle,
-               math_t* in,
+               const math_t* in,
                math_t* out,
                int n_rows,
                int n_cols,
@@ -62,17 +63,15 @@ void transpose(math_t* inout, int n, cudaStream_t stream)
  * @tparam IndexType Index type of matrix extent.
  * @tparam LayoutPolicy Layout type of the input matrix. When layout is strided, it can
  *                      be a submatrix of a larger matrix. Arbitrary stride is not supported.
- * @tparam AccessorPolicy Accessor for the input and output, must be valid accessor on
- *                        device.
  *
  * @param[in]  handle raft handle for managing expensive cuda resources.
  * @param[in]  in     Input matrix.
  * @param[out] out    Output matrix, storage is pre-allocated by caller.
  */
-template <typename T, typename IndexType, typename LayoutPolicy, typename AccessorPolicy>
+template <typename T, typename IndexType, typename LayoutPolicy>
 auto transpose(raft::resources const& handle,
-               raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> in,
-               raft::mdspan<T, raft::matrix_extent<IndexType>, LayoutPolicy, AccessorPolicy> out)
+               raft::device_matrix_view<const T, IndexType, LayoutPolicy> in,
+               raft::device_matrix_view<T, IndexType, LayoutPolicy> out)
   -> std::enable_if_t<raft::is_floating_point_v<T>, void>
 {
   RAFT_EXPECTS(out.extent(0) == in.extent(1), "Invalid shape for transpose.");
@@ -92,6 +91,21 @@ auto transpose(raft::resources const& handle,
       detail::transpose_col_major_impl(handle, in, out);
     }
   }
+}
+
+/**
+ * @brief Mutable-input overload retained for backward compatibility.
+ *
+ * Prefer the const-input overload, using raft::make_const_mdspan(in) when needed.
+ * See that overload for parameter documentation.
+ */
+template <typename T, typename IndexType, typename LayoutPolicy>
+auto transpose(raft::resources const& handle,
+               raft::device_matrix_view<T, IndexType, LayoutPolicy> in,
+               raft::device_matrix_view<T, IndexType, LayoutPolicy> out)
+  -> std::enable_if_t<raft::is_floating_point_v<T>, void>
+{
+  transpose(handle, raft::make_const_mdspan(in), out);
 }
 
 /** @} */  // end of group transpose
