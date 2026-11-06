@@ -303,7 +303,10 @@ TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
   cub::DoubleBuffer<uint32_t> sort_keys, sort_values;
   RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
     nullptr, sort_bytes, sort_keys, sort_values, nrows, 0, end_bit, stream));
-  const size_t expected = 4 * nrows * sizeof(uint32_t) + sort_bytes;
+  // Keys and row ids (double-buffered), the sort's temporary storage, and the double accumulators
+  // of the float sums.
+  const size_t expected =
+    4 * nrows * sizeof(uint32_t) + sort_bytes + size_t{nkeys} * ncols * sizeof(double);
 
   auto action = [&](raft::resources const& res) {
     detail::sum_rows_by_key_rowmajor_sorted(in.data(),
@@ -353,27 +356,26 @@ TEST(ReduceRowsByKeyDryRun, FewKeysPathAllocations)
     handle, action, alloc_behavior::ARGUMENT_DRIVEN, 2 * nkeys * ncols * sizeof(float));
 }
 
-TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
+void check_float_sums_reproducible(std::vector<std::array<int, 3>> shapes,
+                                   detail::sum_rows_by_key_kernel kernel)
 {
   raft::resources handle;
   auto stream = resource::get_cuda_stream(handle).get();
-  // {nrows, ncols, nkeys}: the cuML #8869 shapes (a single block) and a multi-block shape
-  for (auto [nrows, ncols, nkeys] : {std::array<int, 3>{500, 4, 4},
-                                     std::array<int, 3>{300, 3, 3},
-                                     std::array<int, 3>{100000, 16, 8}}) {
-    rmm::device_uvector<float> in(nrows * ncols, stream), out(nkeys * ncols, stream);
+  for (auto [nrows, ncols, nkeys] : shapes) {
+    rmm::device_uvector<float> in(size_t(nrows) * ncols, stream),
+      out(size_t(nkeys) * ncols, stream);
     rmm::device_uvector<uint32_t> keys(nrows, stream);
     ASSERT_EQ(
       detail::sum_rows_by_key_select_kernel(in.data(), ncols, nrows, ncols, nkeys, out.data())
         .kernel,
-      detail::sum_rows_by_key_kernel::few_keys);
+      kernel);
     raft::random::RngState r(1234ULL);
     uniform(handle, r, in.data(), in.size(), -1.f, 1.f);
     uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t(nkeys));
 
-    // Bitwise identical across runs.
     std::vector<float> first(out.size()), cur(out.size());
-    for (int run = 0; run < 5; ++run) {
+    // The non-determinism level is expected to be less than 1 per 20 runs.
+    for (int run = 0; run < 20; ++run) {
       reduce_rows_by_key(in.data(),
                          ncols,
                          keys.data(),
@@ -392,6 +394,25 @@ TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
       }
     }
   }
+}
+
+TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
+{
+  check_float_sums_reproducible({{500, 4, 4}, {300, 3, 3}, {100000, 16, 8}},
+                                detail::sum_rows_by_key_kernel::few_keys);
+}
+
+TEST(ReduceRowsByKeySorted, SumDeterminism)
+{
+  check_float_sums_reproducible(
+    {{1000000, 16, 200}, {50000, 129, 1}, {4500000, 4, 200}, {300000, 128, 4096}},
+    detail::sum_rows_by_key_kernel::sorted);
+}
+
+TEST(ReduceRowsByKeyElementwise, SumDeterminism)
+{
+  check_float_sums_reproducible({{100000, 37, 2048}, {200000, 64, 1000}, {1000000, 8, 100000}},
+                                detail::sum_rows_by_key_kernel::elementwise);
 }
 
 }  // end namespace linalg
