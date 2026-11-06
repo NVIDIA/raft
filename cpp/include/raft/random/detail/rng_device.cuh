@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -14,9 +14,11 @@
 
 #include <cuda_fp16.h>
 
-#include <curand_kernel.h>
+#include <curand_philox4x32_x.h>
 
+#include <limits>
 #include <random>
+#include <type_traits>
 
 namespace raft {
 namespace random {
@@ -236,6 +238,37 @@ HDI void custom_next(
   *(val + 1) = res2;
 }
 
+template <typename IntType>
+struct shift_unsigned {
+  using type = std::make_unsigned_t<IntType>;
+};
+template <>
+struct shift_unsigned<bool> {
+  using type = unsigned char;
+};
+
+/**
+ * mu + trunc(dev), saturated to the range of IntType, which is what converting the exact sum
+ * would give on the device. The bounds are checked in the unsigned type of the same width, so
+ * nothing overflows and a negative deviate is never converted to an unsigned type.
+ */
+template <typename IntType, typename T>
+HDI IntType shift_by_deviate(IntType mu, T dev)
+{
+  using U           = typename shift_unsigned<IntType>::type;
+  constexpr auto lo = std::numeric_limits<IntType>::lowest();
+  constexpr auto hi = std::numeric_limits<IntType>::max();
+
+  const bool neg = dev < T(0);
+  const T mag    = neg ? -dev : dev;
+  const U room   = neg ? U(U(mu) - U(lo)) : U(U(hi) - U(mu));
+  // T(max) + 1 rounds to exactly 2^digits, so below it the conversion to U is in range.
+  if (mag >= T(std::numeric_limits<U>::max()) + T(1)) { return neg ? lo : hi; }
+  const U m = static_cast<U>(mag);
+  if (m > room) { return neg ? lo : hi; }
+  return static_cast<IntType>(neg ? U(U(mu) - m) : U(U(mu) + m));
+}
+
 template <typename GenType, typename IntType, typename LenType>
 HDI void custom_next(GenType& gen,
                      IntType* val,
@@ -243,17 +276,24 @@ HDI void custom_next(GenType& gen,
                      LenType idx    = 0,
                      LenType stride = 0)
 {
-  double res1, res2;
+  // Draw a zero-mean deviate in the narrowest type that can carry it, then shift by mu in the
+  // output type. Folding mu into the transform would round mu itself and, worse, quantize the
+  // deviate away entirely once |mu| exceeds the mantissa of the compute type (2^24 for float,
+  // 2^53 for double): at mu = 2e9 the float spacing is 128, so a sigma of 10 vanishes.
+  // With mu applied separately, float carries any deviate an integer output can represent, and
+  // double is only needed for the wider deviates of 64-bit outputs. Double is 1/64 rate on
+  // consumer GPUs, so this matters.
+  using compute_t = std::conditional_t<(sizeof(IntType) > 4), double, float>;
+  compute_t res1, res2;
   do {
     gen.next(res1);
-  } while (res1 == double(0.0));
+  } while (res1 == compute_t(0.0));
 
   gen.next(res2);
-  double mu    = static_cast<double>(params.mu);
-  double sigma = static_cast<double>(params.sigma);
-  box_muller_transform<double>(res1, res2, sigma, mu);
-  *val       = static_cast<IntType>(res1);
-  *(val + 1) = static_cast<IntType>(res2);
+  compute_t sigma = static_cast<compute_t>(params.sigma);
+  box_muller_transform<compute_t>(res1, res2, sigma, compute_t(0));
+  *val       = shift_by_deviate(params.mu, res1);
+  *(val + 1) = shift_by_deviate(params.mu, res2);
 }
 
 template <typename GenType, typename OutType, typename LenType>
@@ -434,12 +474,12 @@ struct PhiloxGenerator {
    */
   DI PhiloxGenerator(uint64_t seed, uint64_t subsequence, uint64_t offset)
   {
-    curand_init(seed, subsequence, offset, &philox_state);
+    initialize(seed, subsequence, offset);
   }
 
   DI PhiloxGenerator(const DeviceState<PhiloxGenerator>& rng_state, const uint64_t subsequence)
   {
-    curand_init(rng_state.seed, rng_state.base_subsequence + subsequence, 0, &philox_state);
+    initialize(rng_state.seed, rng_state.base_subsequence + subsequence, 0);
   }
 
   /**
@@ -448,8 +488,19 @@ struct PhiloxGenerator {
    */
   DI uint32_t next_u32()
   {
-    uint32_t ret = curand(&(this->philox_state));
-    return ret;
+    uint32_t result;
+    switch (philox_state.STATE) {
+      case 0: result = philox_state.output.x; break;
+      case 1: result = philox_state.output.y; break;
+      case 2: result = philox_state.output.z; break;
+      default: result = philox_state.output.w; break;
+    }
+    if (++philox_state.STATE == 4) {
+      Philox_State_Incr(&philox_state);
+      philox_state.output = curand_Philox4x32_10(philox_state.ctr, philox_state.key);
+      philox_state.STATE  = 0;
+    }
+    return result;
   }
 
   DI uint64_t next_u64()
@@ -499,7 +550,8 @@ struct PhiloxGenerator {
   DI half next_half()
   {
     float ret = next_float();
-    return __float2half(ret);
+    // Round down: rounding to nearest maps values in [1 - 2^-12, 1) to 1.0.
+    return __float2half_rd(ret);
   }
 
   DI void next(float& ret)
@@ -528,6 +580,20 @@ struct PhiloxGenerator {
   /** @} */
 
  private:
+  DI void initialize(uint64_t seed, uint64_t subsequence, uint64_t offset)
+  {
+    // Philox uses four output words per counter, with the sequence in its upper half.
+    auto const block = offset / 4;
+    philox_state     = {};
+    philox_state.key = make_uint2(static_cast<uint32_t>(seed), static_cast<uint32_t>(seed >> 32));
+    philox_state.ctr = make_uint4(static_cast<uint32_t>(block),
+                                  static_cast<uint32_t>(block >> 32),
+                                  static_cast<uint32_t>(subsequence),
+                                  static_cast<uint32_t>(subsequence >> 32));
+    philox_state.output = curand_Philox4x32_10(philox_state.ctr, philox_state.key);
+    philox_state.STATE  = static_cast<uint32_t>(offset % 4);
+  }
+
   /** the state for RNG */
   curandStatePhilox4_32_10_t philox_state;
 };
@@ -643,7 +709,8 @@ struct PCGenerator {
   HDI half next_half()
   {
     float ret = next_float();
-    return __float2half(ret);
+    // Round down: rounding to nearest maps values in [1 - 2^-12, 1) to 1.0.
+    return __float2half_rd(ret);
   }
 
   HDI void next(uint32_t& ret) { ret = next_u32(); }

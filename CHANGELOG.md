@@ -1,3 +1,60 @@
+# raft 26.10.00 (7 Oct 2026)
+
+### 🚨 Breaking Changes
+* FastIntDiv: fallback to normal division when values exceed 32-bit ran… by @huuanhhuyn in https://github.com/NVIDIA/raft/pull/3093
+* Better error reporting with std::source_location by @achirkin in https://github.com/NVIDIA/raft/pull/3121
+* Migrate stream APIs from rmm::cuda_stream_view to cuda::stream_ref by @bdice in https://github.com/NVIDIA/raft/pull/3129
+### 🐛 Bug Fixes
+* Fix missing nvtx stack and host mem resource by exporting the symbols by @huuanhhuyn in https://github.com/NVIDIA/raft/pull/3083
+* Remove orphaned raft::runtime::matrix::select_k declaration by @says1117 in https://github.com/NVIDIA/raft/pull/3084
+* Make cuBLASLt descriptor wrappers move-safe by @fallintoplace in https://github.com/NVIDIA/raft/pull/3078
+* Restore tracked device resources on their original GPU by @fallintoplace in https://github.com/NVIDIA/raft/pull/3077
+* Fix lanczos launch grid by @achirkin in https://github.com/NVIDIA/raft/pull/3109
+* Fix launch_kernel handling of restricted and partially specified kernel arguments by @dantegd in https://github.com/NVIDIA/raft/pull/3117
+* Fix devcontainer cache version updates by @bdice in https://github.com/NVIDIA/raft/pull/3119
+* Use l-values to initialize RMM constructors by @divyegala in https://github.com/NVIDIA/raft/pull/3123
+* Fix curand stream ordering in MST alteration by @dantegd in https://github.com/NVIDIA/raft/pull/3125
+* Force stream sync in raft::device_reference by @achirkin in https://github.com/NVIDIA/raft/pull/3124
+* Synchronize MST edge count update by @bdice in https://github.com/NVIDIA/raft/pull/3130
+* Fix strided reduction block count by @achirkin in https://github.com/NVIDIA/raft/pull/3127
+* Fix striding in mdspan 1d copies by @divyegala in https://github.com/NVIDIA/raft/pull/3134
+* Update UCX calls to use new send/recv functions by @ChuckHastings in https://github.com/NVIDIA/raft/pull/3135
+### 📖 Documentation
+* Enable public docs features in CI by @bdice in https://github.com/NVIDIA/raft/pull/3131
+### 🚀 New Features
+* Add sparse Lanczos SVD solver by @Intron7 in https://github.com/NVIDIA/raft/pull/3034
+* [REVIEW] Addition of `gemm_strided_batched` by @landrumb in https://github.com/NVIDIA/raft/pull/3106
+* Implement a kernel dispatcher raft::launch_kernel by @achirkin in https://github.com/NVIDIA/raft/pull/3104
+* Dry Run Protocol by @achirkin in https://github.com/NVIDIA/raft/pull/2961
+### 🛠️ Improvements
+* Update RAPIDS.cmake to log source of rapids-cmake by @arhag23 in https://github.com/NVIDIA/raft/pull/3074
+* Use cuda::std::bit_cast in stats minmax instead of hand-rolled helper by @says1117 in https://github.com/NVIDIA/raft/pull/3095
+* Use cuda::std::numeric_limits in LAP kernels instead of passing infinity by @says1117 in https://github.com/NVIDIA/raft/pull/3094
+* enforce 'yamllint' checks by @jameslamb in https://github.com/NVIDIA/raft/pull/3096
+* ensure nightly builds always produce new packages, expand 'changed-files' lists by @jameslamb in https://github.com/NVIDIA/raft/pull/3103
+* Update to rapids-logger 0.3 by @bdice in https://github.com/NVIDIA/raft/pull/3102
+* wheels: enforce 'abi3audit' checks by @jameslamb in https://github.com/NVIDIA/raft/pull/3111
+* ci: avoid triggered-by-schedule and triggered-by-merge builds cancelling each other by @jameslamb in https://github.com/NVIDIA/raft/pull/3120
+* X-ORG-3107: Publish API docs to docs.nvidia.com by @josephine-wolf-oberholtzer in https://github.com/NVIDIA/raft/pull/3108
+* Audit Wheel Dependencies by @tarang-jain in https://github.com/NVIDIA/raft/pull/3091
+* Extend kernel_launch with kernel_ref and attributes by @achirkin in https://github.com/NVIDIA/raft/pull/3128
+* [FEA] permute: replace LCG with keyed Feistel permutation, add deterministic key API by @vinaydes in https://github.com/NVIDIA/raft/pull/3079
+* Replace hardcoded Lanczos eigenvalue goldens with property-based checks by @says1117 in https://github.com/NVIDIA/raft/pull/3086
+* Backport: Relax lanczos gtest tolerance by @bdice in https://github.com/NVIDIA/raft/pull/3142
+* Adopt CUDA stream compatibility accessors by @bdice in https://github.com/NVIDIA/raft/pull/3136
+* Discover CMake packages installed by wheels by @bdice in https://github.com/NVIDIA/raft/pull/3143
+* Add stream pool configuration to `device_resources_snmg` by @viclafargue in https://github.com/NVIDIA/raft/pull/3149
+* Relax lanczos gtest threshold by @aamijar in https://github.com/NVIDIA/raft/pull/3153
+* X-ORG-410: Integrate archived docs into version switcher by @josephine-wolf-oberholtzer in https://github.com/NVIDIA/raft/pull/3162
+
+## New Contributors
+* @arhag23 made their first contribution in https://github.com/NVIDIA/raft/pull/3074
+* @says1117 made their first contribution in https://github.com/NVIDIA/raft/pull/3084
+* @fallintoplace made their first contribution in https://github.com/NVIDIA/raft/pull/3078
+* @landrumb made their first contribution in https://github.com/NVIDIA/raft/pull/3106
+
+**Full Changelog**: https://github.com/NVIDIA/raft/compare/v26.10.00a...release/26.10
+
 # raft 26.06.00 (3 Jun 2026)
 
 ### 🚨 Breaking Changes

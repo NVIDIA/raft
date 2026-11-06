@@ -1,14 +1,25 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022-2024, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 
 import os
 
+import dask
 import pytest
 
 from dask.distributed import Client
 from dask_cuda import LocalCUDACluster
 
 os.environ["UCX_LOG_LEVEL"] = "error"
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _configure_dask():
+    # Reduce the chance that a periodic scheduler summary overwrites worker
+    # details during scheduler_info(): https://github.com/dask/distributed/issues/9374
+    with dask.config.set(
+        {"distributed.client.scheduler-info-interval": "60s"}
+    ):
+        yield
 
 
 @pytest.fixture(scope="session")

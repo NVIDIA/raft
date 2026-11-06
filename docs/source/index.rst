@@ -9,9 +9,8 @@ NVIDIA RAFT Documentation
 Useful Resources
 ################
 
-.. _raft_reference: https://docs.rapids.ai/api/raft/stable/
+.. _raft_reference: https://docs.nvidia.com/raft/
 
-- `RAPIDS Community <https://rapids.ai/community.html>`_: Get help, contribute, and collaborate.
 - `GitHub repository <https://github.com/NVIDIA/raft>`_: Download the RAFT source code.
 - `Issue tracker <https://github.com/NVIDIA/raft/issues>`_: Report issues or request features.
 

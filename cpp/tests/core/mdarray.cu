@@ -613,7 +613,7 @@ void test_mdarray_padding()
 
     thrust::device_vector<int32_t> status(1, 0);
     auto p_status = status.data().get();
-    thrust::for_each_n(rmm::exec_policy(),
+    thrust::for_each_n(rmm::exec_policy(s),
                        cuda::make_counting_iterator(0ul),
                        1,
                        [d_view, p_status] __device__(size_t i) {

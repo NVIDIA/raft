@@ -58,7 +58,7 @@ Deploying our`test_allreduce` function in Dask requires a lightweight Python int
 
    test_allreduce(deref(h), root)
 
-Finally, we can use `raft_dask` to execute our new algorithm in a Dask cluster (please note this also uses `LocalCUDACluster` from the RAPIDS dask-cuda library):
+Finally, we can use `raft_dask` to execute our new algorithm in a Dask cluster (please note this also uses `LocalCUDACluster` from the NVIDIA Dask-CUDA library):
 
 .. code-block:: python
    :caption: Example of running test_allreduce() in Dask

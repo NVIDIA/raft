@@ -215,7 +215,7 @@ python ./cpp/scripts/include_checker.py --inplace [cpp/include cpp/tests ... lis
 ```
 
 ### Copyright header
-RAPIDS [pre-commit-hooks](https://github.com/rapidsai/pre-commit-hooks) checks the Copyright
+The [pre-commit-hooks](https://github.com/rapidsai/pre-commit-hooks) package checks the Copyright
 header for all git-modified files.
 
 Manually, you can run the following to bulk-fix the header on all files in the repository:

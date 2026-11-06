@@ -1,6 +1,6 @@
 
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -9,7 +9,6 @@
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resources.hpp>
 
-#include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
 
 namespace raft {
@@ -28,6 +27,16 @@ struct Graph_COO {
   }
 };
 
+/**
+ * @brief MST solver with deterministic tie-breaking.
+ *
+ * @tparam vertex_t integral type for vertex indexing (32- or 64-bit)
+ * @tparam edge_t integral type for edge indexing (32- or 64-bit, at least as
+ * wide as vertex_t)
+ * @tparam weight_t type of the weights array
+ * @tparam alteration_t unused; retained for source compatibility with
+ * existing callers (the solver no longer alters weights to break ties)
+ */
 template <typename vertex_t, typename edge_t, typename weight_t, typename alteration_t>
 class MST_solver {
  public:
@@ -60,33 +69,7 @@ class MST_solver {
   const vertex_t v;
   const edge_t e;
 
-  vertex_t max_blocks;
-  vertex_t max_threads;
-  vertex_t sm_count;
-
-  vertex_t* color_index;                              // represent each supervertex as a color
-  rmm::device_uvector<alteration_t> min_edge_color;   // minimum incident edge weight per color
-  rmm::device_uvector<edge_t> new_mst_edge;           // new minimum edge per vertex
-  rmm::device_uvector<alteration_t> altered_weights;  // weights to be used for mst
-  rmm::device_scalar<edge_t> mst_edge_count;  // total number of edges added after every iteration
-  rmm::device_scalar<edge_t>
-    prev_mst_edge_count;                     // total number of edges up to the previous iteration
-  rmm::device_uvector<bool> mst_edge;        // mst output -  true if the edge belongs in mst
-  rmm::device_uvector<vertex_t> next_color;  //  next iteration color
-  rmm::device_uvector<vertex_t> color;       // index of color that vertex points to
-
-  // new src-dst pairs found per iteration
-  rmm::device_uvector<vertex_t> temp_src;
-  rmm::device_uvector<vertex_t> temp_dst;
-  rmm::device_uvector<weight_t> temp_weights;
-
-  void label_prop(vertex_t* mst_src, vertex_t* mst_dst);
-  void min_edge_per_vertex();
-  void min_edge_per_supervertex();
-  void check_termination();
-  void alteration();
-  alteration_t alteration_max();
-  void append_src_dst_pair(vertex_t* mst_src, vertex_t* mst_dst, weight_t* mst_weights);
+  vertex_t* color_index;  // user-provided output colors array (one color per vertex)
 };
 
 }  // namespace sparse::solver

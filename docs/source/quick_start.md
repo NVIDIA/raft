@@ -2,9 +2,11 @@
 
 This guide is meant to provide a quick-start tutorial for interacting with RAFT's C++ & Python APIs.
 
-## RAPIDS Memory Manager (RMM)
+## Memory Management
 
-RAFT relies heavily on the [RMM](https://github.com/rapidsai/rmm) library which eases the burden of configuring different allocation strategies globally across the libraries that use it.
+RAFT uses memory resources for managing device memory. RAFT can use memory resources from
+[CCCL](https://github.com/NVIDIA/cccl) or [NVIDIA RMM](https://github.com/rapidsai/rmm),
+defined as either `cuda::mr::resource_ref<cuda::mr::device_accessible>` or `rmm::device_async_resource_ref`.
 
 ## Multi-dimensional Spans and Arrays
 
@@ -95,7 +97,7 @@ auto vector = raft::make_device_vector_view(vector_ptr, raft::make_vector_stride
 Most of the primitives in RAFT accept a `raft::handle_t` object for the management of resources which are expensive to create, such CUDA streams, stream pools, and handles to other CUDA libraries like `cublas` and `cusolver`.
 
 The example below demonstrates creating a RAFT handle and using it with `device_matrix` and `device_vector` to allocate memory, generating random clusters, and computing
-pairwise Euclidean distances with [NVIDIA cuVS](https://github.com/rapidsai/cuvs):
+pairwise Euclidean distances with [NVIDIA cuVS](https://github.com/NVIDIA/cuvs):
 
 ```c++
 #include <raft/core/handle.hpp>
@@ -122,7 +124,7 @@ cuvs::distance::pairwise_distance(handle, input.view(), input.view(), output.vie
 
 The `pylibraft` package contains a Python API for RAFT algorithms and primitives. `pylibraft` integrates nicely into other libraries by being very lightweight with minimal dependencies and accepting any object that supports the `__cuda_array_interface__`, such as [CuPy's ndarray](https://docs.cupy.dev/en/stable/user_guide/interoperability.html#rmm). The number of RAFT algorithms exposed in this package is continuing to grow from release to release.
 
-The example below demonstrates computing the pairwise Euclidean distances between CuPy arrays with the [NVIDIA cuVS](https://github.com/rapidsai/cuvs) library. Note that CuPy is not a required dependency for `pylibraft`.
+The example below demonstrates computing the pairwise Euclidean distances between CuPy arrays with the [NVIDIA cuVS](https://github.com/NVIDIA/cuvs) library. Note that CuPy is not a required dependency for `pylibraft`.
 
 ```python
 import cupy as cp

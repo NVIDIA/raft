@@ -10,7 +10,7 @@ dependencies:
 - clang-tools=20.1.8
 - clang==20.1.8
 - cmake>=4.0
-- cuda-bindings>=12.9.2,<13.0
+- cuda-bindings>=12.9.3,<13.0
 - cuda-nvcc
 - cuda-nvtx-dev
 - cuda-profiler-api
