@@ -71,7 +71,7 @@ jobs:
       date: ${{ inputs.date }}
       script: ci/test_python.sh
       sha: ${{ inputs.sha }}
-      matrix_type: python-3-15-nightly, nightly
+      matrix_type: python-3-15-nightly,nightly
   wheel-tests-pylibraft:
     permissions:
       actions: read
@@ -87,7 +87,7 @@ jobs:
       date: ${{ inputs.date }}
       sha: ${{ inputs.sha }}
       script: ci/test_wheel_pylibraft.sh
-      matrix_type: python-3-15-nightly, nightly
+      matrix_type: python-3-15-nightly,nightly
   wheel-tests-raft-dask:
     permissions:
       actions: read
@@ -103,4 +103,4 @@ jobs:
       date: ${{ inputs.date }}
       sha: ${{ inputs.sha }}
       script: ci/test_wheel_raft_dask.sh
-      matrix_type: python-3-15-nightly, nightly
+      matrix_type: python-3-15-nightly,nightly

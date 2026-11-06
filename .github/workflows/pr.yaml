@@ -292,7 +292,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_python.sh
-      matrix_type: python-3-15-pr, pull-request
+      matrix_type: python-3-15-pr,pull-request
   docs-build-matrix:
     permissions:
       contents: read
@@ -398,7 +398,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel_pylibraft.sh
-      matrix_type: python-3-15-pr, pull-request
+      matrix_type: python-3-15-pr,pull-request
   wheel-build-raft-dask:
     needs: [build-details, checks, wheel-build-libraft]
     permissions:
@@ -433,7 +433,7 @@ jobs:
     with:
       build_type: pull-request
       script: ci/test_wheel_raft_dask.sh
-      matrix_type: python-3-15-pr, pull-request
+      matrix_type: python-3-15-pr,pull-request
   devcontainer:
     permissions:
       actions: read
