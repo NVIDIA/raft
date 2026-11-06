@@ -319,5 +319,59 @@ TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
   execute_with_dry_run_check(handle, action, alloc_behavior::ARGUMENT_DRIVEN, expected);
 }
 
+TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle).get();
+  // {nrows, ncols, nkeys}: the cuML #8869 shapes (a single block) and a multi-block shape
+  for (auto [nrows, ncols, nkeys] : {std::array<int, 3>{500, 4, 4},
+                                     std::array<int, 3>{300, 3, 3},
+                                     std::array<int, 3>{100000, 16, 8}}) {
+    rmm::device_uvector<float> in(nrows * ncols, stream), out(nkeys * ncols, stream);
+    rmm::device_uvector<float> out_atomic(nkeys * ncols, stream);
+    rmm::device_uvector<uint32_t> keys(nrows, stream);
+    ASSERT_EQ(
+      detail::sum_rows_by_key_select_kernel(in.data(), ncols, nrows, ncols, nkeys, out.data())
+        .kernel,
+      detail::sum_rows_by_key_kernel::few_keys);
+    raft::random::RngState r(1234ULL);
+    uniform(handle, r, in.data(), in.size(), -1.f, 1.f);
+    uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t(nkeys));
+    auto reduce = [&](float* sums, bool deterministic) {
+      reduce_rows_by_key(in.data(),
+                         ncols,
+                         keys.data(),
+                         static_cast<char*>(nullptr),
+                         nrows,
+                         ncols,
+                         nkeys,
+                         sums,
+                         stream,
+                         true,
+                         deterministic);
+    };
+
+    // Deterministic mode: bitwise identical across runs.
+    std::vector<float> first(out.size()), cur(out.size());
+    for (int run = 0; run < 5; ++run) {
+      reduce(out.data(), true);
+      raft::update_host((run == 0 ? first : cur).data(), out.data(), out.size(), stream);
+      resource::sync_stream(handle, stream);
+      if (run > 0) {
+        EXPECT_EQ(0, std::memcmp(first.data(), cur.data(), first.size() * sizeof(float)))
+          << "{nrows=" << nrows << ", ncols=" << ncols << ", nkeys=" << nkeys << "}: run " << run
+          << " differs from run 0";
+      }
+    }
+
+    // Same sums as the (faster) atomic mode, up to rounding.
+    reduce(out_atomic.data(), false);
+    EXPECT_TRUE(raft::devArrMatch(
+      out_atomic.data(), out.data(), out.size(), raft::CompareApprox<float>(1e-4f), stream))
+      << "{nrows=" << nrows << ", ncols=" << ncols << ", nkeys=" << nkeys
+      << "}: deterministic and atomic sums differ";
+  }
+}
+
 }  // end namespace linalg
 }  // end namespace raft
