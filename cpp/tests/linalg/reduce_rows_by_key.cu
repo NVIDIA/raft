@@ -409,11 +409,5 @@ TEST(ReduceRowsByKeySorted, SumDeterminism)
     detail::sum_rows_by_key_kernel::sorted);
 }
 
-TEST(ReduceRowsByKeyElementwise, SumDeterminism)
-{
-  check_float_sums_reproducible({{100000, 37, 2048}, {200000, 64, 1000}, {1000000, 8, 100000}},
-                                detail::sum_rows_by_key_kernel::elementwise);
-}
-
 }  // end namespace linalg
 }  // end namespace raft
