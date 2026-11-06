@@ -13,7 +13,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstring>
 #include <iostream>
+#include <vector>
 
 namespace raft {
 namespace linalg {
@@ -319,6 +322,37 @@ TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
   execute_with_dry_run_check(handle, action, alloc_behavior::ARGUMENT_DRIVEN, expected);
 }
 
+TEST(ReduceRowsByKeyDryRun, FewKeysPathAllocations)
+{
+  raft::resources handle;
+  auto stream         = resource::get_cuda_stream(handle).get();
+  constexpr int nrows = 100000;
+  constexpr int ncols = 16;
+  constexpr int nkeys = 8;
+  rmm::device_uvector<float> in(nrows * ncols, stream);
+  rmm::device_uvector<float> sums(nkeys * ncols, stream);
+  rmm::device_uvector<uint32_t> keys(nrows, stream);
+  raft::random::RngState r(1234ULL);
+  uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t{nkeys});
+  RAFT_CUDA_TRY(cudaMemsetAsync(in.data(), 0, in.size() * sizeof(float), stream));
+
+  auto action = [&](raft::resources const& res) {
+    detail::sum_rows_by_key_rowmajor_few_keys(in.data(),
+                                              ncols,
+                                              keys.data(),
+                                              static_cast<const float*>(nullptr),
+                                              nrows,
+                                              ncols,
+                                              nkeys,
+                                              sums.data(),
+                                              resource::get_cuda_stream(res).get(),
+                                              resource::get_dry_run_flag(res));
+  };
+  // 2 blocks for this input size
+  execute_with_dry_run_check(
+    handle, action, alloc_behavior::ARGUMENT_DRIVEN, 2 * nkeys * ncols * sizeof(float));
+}
+
 TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
 {
   raft::resources handle;
@@ -328,7 +362,6 @@ TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
                                      std::array<int, 3>{300, 3, 3},
                                      std::array<int, 3>{100000, 16, 8}}) {
     rmm::device_uvector<float> in(nrows * ncols, stream), out(nkeys * ncols, stream);
-    rmm::device_uvector<float> out_atomic(nkeys * ncols, stream);
     rmm::device_uvector<uint32_t> keys(nrows, stream);
     ASSERT_EQ(
       detail::sum_rows_by_key_select_kernel(in.data(), ncols, nrows, ncols, nkeys, out.data())
@@ -337,7 +370,10 @@ TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
     raft::random::RngState r(1234ULL);
     uniform(handle, r, in.data(), in.size(), -1.f, 1.f);
     uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t(nkeys));
-    auto reduce = [&](float* sums, bool deterministic) {
+
+    // Bitwise identical across runs.
+    std::vector<float> first(out.size()), cur(out.size());
+    for (int run = 0; run < 5; ++run) {
       reduce_rows_by_key(in.data(),
                          ncols,
                          keys.data(),
@@ -345,16 +381,8 @@ TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
                          nrows,
                          ncols,
                          nkeys,
-                         sums,
-                         stream,
-                         true,
-                         deterministic);
-    };
-
-    // Deterministic mode: bitwise identical across runs.
-    std::vector<float> first(out.size()), cur(out.size());
-    for (int run = 0; run < 5; ++run) {
-      reduce(out.data(), true);
+                         out.data(),
+                         stream);
       raft::update_host((run == 0 ? first : cur).data(), out.data(), out.size(), stream);
       resource::sync_stream(handle, stream);
       if (run > 0) {
@@ -363,13 +391,6 @@ TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
           << " differs from run 0";
       }
     }
-
-    // Same sums as the (faster) atomic mode, up to rounding.
-    reduce(out_atomic.data(), false);
-    EXPECT_TRUE(raft::devArrMatch(
-      out_atomic.data(), out.data(), out.size(), raft::CompareApprox<float>(1e-4f), stream))
-      << "{nrows=" << nrows << ", ncols=" << ncols << ", nkeys=" << nkeys
-      << "}: deterministic and atomic sums differ";
   }
 }
 

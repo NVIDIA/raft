@@ -49,7 +49,6 @@ void convert_array(IteratorT1 dst, IteratorT2 src, int n, cudaStream_t st)
  * @param[out] d_sums      Row sums by key (ncols x d_keys)
  * @param[in]  stream      CUDA stream
  * @param[in]  reset_sums  Whether to reset the output sums to zero before reducing
- * @param[in]  deterministic Bitwise reproducible sums at the cost of performance. False, for speed.
  */
 template <typename DataIteratorT,
           typename KeysIteratorT,
@@ -66,22 +65,10 @@ void reduce_rows_by_key(const DataIteratorT d_A,
                         IdxT nkeys,
                         SumsT* d_sums,
                         cudaStream_t stream,
-                        bool reset_sums    = true,
-                        bool deterministic = true)
+                        bool reset_sums = true)
 {
-  detail::reduce_rows_by_key(d_A,
-                             lda,
-                             d_keys,
-                             d_weights,
-                             d_keys_char,
-                             nrows,
-                             ncols,
-                             nkeys,
-                             d_sums,
-                             stream,
-                             reset_sums,
-                             false,
-                             deterministic);
+  detail::reduce_rows_by_key(
+    d_A, lda, d_keys, d_weights, d_keys_char, nrows, ncols, nkeys, d_sums, stream, reset_sums);
 }
 
 /**
@@ -102,7 +89,6 @@ void reduce_rows_by_key(const DataIteratorT d_A,
  * @param[out] d_sums      Row sums by key (ncols x d_keys)
  * @param[in]  stream      CUDA stream
  * @param[in]  reset_sums  Whether to reset the output sums to zero before reducing
- * @param[in]  deterministic Bitwise reproducible sums at the cost of performance. False, for speed.
  */
 template <typename DataIteratorT, typename KeysIteratorT, typename SumsT, typename IdxT>
 void reduce_rows_by_key(const DataIteratorT d_A,
@@ -114,8 +100,7 @@ void reduce_rows_by_key(const DataIteratorT d_A,
                         IdxT nkeys,
                         SumsT* d_sums,
                         cudaStream_t stream,
-                        bool reset_sums    = true,
-                        bool deterministic = true)
+                        bool reset_sums = true)
 {
   typedef typename std::iterator_traits<DataIteratorT>::value_type DataType;
   reduce_rows_by_key(d_A,
@@ -128,8 +113,7 @@ void reduce_rows_by_key(const DataIteratorT d_A,
                      nkeys,
                      d_sums,
                      stream,
-                     reset_sums,
-                     deterministic);
+                     reset_sums);
 }
 
 /**
@@ -154,7 +138,6 @@ void reduce_rows_by_key(const DataIteratorT d_A,
  * @param[in]  d_weights   Weights for each observation in d_A raft::device_vector_view optional (1
  * x nrows)
  * @param[in]  reset_sums  Whether to reset the output sums to zero before reducing
- * @param[in]  deterministic Bitwise reproducible sums at the cost of performance. False, for speed.
  */
 template <typename ElementType, typename KeyType, typename WeightType, typename IndexType>
 void reduce_rows_by_key(
@@ -165,8 +148,7 @@ void reduce_rows_by_key(
   IndexType n_unique_keys,
   raft::device_vector_view<char, IndexType> d_keys_char,
   std::optional<raft::device_vector_view<const WeightType, IndexType>> d_weights = std::nullopt,
-  bool reset_sums                                                                = true,
-  bool deterministic                                                             = true)
+  bool reset_sums                                                                = true)
 {
   RAFT_EXPECTS(d_A.extent(0) == d_A.extent(0) && d_sums.extent(1) == n_unique_keys,
                "Output is not of size ncols * n_unique_keys");
@@ -187,8 +169,7 @@ void reduce_rows_by_key(
                                d_sums.data_handle(),
                                resource::get_cuda_stream(handle).get(),
                                reset_sums,
-                               dry_run,
-                               deterministic);
+                               dry_run);
   } else {
     detail::reduce_rows_by_key(d_A.data_handle(),
                                d_A.extent(0),
@@ -200,8 +181,7 @@ void reduce_rows_by_key(
                                d_sums.data_handle(),
                                resource::get_cuda_stream(handle).get(),
                                reset_sums,
-                               dry_run,
-                               deterministic);
+                               dry_run);
   }
 }
 
