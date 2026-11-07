@@ -83,7 +83,7 @@ inline const char* cusolver_error_to_string(cusolverStatus_t err)
     cusolverStatus_t const status = (call);                                                  \
     if (CUSOLVER_STATUS_SUCCESS != status) {                                                 \
       throw raft::cusolver_error(                                                            \
-        raft::format_error_message(std::source_location::current(),                          \
+        raft::format_error_message(raft::source_location::current(),                         \
                                    "cuSOLVER error encountered at: ",                        \
                                    "call='%s', Reason=%d:%s",                                \
                                    #call,                                                    \
