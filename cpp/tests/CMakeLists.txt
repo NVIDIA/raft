@@ -253,6 +253,7 @@ if(BUILD_TESTS)
     linalg/eigen_solvers.cu
     lap/lap.cu
     sparse/mst.cu
+    sparse/solver/lanczos_fallback.cu
     sparse/solver/lanczos.cu
     sparse/solver/lanczos_svds.cu
     sparse/solver/randomized_svds.cu
