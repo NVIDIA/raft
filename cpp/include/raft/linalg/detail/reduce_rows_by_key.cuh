@@ -6,9 +6,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
-#include <raft/core/operators.hpp>
 #include <raft/linalg/detail/coalesced_reduction.cuh>
-#include <raft/linalg/detail/map.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
@@ -100,58 +98,6 @@ DI void sum_rows_by_key_atomic_add(SumsT* dst, const SumsT (&v)[VecLen])
     for (int c = 0; c < VecLen; ++c) {
       raft::myAtomicAdd(dst + c, v[c]);
     }
-  }
-}
-
-// Allocates a buffer in double precision in addition to d_sums when SumsT != double
-// This is needed for atomic add in double precision.
-template <typename SumsT>
-struct sum_rows_by_key_accumulator {
-  static constexpr bool kOwnBuffer = !std::is_same_v<SumsT, double>;
-
-  sum_rows_by_key_accumulator(SumsT* d_sums, size_t n, bool dry_run, cudaStream_t st)
-    : sums_(d_sums), buffer_(kOwnBuffer ? n : 0, st)
-  {
-    if (kOwnBuffer && !dry_run) {
-      RAFT_CUDA_TRY(cudaMemsetAsync(buffer_.data(), 0, n * sizeof(double), st));
-    }
-  }
-
-  double* data()
-  {
-    if constexpr (kOwnBuffer) {
-      return buffer_.data();
-    } else {
-      return sums_;
-    }
-  }
-
-  // d_sums += accumulated sums, rounded to from double to SumsT
-  // no-op when SumsT is double
-  void finish(cudaStream_t st)
-  {
-    if constexpr (kOwnBuffer) {
-      map<false>(st,
-                 sums_,
-                 static_cast<int64_t>(buffer_.size()),
-                 raft::add_op{},
-                 static_cast<const SumsT*>(sums_),
-                 static_cast<const double*>(buffer_.data()));
-    }
-  }
-
- private:
-  SumsT* sums_;
-  rmm::device_uvector<double> buffer_;
-};
-
-/** Adds the sums of a thread to dst with double atomics. */
-template <int VecLen, typename SumsT>
-DI void sum_rows_by_key_atomic_add_double(double* dst, const SumsT (&v)[VecLen])
-{
-#pragma unroll
-  for (int c = 0; c < VecLen; ++c) {
-    raft::myAtomicAdd(dst + c, static_cast<double>(v[c]));
   }
 }
 
@@ -428,7 +374,7 @@ RAFT_KERNEL sum_rows_by_key_kernel_rowmajor_sorted(const DataIteratorT d_A,
                                                    IdxT ncols,
                                                    IdxT chunk,
                                                    IdxT n_tiles,
-                                                   double* d_sums)
+                                                   SumsT* d_sums)
 {
   // Each warp owns: rows [r0, r1) and columns [col0, col0 + kTileCols)
   constexpr IdxT kTileCols = kVecs * VecLen * WarpSize;
@@ -448,8 +394,7 @@ RAFT_KERNEL sum_rows_by_key_kernel_rowmajor_sorted(const DataIteratorT d_A,
     for (int v = 0; v < kVecs; ++v) {
       const IdxT col = col0 + v * VecLen * WarpSize;
       if (col < ncols) {
-        sum_rows_by_key_atomic_add_double<VecLen>(d_sums + ncols * static_cast<IdxT>(cur) + col,
-                                                  acc[v]);
+        sum_rows_by_key_atomic_add<VecLen>(d_sums + ncols * static_cast<IdxT>(cur) + col, acc[v]);
       }
 #pragma unroll
       for (int c = 0; c < VecLen; ++c) {
@@ -501,9 +446,9 @@ RAFT_KERNEL sum_rows_by_key_kernel_rowmajor_sorted(const DataIteratorT d_A,
 
 template <int VecLen,
           int kLaneBytes,
-          typename SumsT,
           typename DataIteratorT,
           typename WeightT,
+          typename SumsT,
           typename IdxT>
 void sum_rows_by_key_rowmajor_sorted_launch(const DataIteratorT d_A,
                                             IdxT lda,
@@ -512,7 +457,7 @@ void sum_rows_by_key_rowmajor_sorted_launch(const DataIteratorT d_A,
                                             const uint32_t* d_row_ids,
                                             IdxT nrows,
                                             IdxT ncols,
-                                            double* d_sums,
+                                            SumsT* d_sums,
                                             cudaStream_t st)
 {
   constexpr int kVecs        = kLaneBytes / (VecLen * sizeof(SumsT));
@@ -532,13 +477,7 @@ void sum_rows_by_key_rowmajor_sorted_launch(const DataIteratorT d_A,
   raft::launch_kernel(st,
                       grid_dim,
                       block_dim,
-                      sum_rows_by_key_kernel_rowmajor_sorted<VecLen,
-                                                             kVecs,
-                                                             kRowsAhead,
-                                                             DataIteratorT,
-                                                             WeightT,
-                                                             SumsT,
-                                                             IdxT>,
+                      sum_rows_by_key_kernel_rowmajor_sorted<VecLen, kVecs, kRowsAhead>,
                       d_A,
                       lda,
                       d_weights,
@@ -588,9 +527,7 @@ void sum_rows_by_key_rowmajor_sorted(const DataIteratorT d_A,
   RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
     nullptr, tmp_bytes, keys_db, row_ids_db, static_cast<int>(batch_rows), 0, end_bit, st));
   rmm::device_buffer tmp(tmp_bytes, st);
-  sum_rows_by_key_accumulator<SumsT> acc(d_sums, static_cast<size_t>(nkeys) * ncols, dry_run, st);
   if (dry_run) { return; }
-  auto* d_acc = acc.data();
 
   // Pick 16-byte vector when the input is a plain pointer and rows and sums are aligned.
   constexpr int kVecLen = 16 / sizeof(SumsT);
@@ -630,11 +567,11 @@ void sum_rows_by_key_rowmajor_sorted(const DataIteratorT d_A,
     auto launch              = [&](auto vec_len) {
       constexpr int VecLen = decltype(vec_len)::value;
       if (narrow_rows) {
-        sum_rows_by_key_rowmajor_sorted_launch<VecLen, 16, SumsT>(
-          batch_A, lda, batch_w, s_keys, s_rowids, n_batch_rows, ncols, d_acc, st);
+        sum_rows_by_key_rowmajor_sorted_launch<VecLen, 16>(
+          batch_A, lda, batch_w, s_keys, s_rowids, n_batch_rows, ncols, d_sums, st);
       } else {
-        sum_rows_by_key_rowmajor_sorted_launch<VecLen, 32, SumsT>(
-          batch_A, lda, batch_w, s_keys, s_rowids, n_batch_rows, ncols, d_acc, st);
+        sum_rows_by_key_rowmajor_sorted_launch<VecLen, 32>(
+          batch_A, lda, batch_w, s_keys, s_rowids, n_batch_rows, ncols, d_sums, st);
       }
     };
     if constexpr (kIsPlainPointer) {
@@ -645,7 +582,6 @@ void sum_rows_by_key_rowmajor_sorted(const DataIteratorT d_A,
     }
     launch(std::integral_constant<int, 1>{});
   }
-  acc.finish(st);
 }
 
 enum class sum_rows_by_key_kernel { elementwise, few_keys, sorted };
