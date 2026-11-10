@@ -220,7 +220,7 @@ dependencies:
           - c-compiler
           - cuda-nvcc
           - cxx-compiler
-          - libucxx==0.53.*,>=0.0.0a0
+          - libucxx==0.54.*,>=0.0.0a0
     specific:
       - output_types: conda
         matrices:
@@ -522,11 +522,11 @@ dependencies:
     common:
       - output_types: [conda, pyproject, requirements, constraints]
         packages:
-          - rapids-dask-dependency==26.12.*,>=0.0.0a0
+          - rapids-dask-dependency==27.2.*,>=0.0.0a0
       - output_types: conda
         packages:
-          - &dask_cuda_unsuffixed dask-cuda==26.12.*,>=0.0.0a0
-          - &pylibraft_unsuffixed pylibraft==26.12.*,>=0.0.0a0
+          - &dask_cuda_unsuffixed dask-cuda==27.2.*,>=0.0.0a0
+          - &pylibraft_unsuffixed pylibraft==27.2.*,>=0.0.0a0
       - output_types: constraints
         packages:
           - *dask_cuda_unsuffixed
@@ -537,14 +537,14 @@ dependencies:
               cuda: "12.*"
               cuda_suffixed: "true"
             packages:
-              - dask-cuda[cu12]==26.12.*,>=0.0.0a0
-              - &pylibraft_cu12 pylibraft-cu12==26.12.*,>=0.0.0a0
+              - dask-cuda[cu12]==27.2.*,>=0.0.0a0
+              - &pylibraft_cu12 pylibraft-cu12==27.2.*,>=0.0.0a0
           - matrix:
               cuda: "13.*"
               cuda_suffixed: "true"
             packages:
-              - dask-cuda[cu13]==26.12.*,>=0.0.0a0
-              - &pylibraft_cu13 pylibraft-cu13==26.12.*,>=0.0.0a0
+              - dask-cuda[cu13]==27.2.*,>=0.0.0a0
+              - &pylibraft_cu13 pylibraft-cu13==27.2.*,>=0.0.0a0
           - matrix:
               cuda_suffixed: "false"
             packages:
@@ -611,7 +611,7 @@ dependencies:
         packages:
           # UCXX is not currently a hard-dependency thus only installed during tests,
           # this will change in the future.
-          - &distributed_ucxx_unsuffixed distributed-ucxx==0.53.*,>=0.0.0a0
+          - &distributed_ucxx_unsuffixed distributed-ucxx==0.54.*,>=0.0.0a0
     specific:
       - output_types: [requirements, constraints, pyproject]
         matrices:
@@ -619,12 +619,12 @@ dependencies:
               cuda: "12.*"
               cuda_suffixed: "true"
             packages:
-              - distributed-ucxx-cu12==0.53.*,>=0.0.0a0
+              - distributed-ucxx-cu12==0.54.*,>=0.0.0a0
           - matrix:
               cuda: "13.*"
               cuda_suffixed: "true"
             packages:
-              - distributed-ucxx-cu13==0.53.*,>=0.0.0a0
+              - distributed-ucxx-cu13==0.54.*,>=0.0.0a0
           - matrix:
               cuda_suffixed: "false"
             packages:
@@ -633,7 +633,7 @@ dependencies:
     common:
       - output_types: conda
         packages:
-          - &libraft_unsuffixed libraft==26.12.*,>=0.0.0a0
+          - &libraft_unsuffixed libraft==27.2.*,>=0.0.0a0
     specific:
       - output_types: [requirements, constraints, pyproject]
         matrices:
@@ -641,12 +641,12 @@ dependencies:
               cuda: "12.*"
               cuda_suffixed: "true"
             packages:
-              - libraft-cu12==26.12.*,>=0.0.0a0
+              - libraft-cu12==27.2.*,>=0.0.0a0
           - matrix:
               cuda: "13.*"
               cuda_suffixed: "true"
             packages:
-              - libraft-cu13==26.12.*,>=0.0.0a0
+              - libraft-cu13==27.2.*,>=0.0.0a0
           - matrix:
               cuda_suffixed: "false"
             packages:
@@ -655,27 +655,27 @@ dependencies:
     common:
       - output_types: conda
         packages:
-          - libraft-headers==26.12.*,>=0.0.0a0
+          - libraft-headers==27.2.*,>=0.0.0a0
   depends_on_pylibraft:
     common:
       - output_types: conda
         packages:
-          - pylibraft==26.12.*,>=0.0.0a0
+          - pylibraft==27.2.*,>=0.0.0a0
   depends_on_raft_dask:
     common:
       - output_types: conda
         packages:
-          - raft-dask==26.12.*,>=0.0.0a0
+          - raft-dask==27.2.*,>=0.0.0a0
   depends_on_libraft_tests:
     common:
       - output_types: conda
         packages:
-          - libraft-tests==26.12.*,>=0.0.0a0
+          - libraft-tests==27.2.*,>=0.0.0a0
   depends_on_librmm:
     common:
       - output_types: conda
         packages:
-          - &librmm_unsuffixed librmm==26.12.*,>=0.0.0a0
+          - &librmm_unsuffixed librmm==27.2.*,>=0.0.0a0
     specific:
       - output_types: [requirements, constraints, pyproject]
         matrices:
@@ -683,12 +683,12 @@ dependencies:
               cuda: "12.*"
               cuda_suffixed: "true"
             packages:
-              - librmm-cu12==26.12.*,>=0.0.0a0
+              - librmm-cu12==27.2.*,>=0.0.0a0
           - matrix:
               cuda: "13.*"
               cuda_suffixed: "true"
             packages:
-              - librmm-cu13==26.12.*,>=0.0.0a0
+              - librmm-cu13==27.2.*,>=0.0.0a0
           - matrix:
               cuda_suffixed: "false"
             packages:
@@ -697,7 +697,7 @@ dependencies:
     common:
       - output_types: conda
         packages:
-          - &rmm_unsuffixed rmm==26.12.*,>=0.0.0a0
+          - &rmm_unsuffixed rmm==27.2.*,>=0.0.0a0
     specific:
       - output_types: [requirements, constraints, pyproject]
         matrices:
@@ -705,12 +705,12 @@ dependencies:
               cuda: "12.*"
               cuda_suffixed: "true"
             packages:
-              - rmm-cu12==26.12.*,>=0.0.0a0
+              - rmm-cu12==27.2.*,>=0.0.0a0
           - matrix:
               cuda: "13.*"
               cuda_suffixed: "true"
             packages:
-              - rmm-cu13==26.12.*,>=0.0.0a0
+              - rmm-cu13==27.2.*,>=0.0.0a0
           - matrix:
               cuda_suffixed: "false"
             packages:
