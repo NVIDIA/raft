@@ -145,7 +145,8 @@ template <typename T>
 struct device_problem {
   raft::device_resources const& res;
   problem<T> const& pr;
-  raft::device_matrix<T, index_t, raft::col_major> A, B, X, fitted;
+  raft::device_matrix<T, index_t, raft::col_major> A, B, X;
+  raft::device_vector<T, index_t> rnorm;
   raft::device_matrix<std::uint8_t, index_t, raft::col_major> masks;
 
   device_problem(raft::device_resources const& r, problem<T> const& p)
@@ -154,7 +155,7 @@ struct device_problem {
       A(raft::make_device_matrix<T, index_t, raft::col_major>(r, p.m, p.n)),
       B(raft::make_device_matrix<T, index_t, raft::col_major>(r, p.m, p.P)),
       X(raft::make_device_matrix<T, index_t, raft::col_major>(r, p.n, p.P)),
-      fitted(raft::make_device_matrix<T, index_t, raft::col_major>(r, p.m, p.P)),
+      rnorm(raft::make_device_vector<T, index_t>(r, p.P)),
       masks(raft::make_device_matrix<std::uint8_t, index_t, raft::col_major>(
         r, p.n, p.masks.empty() ? 0 : p.P))
   {
@@ -165,19 +166,19 @@ struct device_problem {
       raft::update_device(masks.data_handle(), p.masks.data(), p.masks.size(), stream);
   }
 
-  void solve(raft::resources const& r, nnls_params params = {}, bool with_fitted = false)
+  void solve(raft::resources const& r, nnls_params params = {}, bool with_rnorm = false)
   {
     std::optional<raft::device_matrix_view<const std::uint8_t, index_t, raft::col_major>> mk;
     if (!pr.masks.empty()) mk = raft::make_const_mdspan(masks.view());
-    std::optional<raft::device_matrix_view<T, index_t, raft::col_major>> fit;
-    if (with_fitted) fit = fitted.view();
+    std::optional<raft::device_vector_view<T, index_t>> rn;
+    if (with_rnorm) rn = rnorm.view();
     nnls<T>(r,
             params,
             raft::make_const_mdspan(A.view()),
             raft::make_const_mdspan(B.view()),
             X.view(),
             mk,
-            fit);
+            rn);
   }
 
   std::vector<T> host(raft::device_matrix<T, index_t, raft::col_major> const& d, index_t rows)
@@ -252,27 +253,47 @@ TYPED_TEST(NnlsTest, MasksAreRespected)
   this->solve_and_check(96, 66, 40, 12, true);
 }
 
-TYPED_TEST(NnlsTest, FittedIsAx)
+TYPED_TEST(NnlsTest, RnormIsTheResidualNorm)
 {
-  using T = TypeParam;
-  problem<T> pr(96, 29, 30, 21);
-  device_problem<T> dp(this->res, pr);
-  dp.solve(this->res, {}, true);
-  auto X       = dp.host(dp.X, pr.n);
-  auto F       = dp.host(dp.fitted, pr.m);
-  double worst = 0;
-  bool finite  = true;
-  for (index_t p = 0; p < pr.P; ++p)
-    for (index_t i = 0; i < pr.m; ++i) {
-      double acc = 0;
-      for (index_t j = 0; j < pr.n; ++j)
-        acc += static_cast<double>(at(pr.A, i, j, pr.m)) * at(X, j, p, pr.n);
-      const double f = at(F, i, p, pr.m);
-      finite         = finite && std::isfinite(f) && std::isfinite(acc);
-      worst          = std::max(worst, std::abs(acc - f) / (1.0 + std::abs(acc)));
+  // rnorm(p) = ||b_p - A x_p||_2 of the returned solution (scipy.optimize.nnls' second
+  // result), checked against a float64 host evaluation, with and without masks and for a
+  // wide A whose active set is as large as the rank bound.
+  using T                   = TypeParam;
+  const index_t shapes[][3] = {{96, 29, 30}, {32, 10, 50}, {1536, 10, 20}, {96, 384, 16}};
+  unsigned seed             = 21;
+  for (auto& s : shapes) {
+    for (bool masked : {false, true}) {
+      problem<T> pr(s[0], s[1], s[2], seed++, masked);
+      device_problem<T> dp(this->res, pr);
+      // NaN everywhere: every entry has to be written.
+      RAFT_CUDA_TRY(cudaMemsetAsync(dp.rnorm.data_handle(),
+                                    0xFF,
+                                    pr.P * sizeof(T),
+                                    raft::resource::get_cuda_stream(this->res).get()));
+      dp.solve(this->res, {}, true);
+      auto X = dp.host(dp.X, pr.n);
+      std::vector<T> rn(pr.P);
+      raft::update_host(
+        rn.data(), dp.rnorm.data_handle(), pr.P, raft::resource::get_cuda_stream(this->res));
+      raft::resource::sync_stream(this->res);
+      for (index_t p = 0; p < pr.P; ++p) {
+        double sq = 0, bsq = 0;
+        for (index_t i = 0; i < pr.m; ++i) {
+          double r = at(pr.B, i, p, pr.m);
+          bsq += r * r;
+          for (index_t j = 0; j < pr.n; ++j)
+            r -= static_cast<double>(at(pr.A, i, j, pr.m)) * at(X, j, p, pr.n);
+          sq += r * r;
+        }
+        ASSERT_TRUE(std::isfinite(rn[p])) << "problem " << p << ": rnorm not written";
+        // The error is that of the residual, relative to the scale of b (the residual of a
+        // good fit is a difference of numbers of that size).
+        EXPECT_LE(std::abs(rn[p] - std::sqrt(sq)),
+                  (sizeof(T) == 4 ? 1e-5 : 1e-12) * std::sqrt(bsq) + 1e-3 * std::sqrt(sq))
+          << "shape " << s[0] << "x" << s[1] << " problem " << p << " masked=" << masked;
+      }
     }
-  EXPECT_TRUE(finite) << "non-finite fitted value";
-  EXPECT_LT(worst, kkt_tolerance<T>());
+  }
 }
 
 TYPED_TEST(NnlsTest, IsDeterministic)
@@ -455,13 +476,13 @@ TYPED_TEST(NnlsTest, DryRunCompliant)
   const index_t shapes[][3] = {{32, 10, 200}, {96, 29, 100}, {95, 66, 64}, {96, 2048, 8}};
   for (auto& s : shapes) {
     for (bool masked : {false, true}) {
-      for (bool with_fitted : {false, true}) {
+      for (bool with_rnorm : {false, true}) {
         problem<T> pr(s[0], s[1], s[2], 91, masked);
         device_problem<T> dp(this->res, pr);
         raft::resource::sync_stream(this->res);
         execute_with_dry_run_check(
           this->res,
-          [&](raft::resources const& r) { dp.solve(r, {}, with_fitted); },
+          [&](raft::resources const& r) { dp.solve(r, {}, with_rnorm); },
           alloc_behavior::ARGUMENT_DRIVEN,
           sizeof(T) * s[1] * (s[1] + s[2]));  // at least the Gram matrix and the projections
       }

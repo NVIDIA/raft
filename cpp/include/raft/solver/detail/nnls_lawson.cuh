@@ -756,6 +756,10 @@ struct lawson_args {
   const std::uint8_t* masks;  ///< (n, P) column-major support, or nullptr: all eligible
   T* X;                       ///< (n, P) solutions, column-major; written on exit
   T* L_scratch;               ///< gridDim.x slabs of lawson_slab_elems(np_max)
+  const T* A;                 ///< (m, n) column-major matrix; read only if rnorm != nullptr
+  const T* B;                 ///< (m, P) right-hand sides; read only if rnorm != nullptr
+  T* rnorm;                   ///< (P) residual norms ||b_p - A x_p||_2, or nullptr: skipped
+  int m;
   int n;
   int P;
   int np_max;  ///< min(m, n): hard cap on the active-set size (rank bound)
@@ -930,6 +934,47 @@ __global__ __launch_bounds__(
     for (int kk = tid; kk < np; kk += BlockSize)
       Xp[S.idx[kk]] = S.xp[kk];
     __syncthreads();
+
+    // Residual norm ||b - A x||_2 from the np active columns only, O(m * np) per problem
+    // (a closed form from G and c would cancel badly in float32 for a good fit).  S.idx and
+    // S.xp are still intact: the next problem overwrites them only after its first barrier,
+    // which thread 0 reaches after the final read of S.red_val below.
+    if (args.rnorm != nullptr) {
+      const T* __restrict__ b = args.B + static_cast<std::size_t>(p) * args.m;
+      T sq                    = T(0);
+      // Four rows per thread at a time: independent chains hide the load latency, which
+      // dominates for tall A (np is small).
+      constexpr int kRows = 4;
+      for (std::int64_t i0 = tid; i0 < args.m; i0 += kRows * BlockSize) {  // 64-bit: m <= INT_MAX
+        T r[kRows];
+#pragma unroll
+        for (int u = 0; u < kRows; ++u) {
+          const std::int64_t i = i0 + u * BlockSize;
+          r[u]                 = i < args.m ? b[i] : T(0);
+        }
+        for (int kk = 0; kk < np; ++kk) {
+          const T* __restrict__ col = args.A + static_cast<std::size_t>(S.idx[kk]) * args.m;
+          const T xk                = S.xp[kk];
+#pragma unroll
+          for (int u = 0; u < kRows; ++u) {
+            const std::int64_t i = i0 + u * BlockSize;
+            if (i < args.m) r[u] -= col[i] * xk;
+          }
+        }
+#pragma unroll
+        for (int u = 0; u < kRows; ++u)
+          sq += r[u] * r[u];
+      }
+      sq = raft::warpReduce(sq);
+      if (lane == 0) S.red_val[warp] = sq;
+      __syncthreads();
+      if (tid == 0) {
+        T total = T(0);
+        for (int w = 0; w < kWarps; ++w)
+          total += S.red_val[w];
+        args.rnorm[p] = std::sqrt(total);
+      }
+    }
   }
 }
 

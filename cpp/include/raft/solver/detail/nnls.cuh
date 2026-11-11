@@ -111,9 +111,25 @@ void lawson_grant_smem(lawson_kernel_t<T> kernel, int device, std::size_t optin_
 }
 
 /**
- * Host driver of raft::solver::nnls: validates the shapes and the device limits, forms the
- * Gram matrix and the projections with GEMM, launches the persistent kernel and, if asked,
- * computes the fitted values.  `tol` and `max_iter` are the fields of nnls_params.
+ * Host driver of raft::solver::nnls.
+ *
+ * Each problem is solved by the Lawson-Hanson active-set method, one problem per CUDA
+ * block (see nnls_lawson.cuh).  The driver validates the shapes and the device limits,
+ * forms the Gram matrix A^T A and the projections A^T B once with GEMM (shared by the whole
+ * batch) and launches the persistent kernel, which also writes the per-problem residual
+ * norms if asked.  `tol` and `max_iter` are the fields of nnls_params.
+ *
+ * - The active set is kept linearly independent, so it never exceeds min(m, n) columns.
+ *   The shared memory of a block is O(min(m, n)); the call fails early with a clear error
+ *   when that exceeds what the device allows (about 8e3 in float32 and 5e3 in float64 on
+ *   sm_90).
+ * - The gradient is tested against `tol` plus an allowance for its rounding error,
+ *   about sqrt(np + 1) * eps * sum_k |G_jk x_k| (np: active-set size, G = A^T A).
+ * - The default iteration cap is 3 * n + 1.
+ * - A numerically dependent column ends the solve of its problem with the active set found
+ *   so far.  Exact ties between columns may resolve differently on different block sizes;
+ *   the objective is the same.
+ * - rnorm(p) is computed from the active columns of the solution, O(m * np) work per problem.
  */
 template <typename T>
 void nnls(
@@ -124,19 +140,19 @@ void nnls(
   raft::device_matrix_view<const T, std::int64_t, raft::col_major> B,
   raft::device_matrix_view<T, std::int64_t, raft::col_major> X,
   std::optional<raft::device_matrix_view<const std::uint8_t, std::int64_t, raft::col_major>> masks,
-  std::optional<raft::device_matrix_view<T, std::int64_t, raft::col_major>> fitted)
+  std::optional<raft::device_vector_view<T, std::int64_t>> rnorm)
 {
   using index_t   = std::int64_t;
   const index_t m = A.extent(0), n = A.extent(1), P = B.extent(1);
   RAFT_EXPECTS(m >= 1 && n >= 1 && P >= 1, "nnls: m, n and the number of problems must be >= 1");
-  RAFT_EXPECTS(n <= std::numeric_limits<int>::max() && P <= std::numeric_limits<int>::max(),
-               "nnls: n and the number of problems must each fit in an int");
+  RAFT_EXPECTS(m <= std::numeric_limits<int>::max() && n <= std::numeric_limits<int>::max() &&
+                 P <= std::numeric_limits<int>::max(),
+               "nnls: m, n and the number of problems must each fit in an int");
   RAFT_EXPECTS(B.extent(0) == m, "nnls: B must have m = %ld rows", static_cast<long>(m));
   RAFT_EXPECTS(X.extent(0) == n && X.extent(1) == P, "nnls: X must be n x P");
   RAFT_EXPECTS(!masks || (masks->extent(0) == n && masks->extent(1) == P),
                "nnls: masks must be n x P");
-  RAFT_EXPECTS(!fitted || (fitted->extent(0) == m && fitted->extent(1) == P),
-               "nnls: fitted must be m x P");
+  RAFT_EXPECTS(!rnorm || rnorm->extent(0) == P, "nnls: rnorm must have one entry per problem");
 
   // The active set stays linearly independent, so it never holds more than rank(A) <=
   // min(m, n) columns, however large n is.
@@ -224,6 +240,10 @@ void nnls(
                       masks ? masks->data_handle() : nullptr,
                       X.data_handle(),
                       slab_ptr,
+                      A.data_handle(),
+                      B.data_handle(),
+                      rnorm ? rnorm->data_handle() : nullptr,
+                      static_cast<int>(m),
                       n_int,
                       P_int,
                       np_max,
@@ -232,11 +252,6 @@ void nnls(
                       static_cast<T>(tol)};
   raft::launch_kernel(
     {res, smem}, static_cast<unsigned>(grid), static_cast<unsigned>(block), kernel, args);
-
-  if (fitted && !dry_run) {
-    auto Xc = raft::make_const_mdspan(X);
-    raft::linalg::gemm(res, A, Xc, *fitted);
-  }
 }
 
 }  // namespace raft::solver::detail
