@@ -42,6 +42,9 @@ struct kkt_residual {
   T stationarity   = 0;  ///< max |w_j| over x_j > 0, relative to max |A^T b|
   T inactive       = 0;  ///< max(0, w_j) over enabled x_j == 0, relative to max |A^T b|
   T masked_leakage = 0;  ///< max |x_j| over disabled columns: exactly 0
+  /** False if any x_j, residual or gradient entry is NaN/inf.  std::max swallows a NaN, so
+   *  without this flag a NaN solution would read as zero error. */
+  bool finite = true;
 };
 
 template <typename T>
@@ -66,7 +69,8 @@ kkt_residual<T> kkt(const std::vector<T>& A,
       double acc = at(B, i, p, m);
       for (index_t j = 0; j < n; ++j)
         acc -= static_cast<double>(at(A, i, j, m)) * at(X, j, p, n);
-      resid[i] = acc;
+      worst.finite = worst.finite && std::isfinite(acc);
+      resid[i]     = acc;
     }
     double scale = 0;
     for (index_t j = 0; j < n; ++j) {
@@ -75,12 +79,14 @@ kkt_residual<T> kkt(const std::vector<T>& A,
         wj += static_cast<double>(at(A, i, j, m)) * resid[i];
         cj += static_cast<double>(at(A, i, j, m)) * at(B, i, p, m);
       }
-      w[j]  = wj;
-      scale = std::max(scale, std::abs(cj));
+      worst.finite = worst.finite && std::isfinite(wj);
+      w[j]         = wj;
+      scale        = std::max(scale, std::abs(cj));
     }
     if (scale == 0) scale = 1;
     for (index_t j = 0; j < n; ++j) {
       const double xj = at(X, j, p, n);
+      worst.finite    = worst.finite && std::isfinite(xj);
       const bool on   = masks.empty() || masks[p * n + j] != 0;
       if (!on) {
         worst.masked_leakage = std::max<T>(worst.masked_leakage, std::abs(xj));
@@ -203,6 +209,7 @@ class NnlsTest : public ::testing::Test {
     dp.solve(res);
     auto X = dp.host(dp.X, n);
     auto k = kkt(pr.A, pr.B, X, pr.masks, m, n, P);
+    EXPECT_TRUE(k.finite) << "non-finite solution or residual";
     EXPECT_EQ(k.negativity, T(0)) << "m=" << m << " n=" << n << " P=" << P;
     EXPECT_EQ(k.masked_leakage, T(0)) << "m=" << m << " n=" << n << " P=" << P;
     EXPECT_LT(k.stationarity, kkt_tolerance<T>()) << "m=" << m << " n=" << n << " P=" << P;
@@ -254,13 +261,17 @@ TYPED_TEST(NnlsTest, FittedIsAx)
   auto X       = dp.host(dp.X, pr.n);
   auto F       = dp.host(dp.fitted, pr.m);
   double worst = 0;
+  bool finite  = true;
   for (index_t p = 0; p < pr.P; ++p)
     for (index_t i = 0; i < pr.m; ++i) {
       double acc = 0;
       for (index_t j = 0; j < pr.n; ++j)
         acc += static_cast<double>(at(pr.A, i, j, pr.m)) * at(X, j, p, pr.n);
-      worst = std::max(worst, std::abs(acc - at(F, i, p, pr.m)) / (1.0 + std::abs(acc)));
+      const double f = at(F, i, p, pr.m);
+      finite         = finite && std::isfinite(f) && std::isfinite(acc);
+      worst          = std::max(worst, std::abs(acc - f) / (1.0 + std::abs(acc)));
     }
+  EXPECT_TRUE(finite) << "non-finite fitted value";
   EXPECT_LT(worst, kkt_tolerance<T>());
 }
 
@@ -296,6 +307,7 @@ TYPED_TEST(NnlsTest, DegenerateColumnsAreHandled)
   dp.solve(this->res);
   auto X = dp.host(dp.X, pr.n);
   auto k = kkt(pr.A, pr.B, X, pr.masks, pr.m, pr.n, pr.P);
+  EXPECT_TRUE(k.finite) << "non-finite solution or residual";
   EXPECT_EQ(k.negativity, T(0));
   EXPECT_LT(k.stationarity, kkt_tolerance<T>());
   EXPECT_LT(k.inactive, kkt_tolerance<T>());
@@ -326,8 +338,43 @@ TYPED_TEST(NnlsTest, HugeRightHandSideScale)
   dp.solve(this->res);
   auto X = dp.host(dp.X, pr.n);
   auto k = kkt(pr.A, pr.B, X, pr.masks, pr.m, pr.n, pr.P);
+  EXPECT_TRUE(k.finite) << "non-finite solution or residual";
   EXPECT_LT(k.stationarity, kkt_tolerance<T>());
   EXPECT_LT(k.inactive, kkt_tolerance<T>());
+}
+
+TYPED_TEST(NnlsTest, SumOfMagnitudesNearOverflow)
+{
+  // A = [[1, 1], [0, 1]], b = [2, 1] * s with s near the top of the range: x = [s, s] fits
+  // exactly, but after the first step the sum of |G x| terms behind the gradient noise bound
+  // exceeds the largest finite value.  The bound must not turn that into -inf and stop.
+  using T   = TypeParam;
+  const T s = sizeof(T) == 4 ? T(1e38) : T(5.5e307);
+  problem<T> pr(2, 2, 1, 81);
+  pr.A = {T(1), T(0), T(1), T(1)};  // column-major
+  pr.B = {T(2) * s, s};
+  device_problem<T> dp(this->res, pr);
+  dp.solve(this->res);
+  auto X = dp.host(dp.X, pr.n);
+  EXPECT_LT(std::abs(static_cast<double>(X[0]) / s - 1.0), kkt_tolerance<T>());
+  EXPECT_LT(std::abs(static_cast<double>(X[1]) / s - 1.0), kkt_tolerance<T>());
+}
+
+TYPED_TEST(NnlsTest, TinySolutionOfLargeMatrix)
+{
+  // A = sc * [[2, 1], [1, 0]], b = [1, -0.5]: the optimum is x = [0, 1/sc], which is far
+  // below any absolute "is zero" cutoff.  A positive coefficient must not be mistaken for
+  // zero (that would re-activate the same columns until the iteration cap).
+  using T    = TypeParam;
+  const T sc = sizeof(T) == 4 ? T(1e13) : T(1e16);
+  problem<T> pr(2, 2, 1, 82);
+  pr.A = {T(2) * sc, sc, sc, T(0)};  // column-major
+  pr.B = {T(1), T(-0.5)};
+  device_problem<T> dp(this->res, pr);
+  dp.solve(this->res, nnls_params{1e-6, 5});
+  auto X = dp.host(dp.X, pr.n);
+  EXPECT_EQ(X[0], T(0));
+  EXPECT_LT(std::abs(static_cast<double>(X[1]) * sc - 1.0), kkt_tolerance<T>());
 }
 
 TYPED_TEST(NnlsTest, OutputIsFullyWritten)
@@ -392,6 +439,7 @@ TEST(NnlsLarge, Int64ExtentsPastTheGramIntLimit)
   dp.solve(res);
   auto X = dp.host(dp.X, n);
   auto k = kkt(pr.A, pr.B, X, pr.masks, m, n, P);
+  EXPECT_TRUE(k.finite) << "non-finite solution or residual";
   EXPECT_EQ(k.negativity, 0.f);
   EXPECT_LT(k.stationarity, 1e-3f);
   EXPECT_LT(k.inactive, 1e-3f);

@@ -5,8 +5,11 @@
 
 #pragma once
 
-#include <raft/util/cuda_utils.cuh>  // raft::WarpSize
-#include <raft/util/reduction.cuh>   // raft::warpReduce
+#include <raft/core/operators.hpp>        // raft::min_op, raft::max_op
+#include <raft/util/cuda_utils.cuh>       // raft::WarpSize
+#include <raft/util/cudart_utils.hpp>     // raft::warp_full_mask
+#include <raft/util/reduction.cuh>        // raft::warpReduce
+#include <raft/util/warp_primitives.cuh>  // raft::shfl
 
 #include <cuda_runtime.h>
 
@@ -45,13 +48,6 @@ __device__ inline T lawson_ridge_eps(T diag)
   return rel * (diag > T(0) ? diag : T(1));
 }
 
-/** Coordinates at or below this after a line-search step are treated as exactly zero. */
-template <typename T>
-__device__ inline T lawson_zero_eps()
-{
-  return sizeof(T) == 4 ? T(1e-12) : T(1e-15);
-}
-
 /**
  * Dynamic shared-memory footprint for `n` columns and an active set of at most `np_max`:
  *   T   xp[np_max]    current solution, compact: xp[kk] = x[idx[kk]]
@@ -86,6 +82,7 @@ inline int lawson_max_np(std::size_t limit, int n)
     std::min<std::size_t>((limit - fixed) / per, std::numeric_limits<int>::max()));
 }
 
+/** Pointers into the dynamic shared memory of one block; see lawson_smem_bytes. */
 template <typename T>
 struct lawson_smem {
   T* xp;
@@ -124,10 +121,12 @@ __device__ inline bool lawson_act_test(const std::uint32_t* act, int j)
 {
   return ((act[j >> 5] >> (j & 31)) & 1u) != 0u;
 }
+/** Set bit `j` (mark column j active). */
 __device__ inline void lawson_act_set(std::uint32_t* act, int j)
 {
   act[j >> 5] |= (1u << (j & 31));
 }
+/** Clear bit `j` (column j leaves the active set). */
 __device__ inline void lawson_act_clear(std::uint32_t* act, int j)
 {
   act[j >> 5] &= ~(1u << (j & 31));
@@ -167,14 +166,16 @@ __device__ inline void lawson_gradient_partial(const T* __restrict__ G,
   for (int j = threadIdx.x; j < n; j += BlockSize) {
     if (lawson_act_test(act, j)) continue;
     if (mask != nullptr && mask[j] == 0) continue;
-    const T cj               = c[j];
-    T acc                    = cj;
-    T magnitude              = std::abs(cj);
+    const T cj = c[j];
+    T acc      = cj;
+    // The rounding-error allowance, accumulated already scaled by `noise_scale` (< 1) so
+    // that the sum of magnitudes cannot overflow when the terms themselves do not.
+    T allowance              = noise_scale * std::abs(cj);
     const T* __restrict__ Gj = G + j;
     auto accumulate          = [&](T g, T x) {
       const T t = g * x;
       acc -= t;
-      magnitude += std::abs(t);
+      allowance = fma(noise_scale, std::abs(t), allowance);
     };
     int kk = 0;
 #pragma unroll 4
@@ -190,7 +191,7 @@ __device__ inline void lawson_gradient_partial(const T* __restrict__ G,
     }
     for (; kk < np; ++kk)
       accumulate(Gj[static_cast<std::size_t>(idx[kk]) * n], xp[kk]);
-    const T w = acc - noise_scale * magnitude;
+    const T w = acc - allowance;
     if (w > thread_max) {
       thread_max = w;
       thread_idx = j;
@@ -232,8 +233,6 @@ __device__ inline void lawson_gradient_partial(const T* __restrict__ G,
 //     it: work proportional to what the batch actually uses.
 // ---------------------------------------------------------------------------
 
-constexpr unsigned kLawsonFullMask = 0xffffffffu;
-
 /** Extra columns after the last factor column; see above.  The unguarded loads of the last
  *  partial panel go up to the next multiple of four. */
 constexpr int kLawsonSlabPad = 4;
@@ -260,36 +259,15 @@ struct lawson_vec<double> {
   using type = double2;
 };
 
-template <typename T>
-__device__ inline T lawson_warp_min(T v)
-{
-#pragma unroll
-  for (int o = 16; o > 0; o >>= 1)
-    v = min(v, __shfl_xor_sync(kLawsonFullMask, v, o));
-  return v;
-}
-
-template <typename T>
-__device__ inline T lawson_warp_sum(T v)
-{
-#pragma unroll
-  for (int o = 16; o > 0; o >>= 1)
-    v += __shfl_xor_sync(kLawsonFullMask, v, o);
-  return v;
-}
-
 /** (value, index) maximum over the warp.  Ties resolve to the lowest lane; every lane
  *  gets the result; the index is -1 when the value is -inf everywhere (no candidate). */
 template <typename T>
 __device__ inline void lawson_warp_argmax(T& v, int& i)
 {
-  T m = v;
-#pragma unroll
-  for (int o = 16; o > 0; o >>= 1)
-    m = fmax(m, __shfl_xor_sync(kLawsonFullMask, m, o));
-  const unsigned eq = __ballot_sync(kLawsonFullMask, v == m);
+  const T m         = raft::warpReduce(v, raft::max_op{});
+  const unsigned eq = __ballot_sync(raft::warp_full_mask(), v == m);
   const int src     = __ffs(eq) - 1;
-  i                 = src < 0 ? -1 : __shfl_sync(kLawsonFullMask, i, src);
+  i                 = src < 0 ? -1 : raft::shfl(i, src);
   v                 = m;
 }
 
@@ -331,7 +309,7 @@ __device__ inline void lawson_warp_fwd(
       if (j0 < cnt) {
 #pragma unroll
         for (int j = j0; j < j0 + 4; ++j) {
-          const T lj = __shfl_sync(kLawsonFullMask, acc, j);
+          const T lj = raft::shfl(acc, j);
           acc        = fma(-tile[j], lj, acc);
         }
       }
@@ -427,7 +405,7 @@ __device__ inline void lawson_warp_bwd(const T* __restrict__ L,
       if (i0 < cnt) {
 #pragma unroll
         for (int i = i0 + W - 1; i >= i0; --i) {
-          const T xi = __shfl_sync(kLawsonFullMask, acc, i);
+          const T xi = raft::shfl(acc, i);
           acc        = fma(-tile[i] * di, xi, acc);
         }
       }
@@ -470,7 +448,7 @@ __device__ inline void lawson_slab_ensure_open(T* L, int ld, int np_max, int m, 
   // everyone learns the value by shuffle.
   int open_to = 0;
   if (lane == 0) open_to = *sm_open;
-  open_to = __shfl_sync(kLawsonFullMask, open_to, 0);
+  open_to = raft::shfl(open_to, 0);
   __syncwarp();  // (the load may be issued by every lane; order it before lane 0's store below)
   if (m < open_to) return;              // already open (an earlier problem of this block got here)
   const int reach = (np_max + 3) & ~3;  // rows / columns the unguarded loads can touch
@@ -539,8 +517,8 @@ __device__ inline bool lawson_warp_append(T* L,
     dll += lj * lj;
     dly += lj * y[j];
   }
-  dll           = lawson_warp_sum(dll);
-  dly           = lawson_warp_sum(dly);
+  dll           = raft::warpReduce(dll);
+  dly           = raft::warpReduce(dly);
   const T d2    = a22 - dll;
   const bool ok = d2 > lawson_ridge_eps(a22);
   if (ok && lane == 0) {
@@ -650,8 +628,8 @@ __device__ inline void lawson_warp_delete_one(
       y[p + k]   = c * yk + s * partner;
       partner    = c * partner - s * yk;
     }
-    c = __shfl_sync(kLawsonFullMask, c, 0);
-    s = __shfl_sync(kLawsonFullMask, s, 0);
+    c = raft::shfl(c, 0);
+    s = raft::shfl(s, 0);
     for (int t = k + 1 + lane; t < q; t += 32) {
       const int row       = p + t;
       const std::size_t o = row + static_cast<std::size_t>(p + k) * ld;
@@ -680,7 +658,7 @@ __device__ inline int lawson_post_solve(
   T mn           = std::numeric_limits<T>::infinity();
   for (int i = lane; i < npc; i += 32)
     mn = min(mn, s[i]);
-  mn = lawson_warp_min(mn);
+  mn = raft::warpReduce(mn, raft::min_op{});
   if (mn > T(0)) {
     for (int i = lane; i < npc; i += 32)
       xp[i] = s[i];
@@ -704,8 +682,8 @@ __device__ inline int lawson_post_solve(
       }
     }
   }
-  amin = lawson_warp_min(amin);
-  cnt  = lawson_warp_sum(cnt);
+  amin = raft::warpReduce(amin, raft::min_op{});
+  cnt  = raft::warpReduce(cnt);
   if (cnt == 0) return 2;
   for (int i = lane; i < npc; i += 32) {
     const T xi = xp[i];
@@ -725,20 +703,22 @@ __device__ inline int lawson_post_solve(
   // ever go to slots at or below the lane's own, and a chunk reads all of its inputs
   // before any of them is written.
   int new_n = 0, n_rem = 0;
-  const T zero_eps = lawson_zero_eps<T>();
   for (int base = 0; base < npc; base += 32) {
     const int i = base + lane;
     int jv      = 0;
     T xv        = T(0);
     bool keep = false, drop = false;
     if (i < npc) {
-      jv   = idx[i];
-      xv   = xp[i];
-      keep = xv > zero_eps;
+      jv = idx[i];
+      xv = xp[i];
+      // No absolute cutoff: the solution may legitimately be tiny when A is large.  The
+      // binding coordinate was pinned to exactly zero above, so only that and
+      // coordinates the step overshot below zero are removed.
+      keep = xv > T(0);
       drop = !keep;
     }
-    const unsigned mk = __ballot_sync(kLawsonFullMask, keep);
-    const unsigned md = __ballot_sync(kLawsonFullMask, drop);
+    const unsigned mk = __ballot_sync(raft::warp_full_mask(), keep);
+    const unsigned md = __ballot_sync(raft::warp_full_mask(), drop);
     const unsigned lt = (1u << lane) - 1u;
     __syncwarp();
     if (keep) {
@@ -862,7 +842,8 @@ __global__ __launch_bounds__(
 
   if (tid == 0) sm_open = 0;  // ordered before its first use by the barrier below
 
-  for (int p = blockIdx.x; p < args.P; p += gridDim.x) {
+  // 64-bit: with P close to INT_MAX, `p += gridDim.x` would wrap in 32 bits.
+  for (std::int64_t p = blockIdx.x; p < args.P; p += gridDim.x) {
     const T* __restrict__ c = args.C + static_cast<std::size_t>(p) * n;
     const std::uint8_t* mask =
       args.masks != nullptr ? args.masks + static_cast<std::size_t>(p) * n : nullptr;

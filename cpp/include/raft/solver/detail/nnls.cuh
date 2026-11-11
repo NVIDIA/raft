@@ -38,6 +38,7 @@ struct lawson_cfg {
   int min_blocks;
 };
 
+/** Number of entries in the launch-configuration menu of each precision. */
 constexpr int kLawsonConfigCount = 3;
 
 /**
@@ -57,6 +58,7 @@ constexpr lawson_cfg lawson_cfg_at(int i)
   return sizeof(T) == 4 ? f32[i] : f64[i];
 }
 
+/** The kernel instantiation of menu entry `cfg` (see lawson_cfg_at). */
 template <typename T>
 lawson_kernel_t<T> lawson_kernel_for(int cfg)
 {
@@ -108,6 +110,11 @@ void lawson_grant_smem(lawson_kernel_t<T> kernel, int device, std::size_t optin_
                                      static_cast<int>(optin_bytes - attr.sharedSizeBytes)));
 }
 
+/**
+ * Host driver of raft::solver::nnls: validates the shapes and the device limits, forms the
+ * Gram matrix and the projections with GEMM, launches the persistent kernel and, if asked,
+ * computes the fitted values.  `tol` and `max_iter` are the fields of nnls_params.
+ */
 template <typename T>
 void nnls(
   raft::resources const& res,

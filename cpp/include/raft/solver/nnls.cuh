@@ -16,8 +16,12 @@ namespace raft::solver {
 
 /** Parameters of raft::solver::nnls. */
 struct nnls_params {
-  /** Optimality tolerance on the projected gradient w = A^T (b - A x).  In float32 it is
-   *  additionally floored at the rounding error of the gradient itself. */
+  /** Optimality tolerance on the projected gradient w = A^T (b - A x).  In both precisions
+   *  a column enters the active set only if w_j exceeds `tol` plus an allowance for the
+   *  rounding error of w_j, about sqrt(np + 1) * eps * sum_k |G_jk x_k| (np: active-set size,
+   *  G = A^T A).  That allowance scales with the magnitude of the data: for large-scale
+   *  inputs, or for float32 in general, it can exceed `tol`, which then is not the
+   *  effective stopping threshold.  Normalize A and B if an absolute `tol` matters. */
   double tol = 1e-6;
   /** Cap on the outer (column-activation) iterations per problem; <= 0 selects 3 * n + 1. */
   int max_iter = 0;
@@ -43,6 +47,9 @@ struct nnls_params {
  * differently on different block sizes; the objective is the same.
  *
  * Dry-run compliant: allocations are sized from the arguments only.
+ *
+ * The outputs `X` and `fitted` must not overlap each other or any input (`A`, `B`,
+ * `masks`): `X` is written while `A` is still needed to form `fitted`.
  *
  * @tparam T float or double
  * @param[in]  res     RAFT resources

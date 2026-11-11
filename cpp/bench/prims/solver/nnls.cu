@@ -109,7 +109,7 @@ struct nnls_bench : public fixture {
   raft::device_matrix<std::uint8_t, std::int64_t, raft::col_major> masks;
 };
 
-// The signature tables of the MSA project (m channels x n signatures) with a batch of 2000
+// Mutation-signature tables (m channels x n signatures) with a batch of 2000
 // masked samples, a few batch sizes at the middle shapes, and a bit more than production:
 // wider n (up to 2048) and a fat square problem.
 const std::vector<nnls_input> nnls_inputs = {
