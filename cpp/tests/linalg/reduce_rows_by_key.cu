@@ -6,6 +6,7 @@
 #include "../test_utils.cuh"
 
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/linalg/map.cuh>
 #include <raft/linalg/reduce_rows_by_key.cuh>
 #include <raft/random/rng.cuh>
 #include <raft/util/cudart_utils.hpp>
@@ -13,7 +14,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cstring>
 #include <iostream>
+#include <tuple>
+#include <vector>
 
 namespace raft {
 namespace linalg {
@@ -281,42 +285,150 @@ INSTANTIATE_TEST_CASE_P(ReduceRowTests,
                         ReduceRowTestLargeClustersAndCols,
                         ::testing::ValuesIn(inputsf_vectorized));
 
-TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
+struct DeterminismInputs {
+  int nrows;
+  int ncols;
+  int nkeys;
+  bool weighted;
+  bool heavy_hitter;
+};
+
+::std::ostream& operator<<(::std::ostream& os, const DeterminismInputs& p)
+{
+  return os << "nrows=" << p.nrows << " ncols=" << p.ncols << " nkeys=" << p.nkeys
+            << " weighted=" << p.weighted << " heavy_hitter=" << p.heavy_hitter;
+}
+
+template <typename T>
+class ReduceRowsByKeyDeterminism : public ::testing::TestWithParam<DeterminismInputs> {
+ public:
+  void run()
+  {
+    const auto p = GetParam();
+    auto stream  = resource::get_cuda_stream(handle).get();
+    rmm::device_uvector<T> in(static_cast<size_t>(p.nrows) * p.ncols, stream);
+    rmm::device_uvector<T> weights(p.nrows, stream);
+    rmm::device_uvector<uint32_t> keys(p.nrows, stream);
+    rmm::device_uvector<T> sums(static_cast<size_t>(p.nkeys) * p.ncols, stream);
+    rmm::device_uvector<T> ref(static_cast<size_t>(p.nkeys) * p.ncols, stream);
+    rmm::device_uvector<char> unused(p.nrows, stream);
+    raft::random::RngState r(1234ULL);
+    // Mixed signs and magnitudes, so that the summation order shows in the result bits.
+    uniform(handle, r, in.data(), in.size(), T(-1e3), T(1e3));
+    uniform(handle, r, weights.data(), weights.size(), T(0.5), T(2));
+    uniformInt(handle, r, keys.data(), p.nrows, uint32_t{0}, static_cast<uint32_t>(p.nkeys));
+    if (p.heavy_hitter) {
+      // Every other row has key 0.
+      raft::linalg::map_offset(
+        handle,
+        raft::make_device_vector_view(keys.data(), p.nrows),
+        [k = keys.data()] __device__(int i) { return i % 2 == 0 ? 0u : k[i]; });
+    }
+    const T* w = p.weighted ? weights.data() : nullptr;
+    naiveReduceRowsByKey(in.data(),
+                         p.ncols,
+                         keys.data(),
+                         w,
+                         unused.data(),
+                         p.nrows,
+                         p.ncols,
+                         p.nkeys,
+                         ref.data(),
+                         stream);
+
+    std::vector<T> first;
+    for (int run = 0; run < 4; ++run) {
+      reduce_rows_by_key(in.data(),
+                         p.ncols,
+                         keys.data(),
+                         w,
+                         unused.data(),
+                         p.nrows,
+                         p.ncols,
+                         p.nkeys,
+                         sums.data(),
+                         stream,
+                         true);
+      std::vector<T> out(sums.size());
+      raft::update_host(out.data(), sums.data(), sums.size(), stream);
+      resource::sync_stream(handle, stream);
+      if (run == 0) {
+        first = out;
+        // Inputs are up to 1e3 * 2 per row, so the absolute error bound scales with the row count.
+        const T tol = T(std::is_same_v<T, float> ? 1e-5 : 1e-12) * T(2e3) * T(p.nrows) / T(p.nkeys);
+        ASSERT_TRUE(raft::devArrMatch(ref.data(),
+                                      sums.data(),
+                                      sums.size(),
+                                      raft::CompareApprox<T>(std::max(tol, T(1e-3))),
+                                      stream));
+      } else {
+        ASSERT_EQ(0, std::memcmp(first.data(), out.data(), out.size() * sizeof(T)))
+          << "results differ between run 0 and run " << run;
+      }
+    }
+  }
+
+ protected:
+  raft::resources handle;
+};
+
+// One case per path: privatized (few keys), exact bins (float, <= 16 columns), sorted per-key
+// (float, few rows per key), sorted chunks (wide rows, double).
+const std::vector<DeterminismInputs> determinism_inputs = {
+  {100000, 32, 8, true, false},
+  {100000, 32, 8, false, true},
+  {200000, 4, 10000, true, false},
+  {200000, 16, 20000, false, true},
+  {200000, 64, 20000, true, false},
+  {200000, 64, 20000, false, true},
+  {100000, 512, 100, true, false},
+  {100000, 1024, 3000, false, true},
+  {300000, 37, 64, true, true},
+};
+
+using ReduceRowsByKeyDeterminismF = ReduceRowsByKeyDeterminism<float>;
+TEST_P(ReduceRowsByKeyDeterminismF, Result) { run(); }
+INSTANTIATE_TEST_CASE_P(ReduceRowTests,
+                        ReduceRowsByKeyDeterminismF,
+                        ::testing::ValuesIn(determinism_inputs));
+
+using ReduceRowsByKeyDeterminismD = ReduceRowsByKeyDeterminism<double>;
+TEST_P(ReduceRowsByKeyDeterminismD, Result) { run(); }
+INSTANTIATE_TEST_CASE_P(ReduceRowTests,
+                        ReduceRowsByKeyDeterminismD,
+                        ::testing::ValuesIn(determinism_inputs));
+
+TEST(ReduceRowsByKeyDryRun, Allocations)
 {
   raft::resources handle;
-  auto stream           = resource::get_cuda_stream(handle).get();
-  constexpr int nrows   = 100000;
-  constexpr int ncols   = 64;
-  constexpr int nkeys   = 1024;
-  constexpr int end_bit = 10;  // > 8 bits so that >1 radix passes
-  rmm::device_uvector<float> in(nrows * ncols, stream);
-  rmm::device_uvector<float> sums(nkeys * ncols, stream);
-  rmm::device_uvector<uint32_t> keys(nrows, stream);
-  raft::random::RngState r(1234ULL);
-  uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t{nkeys});
-  RAFT_CUDA_TRY(cudaMemsetAsync(in.data(), 0, in.size() * sizeof(float), stream));
-
-  size_t sort_bytes = 0;
-  cub::DoubleBuffer<uint32_t> sort_keys, sort_values;
-  RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
-    nullptr, sort_bytes, sort_keys, sort_values, nrows, 0, end_bit, stream));
-  const size_t expected = 4 * nrows * sizeof(uint32_t) + sort_bytes;
-
-  auto action = [&](raft::resources const& res) {
-    detail::sum_rows_by_key_rowmajor_sorted(in.data(),
-                                            ncols,
-                                            keys.data(),
-                                            static_cast<const float*>(nullptr),
-                                            nrows,
-                                            ncols,
-                                            nkeys,
-                                            sums.data(),
-                                            resource::get_cuda_stream(res).get(),
-                                            resource::get_dry_run_flag(res));
-  };
-  const auto dry = raft::util::dry_run_execute(handle, action);
-  EXPECT_EQ(dry.device_global, expected);
-  execute_with_dry_run_check(handle, action, alloc_behavior::ARGUMENT_DRIVEN, expected);
+  auto stream = resource::get_cuda_stream(handle).get();
+  // Shapes that take each path: privatized, exact bins, sorted per-key, sorted chunks.
+  for (auto [nrows, ncols, nkeys] : {std::tuple{100000, 32, 8},
+                                     std::tuple{100000, 4, 10000},
+                                     std::tuple{100000, 64, 10000},
+                                     std::tuple{100000, 1024, 1024}}) {
+    rmm::device_uvector<float> in(static_cast<size_t>(nrows) * ncols, stream);
+    rmm::device_uvector<float> sums(static_cast<size_t>(nkeys) * ncols, stream);
+    rmm::device_uvector<uint32_t> keys(nrows, stream);
+    raft::random::RngState r(1234ULL);
+    uniformInt(handle, r, keys.data(), nrows, 0u, static_cast<uint32_t>(nkeys));
+    RAFT_CUDA_TRY(cudaMemsetAsync(in.data(), 0, in.size() * sizeof(float), stream));
+    auto action = [&](raft::resources const& res) {
+      detail::reduce_rows_by_key(in.data(),
+                                 ncols,
+                                 keys.data(),
+                                 static_cast<const float*>(nullptr),
+                                 static_cast<char*>(nullptr),
+                                 nrows,
+                                 ncols,
+                                 nkeys,
+                                 sums.data(),
+                                 resource::get_cuda_stream(res).get(),
+                                 true,
+                                 resource::get_dry_run_flag(res));
+    };
+    execute_with_dry_run_check(handle, action, alloc_behavior::ARGUMENT_DRIVEN, 1);
+  }
 }
 
 }  // end namespace linalg
