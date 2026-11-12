@@ -13,7 +13,10 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cstring>
 #include <iostream>
+#include <vector>
 
 namespace raft {
 namespace linalg {
@@ -317,6 +320,77 @@ TEST(ReduceRowsByKeyDryRun, SortedPathAllocations)
   const auto dry = raft::util::dry_run_execute(handle, action);
   EXPECT_EQ(dry.device_global, expected);
   execute_with_dry_run_check(handle, action, alloc_behavior::ARGUMENT_DRIVEN, expected);
+}
+
+TEST(ReduceRowsByKeyDryRun, FewKeysPathAllocations)
+{
+  raft::resources handle;
+  auto stream         = resource::get_cuda_stream(handle).get();
+  constexpr int nrows = 100000;
+  constexpr int ncols = 16;
+  constexpr int nkeys = 8;
+  rmm::device_uvector<float> in(nrows * ncols, stream);
+  rmm::device_uvector<float> sums(nkeys * ncols, stream);
+  rmm::device_uvector<uint32_t> keys(nrows, stream);
+  raft::random::RngState r(1234ULL);
+  uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t{nkeys});
+  RAFT_CUDA_TRY(cudaMemsetAsync(in.data(), 0, in.size() * sizeof(float), stream));
+
+  auto action = [&](raft::resources const& res) {
+    detail::sum_rows_by_key_rowmajor_few_keys(in.data(),
+                                              ncols,
+                                              keys.data(),
+                                              static_cast<const float*>(nullptr),
+                                              nrows,
+                                              ncols,
+                                              nkeys,
+                                              sums.data(),
+                                              resource::get_cuda_stream(res).get(),
+                                              resource::get_dry_run_flag(res));
+  };
+  // 2 blocks for this input size
+  execute_with_dry_run_check(
+    handle, action, alloc_behavior::ARGUMENT_DRIVEN, 2 * nkeys * ncols * sizeof(float));
+}
+
+TEST(ReduceRowsByKeyFewKeys, SumDeterminism)
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle).get();
+  for (auto [nrows, ncols, nkeys] : {std::array<int, 3>{500, 4, 4},
+                                     std::array<int, 3>{300, 3, 3},
+                                     std::array<int, 3>{100000, 16, 8}}) {
+    rmm::device_uvector<float> in(nrows * ncols, stream), out(nkeys * ncols, stream);
+    rmm::device_uvector<uint32_t> keys(nrows, stream);
+    ASSERT_EQ(
+      detail::sum_rows_by_key_select_kernel(in.data(), ncols, nrows, ncols, nkeys, out.data())
+        .kernel,
+      detail::sum_rows_by_key_kernel::few_keys);
+    raft::random::RngState r(1234ULL);
+    uniform(handle, r, in.data(), in.size(), -1.f, 1.f);
+    uniformInt(handle, r, keys.data(), nrows, 0u, uint32_t(nkeys));
+
+    // Bitwise identical across runs.
+    std::vector<float> first(out.size()), cur(out.size());
+    for (int run = 0; run < 10; ++run) {
+      reduce_rows_by_key(in.data(),
+                         ncols,
+                         keys.data(),
+                         static_cast<char*>(nullptr),
+                         nrows,
+                         ncols,
+                         nkeys,
+                         out.data(),
+                         stream);
+      raft::update_host((run == 0 ? first : cur).data(), out.data(), out.size(), stream);
+      resource::sync_stream(handle, stream);
+      if (run > 0) {
+        EXPECT_EQ(0, std::memcmp(first.data(), cur.data(), first.size() * sizeof(float)))
+          << "{nrows=" << nrows << ", ncols=" << ncols << ", nkeys=" << nkeys << "}: run " << run
+          << " differs from run 0";
+      }
+    }
+  }
 }
 
 }  // end namespace linalg
