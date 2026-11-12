@@ -5,6 +5,7 @@
 
 #include "../test_utils.cuh"
 
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/linalg/gemm.cuh>
 #include <raft/random/rng.cuh>
@@ -184,6 +185,74 @@ TEST_P(GemmLayoutTestD, Result)
 INSTANTIATE_TEST_SUITE_P(GemmLayoutTests, GemmLayoutTestF, ::testing::ValuesIn(inputsf));
 
 INSTANTIATE_TEST_SUITE_P(GemmLayoutTests, GemmLayoutTestD, ::testing::ValuesIn(inputsd));
+
+// C = alpha * A * B + beta * C + bias, with bias[i] added to row i of C (the cuBLASLt bias
+// epilogue), for A and B of type T: float, or half with float accumulation and output.
+template <typename T>
+void gemm_bias_test()
+{
+  raft::resources handle;
+  auto stream       = resource::get_cuda_stream(handle);
+  constexpr int m   = 2;
+  constexpr int n   = 2;
+  constexpr int k   = 3;
+  const float alpha = 2.0f;
+  const float beta  = 3.0f;
+  // Column-major A = [1 2 3; 4 5 6], B = [7 8; 9 10; 11 12], C = [1 2; 3 4] and bias = [10; 20].
+  std::vector<T> a_host;
+  std::vector<T> b_host;
+  for (float v : {1.0f, 4.0f, 2.0f, 5.0f, 3.0f, 6.0f}) {
+    a_host.push_back(T(v));
+  }
+  for (float v : {7.0f, 9.0f, 11.0f, 8.0f, 10.0f, 12.0f}) {
+    b_host.push_back(T(v));
+  }
+  std::vector<float> c_host    = {1.0f, 3.0f, 2.0f, 4.0f};
+  std::vector<float> bias_host = {10.0f, 20.0f};
+  // alpha * A * B + beta * C = [119 134; 287 320], plus 10 on row 0 and 20 on row 1.
+  std::vector<float> expected = {129.0f, 307.0f, 144.0f, 340.0f};
+
+  auto a    = raft::make_device_vector<T>(handle, m * k);
+  auto b    = raft::make_device_vector<T>(handle, k * n);
+  auto c    = raft::make_device_vector<float>(handle, m * n);
+  auto bias = raft::make_device_vector<float>(handle, m);
+  raft::update_device(a.data_handle(), a_host.data(), a_host.size(), stream);
+  raft::update_device(b.data_handle(), b_host.data(), b_host.size(), stream);
+  raft::update_device(c.data_handle(), c_host.data(), c_host.size(), stream);
+  raft::update_device(bias.data_handle(), bias_host.data(), bias_host.size(), stream);
+
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& h) {
+      gemm(h,
+           false,
+           false,
+           m,
+           n,
+           k,
+           &alpha,
+           a.data_handle(),
+           m,
+           b.data_handle(),
+           k,
+           &beta,
+           c.data_handle(),
+           m,
+           resource::get_cuda_stream(h).get(),
+           static_cast<const float*>(bias.data_handle()));
+    },
+    raft::alloc_behavior::NO_ALLOCATIONS);
+
+  std::vector<float> result(m * n);
+  raft::update_host(result.data(), c.data_handle(), result.size(), stream);
+  resource::sync_stream(handle);
+  for (int i = 0; i < m * n; ++i) {
+    EXPECT_FLOAT_EQ(result[i], expected[i]) << "Mismatch at index " << i;
+  }
+}
+
+TEST(GemmBias, Float) { gemm_bias_test<float>(); }
+TEST(GemmBias, Half) { gemm_bias_test<half>(); }
 
 }  // end namespace linalg
 }  // end namespace raft

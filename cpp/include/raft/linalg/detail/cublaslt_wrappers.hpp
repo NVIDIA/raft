@@ -19,6 +19,7 @@
 
 #include <cublasLt.h>
 
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -86,18 +87,21 @@ struct matmul_key_t {
   uint64_t ldc;
   bool trans_a;
   bool trans_b;
+  /** Whether the matmul adds a bias vector to every column of C (CUBLASLT_EPILOGUE_BIAS). */
+  bool bias = false;
 };
 
 inline auto operator==(const matmul_key_t& a, const matmul_key_t& b) -> bool
 {
   return a.m == b.m && a.n == b.n && a.k == b.k && a.lda == b.lda && a.ldb == b.ldb &&
-         a.ldc == b.ldc && a.trans_a == b.trans_a && a.trans_b == b.trans_b;
+         a.ldc == b.ldc && a.trans_a == b.trans_a && a.trans_b == b.trans_b && a.bias == b.bias;
 }
 
 struct matmul_key_hash {
   inline auto operator()(const matmul_key_t& x) const noexcept -> std::size_t
   {
-    return x.m * x.n * x.k + x.lda * x.ldb * x.ldc + size_t{x.trans_a} + size_t{x.trans_b} * 2;
+    return x.m * x.n * x.k + x.lda * x.ldb * x.ldc + size_t{x.trans_a} + size_t{x.trans_b} * 2 +
+           size_t{x.bias} * 4;
   }
 };
 
@@ -237,6 +241,25 @@ struct cublastlt_matmul_desc {
     }
     return desc;
   }
+
+  /**
+   * Add a bias vector of C's element type to every column of the result (CUBLASLT_EPILOGUE_BIAS).
+   * The heuristic query needs only the epilogue; @p bias may be set later, for the call.
+   */
+  template <typename C>
+  inline void set_bias_epilogue(const C* bias = nullptr)
+  {
+    const cublasLtEpilogue_t epilogue = CUBLASLT_EPILOGUE_BIAS;
+    RAFT_CUBLAS_TRY(cublasLtMatmulDescSetAttribute(
+      res, CUBLASLT_MATMUL_DESC_EPILOGUE, &epilogue, sizeof(epilogue)));
+    const cudaDataType_t bias_type = get_cuda_data_type<C>();
+    RAFT_CUBLAS_TRY(cublasLtMatmulDescSetAttribute(
+      res, CUBLASLT_MATMUL_DESC_BIAS_DATA_TYPE, &bias_type, sizeof(bias_type)));
+    if (bias != nullptr) {
+      RAFT_CUBLAS_TRY(cublasLtMatmulDescSetAttribute(
+        res, CUBLASLT_MATMUL_DESC_BIAS_POINTER, &bias, sizeof(bias)));
+    }
+  }
 };
 
 /** Preference descriptor for a cublasLt matmul heuristic query. */
@@ -273,6 +296,7 @@ struct matmul_desc {
       cublastlt_matrix_layout::for_matmul<A>(!(args.trans_a), args.m, args.k, args.lda),
       cublastlt_matrix_layout::for_matmul<B>(!(args.trans_b), args.k, args.n, args.ldb),
       cublastlt_matrix_layout::for_matmul<C>(true, args.m, args.n, args.ldc)};
+    if (args.bias) { r.desc.template set_bias_epilogue<C>(); }
 
     bool use_cublaslt_13_6_workaround = false;
     if constexpr (std::is_same_v<S, float> && std::is_same_v<A, float> &&
@@ -459,24 +483,33 @@ template <bool DevicePointerMode = false, typename S, typename A, typename B, ty
                                   const S* beta,
                                   C* c_ptr,
                                   uint64_t ldc,
-                                  cudaStream_t stream)
+                                  cudaStream_t stream,
+                                  const C* bias = nullptr)
 {
   // We pass nullptr to the workspace, so the extra memory usage should be zero.
   if (resource::get_dry_run_flag(res)) { return; }
   common::nvtx::range<common::nvtx::domain::raft> batch_scope(
     "linalg::matmul(m = %d, n = %d, k = %d)", m, n, k);
   std::shared_ptr<matmul_desc> mm_desc{nullptr};
-  matmul_key_t mm_key{m, n, k, lda, ldb, ldc, trans_a, trans_b};
+  matmul_key_t mm_key{m, n, k, lda, ldb, ldc, trans_a, trans_b, bias != nullptr};
   auto& cache =
     resource::get_custom_resource<matmul_cache<S, A, B, C, DevicePointerMode>>(res)->value;
   if (!cache.get(mm_key, &mm_desc)) {
     mm_desc.reset(new matmul_desc{matmul_desc::create<S, A, B, C, DevicePointerMode>(res, mm_key)});
     cache.set(mm_key, mm_desc);
   }
+  // The bias pointer is a descriptor attribute and the cached descriptor is shared, so a call with
+  // a bias gets a descriptor of its own (with the cached layouts and algorithm).
+  std::optional<cublastlt_matmul_desc> bias_desc;
+  if (bias != nullptr) {
+    bias_desc.emplace(
+      cublastlt_matmul_desc::for_matmul<S, A, B, C, DevicePointerMode>(trans_a, trans_b));
+    bias_desc->set_bias_epilogue(bias);
+  }
   // Allocate alpha and beta pointers if not provided.
   coef_wrapper<DevicePointerMode, S> w(alpha, beta, stream);
   RAFT_CUBLAS_TRY(cublasLtMatmul(resource::get_cublaslt_handle(res),
-                                 mm_desc->desc,
+                                 bias_desc.has_value() ? *bias_desc : mm_desc->desc,
                                  w.alpha,
                                  a_ptr,
                                  mm_desc->a,
@@ -517,6 +550,8 @@ template <bool DevicePointerMode = false, typename S, typename A, typename B, ty
  * @param [in] beta host or device scalar, if nullptr, the default value 0 will be used
  * @param [inout] c_ptr column-major matrix of size [m, n]
  * @param [in] ldc leading dimension of C
+ * @param [in] bias optional device vector of m elements added to every column of C,
+ *   C[i, j] += bias[i] (the cuBLASLt bias epilogue); nullptr adds nothing
  */
 template <bool DevicePointerMode = false, typename S, typename A, typename B, typename C>
 void matmul(raft::resources const& res,
@@ -532,7 +567,8 @@ void matmul(raft::resources const& res,
             uint64_t ldb,
             const S* beta,
             C* c_ptr,
-            uint64_t ldc)
+            uint64_t ldc,
+            const C* bias = nullptr)
 {
   return legacy_matmul<DevicePointerMode>(res,
                                           trans_a,
@@ -548,7 +584,8 @@ void matmul(raft::resources const& res,
                                           beta,
                                           c_ptr,
                                           ldc,
-                                          resource::get_cuda_stream(res).get());
+                                          resource::get_cuda_stream(res).get(),
+                                          bias);
 }
 
 }  // namespace linalg::detail
