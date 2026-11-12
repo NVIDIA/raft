@@ -384,6 +384,9 @@ const std::vector<DeterminismInputs> determinism_inputs = {
   {100000, 512, 100, true, false},
   {100000, 1024, 3000, false, true},
   {300000, 37, 64, true, true},
+  {500, 4, 4, false, false},
+  {300, 3, 3, false, false},
+  {100000, 16, 8, false, false},
 };
 
 using ReduceRowsByKeyDeterminismF = ReduceRowsByKeyDeterminism<float>;
