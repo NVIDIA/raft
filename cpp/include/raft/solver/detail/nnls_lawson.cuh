@@ -10,7 +10,7 @@
 #include <raft/util/cudart_utils.hpp>     // raft::warp_full_mask
 #include <raft/util/pow2_utils.cuh>       // raft::Pow2
 #include <raft/util/reduction.cuh>        // raft::warpReduce
-#include <raft/util/vectorized.cuh>       // raft::IOType
+#include <raft/util/vectorized.cuh>       // raft::TxN_t
 #include <raft/util/warp_primitives.cuh>  // raft::shfl
 
 #include <cuda_runtime.h>
@@ -355,7 +355,7 @@ __device__ inline void lawson_warp_bwd(const T* __restrict__ L,
                                        T* s)
 {
   constexpr int W = 16 / sizeof(T);  // elements per 16-byte vector (4 for float, 2 for double)
-  using V         = typename raft::IOType<T, W>::Type;  // float4 / double2
+  using V         = raft::TxN_t<T, W>;
   const int lane  = lawson_warp::mod(threadIdx.x);
   for (int j = lane; j < np; j += raft::WarpSize)
     s[j] = y[j];
@@ -368,50 +368,46 @@ __device__ inline void lawson_warp_bwd(const T* __restrict__ L,
     const int c               = lo + lane;
     const bool valid          = lane < cnt;
     const T* __restrict__ col = L + static_cast<std::size_t>(c) * ld;
+    // The factor is written by this kernel: read it with plain loads (TxN_t::load of a const
+    // pointer is an `ld.global.nc`, which is not coherent with writes made during the launch).
+    T* col_rw = const_cast<T*>(col);
     T tile[raft::WarpSize];
 #pragma unroll
     for (int i0 = 0; i0 < raft::WarpSize; i0 += W) {
       if (i0 < cnt) {
         V q;
         if (valid) {
-          q = *reinterpret_cast<const V*>(col + lo + i0);
+          q.load(col_rw, lo + i0);
         } else {
-          q.x = T(0);
-          q.y = T(0);
-          if constexpr (W == 4) {
-            q.z = T(0);
-            q.w = T(0);
-          }
+          q.fill(T(0));
         }
-        tile[i0]     = q.x;
-        tile[i0 + 1] = q.y;
-        if constexpr (W == 4) {
-          tile[i0 + 2] = q.z;
-          tile[i0 + 3] = q.w;
+#pragma unroll
+        for (int i = 0; i < W; i++) {
+          tile[i0 + i] = q.val.data[i];
         }
       }
     }
     T acc = valid ? s[c] : T(0);
     if (valid && hi < np) {
-      // Four independent chains; `hi` is a multiple of the warp size and `ld` of eight
+      // One chain per vector lane; `hi` is a multiple of the warp size and `ld` of eight
       // elements, so the 16-byte vector loads of the column are aligned.
-      T p[4] = {T(0), T(0), T(0), T(0)};
+      T p[W] = {};
       int j  = hi;
-      for (; j + 4 <= np; j += 4) {
+      V q;
+      for (; j + W <= np; j += W) {
+        q.load(col_rw, j);
 #pragma unroll
-        for (int v = 0; v < 4; v += W) {
-          const V q = *reinterpret_cast<const V*>(col + j + v);
-          p[v]      = fma(q.x, s[j + v], p[v]);
-          p[v + 1]  = fma(q.y, s[j + v + 1], p[v + 1]);
-          if constexpr (W == 4) {
-            p[v + 2] = fma(q.z, s[j + v + 2], p[v + 2]);
-            p[v + 3] = fma(q.w, s[j + v + 3], p[v + 3]);
-          }
+        for (int i = 0; i < W; i++) {
+          p[i] = fma(q.val.data[i], s[j + i], p[i]);
         }
       }
       for (; j < np; ++j)
         p[0] = fma(col[j], s[j], p[0]);
-      acc -= (p[0] + p[1]) + (p[2] + p[3]);
+      T dot = p[0];
+#pragma unroll
+      for (int i = 1; i < W; i++)
+        dot += p[i];
+      acc -= dot;
     }
     const T di = valid ? dinv[c] : T(0);
     acc *= di;
