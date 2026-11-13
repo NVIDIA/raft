@@ -312,5 +312,166 @@ TEST(MakeBlobsClusterStd, DoubleColMajor)
   check_cluster_std_by_label<double, raft::layout_f_contiguous>();
 }
 
+template <typename T, typename Layout>
+void check_generated_centers_output()
+{
+  constexpr int n_rows     = 257;
+  constexpr int n_cols     = 3;
+  constexpr int n_clusters = 5;
+  raft::resources handle;
+  auto stream                = resource::get_cuda_stream(handle).get();
+  auto data                  = make_device_matrix<T, int, Layout>(handle, n_rows, n_cols);
+  auto labels                = make_device_vector<int, int>(handle, n_rows);
+  auto data_without_output   = make_device_matrix<T, int, Layout>(handle, n_rows, n_cols);
+  auto labels_without_output = make_device_vector<int, int>(handle, n_rows);
+  auto generated_centers     = make_device_matrix<T, int, Layout>(handle, n_clusters, n_cols);
+
+  make_blobs<T, int, Layout>(handle,
+                             data.view(),
+                             labels.view(),
+                             n_clusters,
+                             std::nullopt,
+                             std::nullopt,
+                             T(0),
+                             true,
+                             T(-3),
+                             T(3),
+                             42ULL,
+                             raft::random::GenPC,
+                             std::make_optional(generated_centers.view()));
+  make_blobs<T, int, Layout>(handle,
+                             data_without_output.view(),
+                             labels_without_output.view(),
+                             n_clusters,
+                             std::nullopt,
+                             std::nullopt,
+                             T(0),
+                             true,
+                             T(-3),
+                             T(3),
+                             42ULL,
+                             raft::random::GenPC);
+
+  std::vector<T> host_data(n_rows * n_cols);
+  std::vector<T> host_data_without_output(n_rows * n_cols);
+  std::vector<T> host_centers(n_clusters * n_cols);
+  std::vector<int> host_labels(n_rows);
+  std::vector<int> host_labels_without_output(n_rows);
+  raft::update_host(host_data.data(), data.data_handle(), host_data.size(), stream);
+  raft::update_host(host_data_without_output.data(),
+                    data_without_output.data_handle(),
+                    host_data_without_output.size(),
+                    stream);
+  raft::update_host(
+    host_centers.data(), generated_centers.data_handle(), host_centers.size(), stream);
+  raft::update_host(host_labels.data(), labels.data_handle(), host_labels.size(), stream);
+  raft::update_host(host_labels_without_output.data(),
+                    labels_without_output.data_handle(),
+                    host_labels_without_output.size(),
+                    stream);
+  resource::sync_stream(handle);
+
+  EXPECT_EQ(host_data, host_data_without_output);
+  EXPECT_EQ(host_labels, host_labels_without_output);
+  constexpr bool row_major = std::is_same<Layout, raft::layout_c_contiguous>::value;
+  for (int row = 0; row < n_rows; ++row) {
+    for (int col = 0; col < n_cols; ++col) {
+      auto data_offset = row_major ? row * n_cols + col : col * n_rows + row;
+      auto center_offset =
+        row_major ? host_labels[row] * n_cols + col : col * n_clusters + host_labels[row];
+      EXPECT_EQ(host_data[data_offset], host_centers[center_offset]);
+    }
+  }
+}
+
+TEST(MakeBlobsGeneratedCenters, FloatRowMajor)
+{
+  check_generated_centers_output<float, raft::layout_c_contiguous>();
+}
+
+TEST(MakeBlobsGeneratedCenters, FloatColMajor)
+{
+  check_generated_centers_output<float, raft::layout_f_contiguous>();
+}
+
+TEST(MakeBlobsGeneratedCenters, DoubleRowMajor)
+{
+  check_generated_centers_output<double, raft::layout_c_contiguous>();
+}
+
+TEST(MakeBlobsGeneratedCenters, DoubleColMajor)
+{
+  check_generated_centers_output<double, raft::layout_f_contiguous>();
+}
+
+TEST(MakeBlobsShuffle, PermutesRowsDeterministically)
+{
+  constexpr int n_rows     = 257;
+  constexpr int n_clusters = 5;
+  raft::resources handle;
+  auto stream        = resource::get_cuda_stream(handle).get();
+  auto data          = make_device_matrix<float, int, raft::layout_c_contiguous>(handle, n_rows, 2);
+  auto labels        = make_device_vector<int, int>(handle, n_rows);
+  auto repeated_data = make_device_matrix<float, int, raft::layout_c_contiguous>(handle, n_rows, 2);
+  auto repeated_labels = make_device_vector<int, int>(handle, n_rows);
+  auto unshuffled_data =
+    make_device_matrix<float, int, raft::layout_c_contiguous>(handle, n_rows, 2);
+  auto unshuffled_labels = make_device_vector<int, int>(handle, n_rows);
+
+  auto generate = [&](auto data_view, auto label_view, bool shuffle) {
+    make_blobs<float, int, raft::layout_c_contiguous>(handle,
+                                                      data_view,
+                                                      label_view,
+                                                      n_clusters,
+                                                      std::nullopt,
+                                                      std::nullopt,
+                                                      0.f,
+                                                      shuffle,
+                                                      -3.f,
+                                                      3.f,
+                                                      42ULL);
+  };
+  generate(data.view(), labels.view(), true);
+  generate(repeated_data.view(), repeated_labels.view(), true);
+  generate(unshuffled_data.view(), unshuffled_labels.view(), false);
+
+  std::vector<float> host_data(n_rows * 2);
+  std::vector<float> host_repeated_data(n_rows * 2);
+  std::vector<int> host_labels(n_rows);
+  std::vector<int> host_repeated_labels(n_rows);
+  std::vector<int> host_unshuffled_labels(n_rows);
+  raft::update_host(host_data.data(), data.data_handle(), host_data.size(), stream);
+  raft::update_host(
+    host_repeated_data.data(), repeated_data.data_handle(), host_repeated_data.size(), stream);
+  raft::update_host(host_labels.data(), labels.data_handle(), host_labels.size(), stream);
+  raft::update_host(host_repeated_labels.data(),
+                    repeated_labels.data_handle(),
+                    host_repeated_labels.size(),
+                    stream);
+  raft::update_host(host_unshuffled_labels.data(),
+                    unshuffled_labels.data_handle(),
+                    host_unshuffled_labels.size(),
+                    stream);
+  resource::sync_stream(handle);
+
+  EXPECT_EQ(host_data, host_repeated_data);
+  EXPECT_EQ(host_labels, host_repeated_labels);
+  std::vector<int> shuffled_counts(n_clusters, 0);
+  std::vector<int> unshuffled_counts(n_clusters, 0);
+  bool differs_from_cyclic = false;
+  for (int row = 0; row < n_rows; ++row) {
+    ASSERT_GE(host_labels[row], 0);
+    ASSERT_LT(host_labels[row], n_clusters);
+    EXPECT_EQ(host_unshuffled_labels[row], row % n_clusters);
+    ++shuffled_counts[host_labels[row]];
+    ++unshuffled_counts[host_unshuffled_labels[row]];
+    if (row + n_clusters < n_rows) {
+      differs_from_cyclic |= host_labels[row] != host_labels[row + n_clusters];
+    }
+  }
+  EXPECT_EQ(shuffled_counts, unshuffled_counts);
+  EXPECT_TRUE(differs_from_cyclic);
+}
+
 }  // end namespace random
 }  // end namespace raft
