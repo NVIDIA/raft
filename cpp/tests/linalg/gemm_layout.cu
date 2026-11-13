@@ -187,9 +187,10 @@ INSTANTIATE_TEST_SUITE_P(GemmLayoutTests, GemmLayoutTestF, ::testing::ValuesIn(i
 INSTANTIATE_TEST_SUITE_P(GemmLayoutTests, GemmLayoutTestD, ::testing::ValuesIn(inputsd));
 
 // C = alpha * A * B + beta * C + bias, with bias[i] added to row i of C (the cuBLASLt bias
-// epilogue), for A and B of type T: float, or half with float accumulation and output.
+// epilogue), for A and B of type T: float, or half with float accumulation and output. The bias
+// starts bias_offset elements into its buffer, so an odd offset leaves it only 4-byte aligned.
 template <typename T>
-void gemm_bias_test()
+void gemm_bias_test(int bias_offset)
 {
   raft::resources handle;
   auto stream       = resource::get_cuda_stream(handle);
@@ -215,11 +216,11 @@ void gemm_bias_test()
   auto a    = raft::make_device_vector<T>(handle, m * k);
   auto b    = raft::make_device_vector<T>(handle, k * n);
   auto c    = raft::make_device_vector<float>(handle, m * n);
-  auto bias = raft::make_device_vector<float>(handle, m);
+  auto bias = raft::make_device_vector<float>(handle, bias_offset + m);
   raft::update_device(a.data_handle(), a_host.data(), a_host.size(), stream);
   raft::update_device(b.data_handle(), b_host.data(), b_host.size(), stream);
   raft::update_device(c.data_handle(), c_host.data(), c_host.size(), stream);
-  raft::update_device(bias.data_handle(), bias_host.data(), bias_host.size(), stream);
+  raft::update_device(bias.data_handle() + bias_offset, bias_host.data(), bias_host.size(), stream);
 
   raft::execute_with_dry_run_check(
     handle,
@@ -239,7 +240,7 @@ void gemm_bias_test()
            c.data_handle(),
            m,
            resource::get_cuda_stream(h).get(),
-           static_cast<const float*>(bias.data_handle()));
+           static_cast<const float*>(bias.data_handle() + bias_offset));
     },
     raft::alloc_behavior::NO_ALLOCATIONS);
 
@@ -251,8 +252,17 @@ void gemm_bias_test()
   }
 }
 
-TEST(GemmBias, Float) { gemm_bias_test<float>(); }
-TEST(GemmBias, Half) { gemm_bias_test<half>(); }
+TEST(GemmBias, Float)
+{
+  gemm_bias_test<float>(0);
+  gemm_bias_test<float>(1);
+}
+
+TEST(GemmBias, Half)
+{
+  gemm_bias_test<half>(0);
+  gemm_bias_test<half>(1);
+}
 
 }  // end namespace linalg
 }  // end namespace raft
