@@ -398,6 +398,41 @@ TYPED_TEST(NnlsTest, TinySolutionOfLargeMatrix)
   EXPECT_LT(std::abs(static_cast<double>(X[1]) * sc - 1.0), kkt_tolerance<T>());
 }
 
+TYPED_TEST(NnlsTest, RnormAwayFromUnitScale)
+{
+  // With A = 0 the residual is b itself.  Squaring it in T overflows for the large scale and
+  // flushes to zero for the small one; the norm itself is representable in both.
+  using T = TypeParam;
+  const std::vector<T> scales =
+    sizeof(T) == 4 ? std::vector<T>{T(1e20), T(1e-25)} : std::vector<T>{T(1e200), T(1e-200)};
+  for (T sc : scales) {
+    problem<T> pr(3, 2, 1, 83);
+    std::fill(pr.A.begin(), pr.A.end(), T(0));
+    pr.B = {sc, sc, sc};
+    device_problem<T> dp(this->res, pr);
+    dp.solve(this->res, {}, true);
+    T rn;
+    raft::update_host(&rn, dp.rnorm.data_handle(), 1, raft::resource::get_cuda_stream(this->res));
+    raft::resource::sync_stream(this->res);
+    ASSERT_TRUE(std::isfinite(rn)) << "scale " << sc;
+    EXPECT_LT(std::abs(static_cast<double>(rn) / (std::sqrt(3.0) * static_cast<double>(sc)) - 1.0),
+              kkt_tolerance<T>())
+      << "scale " << sc;
+  }
+}
+
+TYPED_TEST(NnlsTest, StaticSharedMemoryIsAccounted)
+{
+  // The per-block limit covers static and dynamic shared memory together.
+  using T = TypeParam;
+  for (int cfg = 0; cfg < detail::kLawsonConfigCount; ++cfg) {
+    cudaFuncAttributes attr{};
+    RAFT_CUDA_TRY(cudaFuncGetAttributes(&attr, detail::lawson_kernel_for<T>(cfg)));
+    EXPECT_EQ(static_cast<std::size_t>(attr.sharedSizeBytes), detail::kLawsonStaticSmem)
+      << "config " << cfg;
+  }
+}
+
 TYPED_TEST(NnlsTest, OutputIsFullyWritten)
 {
   // Solutions are written in full (zeros included) whatever X held before.

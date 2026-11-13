@@ -165,13 +165,13 @@ void nnls(
   const auto& props       = raft::resource::get_device_properties(res);
   const std::size_t smem  = lawson_smem_bytes<T>(n_int, np_max);
   const std::size_t limit = props.sharedMemPerBlockOptin;
-  RAFT_EXPECTS(smem <= limit,
+  RAFT_EXPECTS(smem + kLawsonStaticSmem <= limit,
                "nnls: min(m, n) = %d is too large for the batched Lawson-Hanson kernel on this "
                "device: its active-set state needs %zu B of shared memory per block (O(min(m, n))) "
                "but a block may use at most %zu B, which allows min(m, n) of up to about %d here "
                "(n = %d). Reduce the problem, e.g. by screening out columns or rows first.",
                np_max,
-               smem,
+               smem + kLawsonStaticSmem,
                limit,
                lawson_max_np<T>(limit, n_int),
                n_int);
@@ -182,7 +182,7 @@ void nnls(
   lawson_kernel_t<T> kernel = nullptr;
   for (; cfg >= 0; --cfg) {
     kernel = lawson_kernel_for<T>(cfg);
-    if (smem > static_cast<std::size_t>(props.sharedMemPerBlock)) {
+    if (smem + kLawsonStaticSmem > static_cast<std::size_t>(props.sharedMemPerBlock)) {
       int device = 0;
       RAFT_CUDA_TRY(cudaGetDevice(&device));
       lawson_grant_smem<T>(kernel, device, limit);
@@ -206,9 +206,9 @@ void nnls(
   // more passes over the batch instead).  The buffer comes from the workspace when it fits
   // and from the large workspace otherwise: an allocation per call is noise next to a big
   // solve, but at the production shapes it can cost as much as the solve itself.
-  auto aligned = [](std::size_t elems) { return (elems + 7) / 8 * 8; };  // 32-64 B boundaries
-  const std::size_t g_elems    = aligned(static_cast<std::size_t>(n) * n);
-  const std::size_t c_elems    = aligned(static_cast<std::size_t>(n) * P);
+  // (round the sub-buffers up to 8 elements: 32-64 B boundaries)
+  const std::size_t g_elems = raft::round_up_safe<std::size_t>(static_cast<std::size_t>(n) * n, 8);
+  const std::size_t c_elems = raft::round_up_safe<std::size_t>(static_cast<std::size_t>(n) * P, 8);
   const std::size_t slab_elems = lawson_slab_elems(np_max);
   const std::size_t ws_free    = raft::resource::get_workspace_free_bytes(res);
   long long grid =

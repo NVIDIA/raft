@@ -8,7 +8,9 @@
 #include <raft/core/operators.hpp>        // raft::min_op, raft::max_op
 #include <raft/util/cuda_utils.cuh>       // raft::WarpSize
 #include <raft/util/cudart_utils.hpp>     // raft::warp_full_mask
+#include <raft/util/pow2_utils.cuh>       // raft::Pow2
 #include <raft/util/reduction.cuh>        // raft::warpReduce
+#include <raft/util/vectorized.cuh>       // raft::IOType
 #include <raft/util/warp_primitives.cuh>  // raft::shfl
 
 #include <cuda_runtime.h>
@@ -18,8 +20,13 @@
 #include <cstddef>
 #include <cstdint>
 #include <limits>
+#include <type_traits>
 
 namespace raft::solver::detail {
+
+/** Lanes of a warp, and the bits of one word of the active-set bitset (both powers of two). */
+using lawson_warp = raft::Pow2<raft::WarpSize>;
+using lawson_word = raft::Pow2<32>;
 
 /**
  * Batched, masked Lawson-Hanson NNLS: one problem per CUDA block.
@@ -44,9 +51,15 @@ namespace raft::solver::detail {
 template <typename T>
 __device__ inline T lawson_ridge_eps(T diag)
 {
-  const T rel = (sizeof(T) == 4 ? T(1e-7) : T(1e-14));
+  // ~1 ulp of the working precision for float (the old 1e-7) and ~64 ulp for double (1e-14).
+  constexpr T rel = std::numeric_limits<T>::epsilon() * (sizeof(T) == 4 ? T(1) : T(64));
   return rel * (diag > T(0) ? diag : T(1));
 }
+
+/** Bytes of statically allocated shared memory of the kernel (the ints `sm_n_active`,
+ *  `sm_flag`, `sm_open`, padded to the 16-byte alignment of the dynamic part): they count
+ *  against the per-block limit together with the dynamic part. */
+constexpr std::size_t kLawsonStaticSmem = 16;
 
 /**
  * Dynamic shared-memory footprint for `n` columns and an active set of at most `np_max`:
@@ -68,15 +81,18 @@ inline std::size_t lawson_smem_bytes(int n, int np_max)
   constexpr std::size_t kVectors = 5;  // xp, s, y, dinv, dg
   const auto np                  = static_cast<std::size_t>(np_max);
   return sizeof(T) * np * kVectors + sizeof(T) * raft::WarpSize + sizeof(int) * raft::WarpSize +
-         sizeof(int) * np * 2 + sizeof(std::uint32_t) * ((static_cast<std::size_t>(n) + 31) / 32);
+         sizeof(int) * np * 2 +
+         sizeof(std::uint32_t) *
+           lawson_word::div(lawson_word::roundUp(static_cast<std::size_t>(n)));
 }
 
-/** Largest np_max whose footprint fits in `limit` bytes (0 if none); see lawson_smem_bytes. */
+/** Largest np_max whose footprint, static shared memory included, fits in `limit` bytes
+ *  (0 if none); see lawson_smem_bytes. */
 template <typename T>
 inline int lawson_max_np(std::size_t limit, int n)
 {
-  const std::size_t fixed = lawson_smem_bytes<T>(n, 0);
-  const std::size_t per   = lawson_smem_bytes<T>(n, 1) - fixed;
+  const std::size_t fixed = lawson_smem_bytes<T>(n, 0) + kLawsonStaticSmem;
+  const std::size_t per   = lawson_smem_bytes<T>(n, 1) - lawson_smem_bytes<T>(n, 0);
   if (limit <= fixed) return 0;
   return static_cast<int>(
     std::min<std::size_t>((limit - fixed) / per, std::numeric_limits<int>::max()));
@@ -119,17 +135,17 @@ __device__ lawson_smem<T> lawson_smem_layout(unsigned char* smem, int np_max)
  *  barriers; the atomic clear in the compaction is the one concurrent writer. */
 __device__ inline bool lawson_act_test(const std::uint32_t* act, int j)
 {
-  return ((act[j >> 5] >> (j & 31)) & 1u) != 0u;
+  return ((act[lawson_word::div(j)] >> lawson_word::mod(j)) & 1u) != 0u;
 }
 /** Set bit `j` (mark column j active). */
 __device__ inline void lawson_act_set(std::uint32_t* act, int j)
 {
-  act[j >> 5] |= (1u << (j & 31));
+  act[lawson_word::div(j)] |= (1u << lawson_word::mod(j));
 }
 /** Clear bit `j` (column j leaves the active set). */
 __device__ inline void lawson_act_clear(std::uint32_t* act, int j)
 {
-  act[j >> 5] &= ~(1u << (j & 31));
+  act[lawson_word::div(j)] &= ~(1u << lawson_word::mod(j));
 }
 
 /**
@@ -238,7 +254,10 @@ __device__ inline void lawson_gradient_partial(const T* __restrict__ G,
 constexpr int kLawsonSlabPad = 4;
 
 /** Leading dimension of a factor slab. */
-__host__ __device__ constexpr int lawson_slab_ld(int np_max) { return (np_max + 7) / 8 * 8; }
+__host__ __device__ constexpr int lawson_slab_ld(int np_max)
+{
+  return raft::Pow2<8>::roundUp(np_max);
+}
 
 /** Elements of one factor slab. */
 __host__ __device__ constexpr std::size_t lawson_slab_elems(int np_max)
@@ -246,18 +265,6 @@ __host__ __device__ constexpr std::size_t lawson_slab_elems(int np_max)
   return static_cast<std::size_t>(np_max + kLawsonSlabPad) *
          static_cast<std::size_t>(lawson_slab_ld(np_max));
 }
-
-/** Vector type used to load four (float) / two (double) consecutive factor entries at once. */
-template <typename T>
-struct lawson_vec;
-template <>
-struct lawson_vec<float> {
-  using type = float4;
-};
-template <>
-struct lawson_vec<double> {
-  using type = double2;
-};
 
 /** (value, index) maximum over the warp.  Ties resolve to the lowest lane; every lane
  *  gets the result; the index is -1 when the value is -inf everywhere (no candidate). */
@@ -285,17 +292,17 @@ template <typename T>
 __device__ inline void lawson_warp_fwd(
   const T* __restrict__ L, int ld, int m, const T* __restrict__ dinv, T* sc)
 {
-  const int lane = threadIdx.x & 31;
-  for (int lo = 0; lo < m; lo += 32) {
-    const int cnt    = min(32, m - lo);
+  const int lane = lawson_warp::mod(threadIdx.x);
+  for (int lo = 0; lo < m; lo += raft::WarpSize) {
+    const int cnt    = min(static_cast<int>(raft::WarpSize), m - lo);
     const int r      = lo + lane;
     const bool valid = lane < cnt;
     const T di       = valid ? dinv[r] : T(0);
-    T tile[32];
+    T tile[raft::WarpSize];
     {
       const T* __restrict__ Lp = L + r + static_cast<std::size_t>(lo) * ld;
 #pragma unroll
-      for (int j0 = 0; j0 < 32; j0 += 4) {
+      for (int j0 = 0; j0 < raft::WarpSize; j0 += 4) {
         if (j0 < cnt) {
 #pragma unroll
           for (int j = j0; j < j0 + 4; ++j)
@@ -305,7 +312,7 @@ __device__ inline void lawson_warp_fwd(
     }
     T acc = valid ? sc[r] * di : T(0);
 #pragma unroll
-    for (int j0 = 0; j0 < 32; j0 += 4) {
+    for (int j0 = 0; j0 < raft::WarpSize; j0 += 4) {
       if (j0 < cnt) {
 #pragma unroll
         for (int j = j0; j < j0 + 4; ++j) {
@@ -317,11 +324,11 @@ __device__ inline void lawson_warp_fwd(
     if (valid) sc[r] = acc;
     __syncwarp();
     const int hi = lo + cnt;
-    for (int r2 = hi + lane; r2 < m; r2 += 32) {
+    for (int r2 = hi + lane; r2 < m; r2 += raft::WarpSize) {
       const T* __restrict__ Lr = L + r2 + static_cast<std::size_t>(lo) * ld;
       T a0 = sc[r2], a1 = T(0);
 #pragma unroll
-      for (int j = 0; j < 32; j += 2) {
+      for (int j = 0; j < raft::WarpSize; j += 2) {
         a0 = fma(-Lr[static_cast<std::size_t>(j) * ld], sc[lo + j], a0);
         a1 = fma(-Lr[static_cast<std::size_t>(j + 1) * ld], sc[lo + j + 1], a1);
       }
@@ -347,23 +354,23 @@ __device__ inline void lawson_warp_bwd(const T* __restrict__ L,
                                        const T* __restrict__ y,
                                        T* s)
 {
-  using V         = typename lawson_vec<T>::type;
-  constexpr int W = sizeof(V) / sizeof(T);  // elements per vector (4 for float, 2 for double)
-  const int lane  = threadIdx.x & 31;
-  for (int j = lane; j < np; j += 32)
+  constexpr int W = 16 / sizeof(T);  // elements per 16-byte vector (4 for float, 2 for double)
+  using V         = typename raft::IOType<T, W>::Type;  // float4 / double2
+  const int lane  = lawson_warp::mod(threadIdx.x);
+  for (int j = lane; j < np; j += raft::WarpSize)
     s[j] = y[j];
   __syncwarp();
-  const int nt = (np + 31) / 32;
+  const int nt = lawson_warp::div(lawson_warp::roundUp(np));
   for (int k = nt - 1; k >= 0; --k) {
-    const int lo              = 32 * k;
-    const int cnt             = min(32, np - lo);
+    const int lo              = raft::WarpSize * k;
+    const int cnt             = min(static_cast<int>(raft::WarpSize), np - lo);
     const int hi              = lo + cnt;
     const int c               = lo + lane;
     const bool valid          = lane < cnt;
     const T* __restrict__ col = L + static_cast<std::size_t>(c) * ld;
-    T tile[32];
+    T tile[raft::WarpSize];
 #pragma unroll
-    for (int i0 = 0; i0 < 32; i0 += W) {
+    for (int i0 = 0; i0 < raft::WarpSize; i0 += W) {
       if (i0 < cnt) {
         V q;
         if (valid) {
@@ -386,22 +393,30 @@ __device__ inline void lawson_warp_bwd(const T* __restrict__ L,
     }
     T acc = valid ? s[c] : T(0);
     if (valid && hi < np) {
-      T p0 = T(0), p1 = T(0), p2 = T(0), p3 = T(0);
-      int j = hi;
+      // Four independent chains; `hi` is a multiple of the warp size and `ld` of eight
+      // elements, so the 16-byte vector loads of the column are aligned.
+      T p[4] = {T(0), T(0), T(0), T(0)};
+      int j  = hi;
       for (; j + 4 <= np; j += 4) {
-        p0 = fma(col[j], s[j], p0);
-        p1 = fma(col[j + 1], s[j + 1], p1);
-        p2 = fma(col[j + 2], s[j + 2], p2);
-        p3 = fma(col[j + 3], s[j + 3], p3);
+#pragma unroll
+        for (int v = 0; v < 4; v += W) {
+          const V q = *reinterpret_cast<const V*>(col + j + v);
+          p[v]      = fma(q.x, s[j + v], p[v]);
+          p[v + 1]  = fma(q.y, s[j + v + 1], p[v + 1]);
+          if constexpr (W == 4) {
+            p[v + 2] = fma(q.z, s[j + v + 2], p[v + 2]);
+            p[v + 3] = fma(q.w, s[j + v + 3], p[v + 3]);
+          }
+        }
       }
       for (; j < np; ++j)
-        p0 = fma(col[j], s[j], p0);
-      acc -= (p0 + p1) + (p2 + p3);
+        p[0] = fma(col[j], s[j], p[0]);
+      acc -= (p[0] + p[1]) + (p[2] + p[3]);
     }
     const T di = valid ? dinv[c] : T(0);
     acc *= di;
 #pragma unroll
-    for (int i0 = 32 - W; i0 >= 0; i0 -= W) {
+    for (int i0 = raft::WarpSize - W; i0 >= 0; i0 -= W) {
       if (i0 < cnt) {
 #pragma unroll
         for (int i = i0 + W - 1; i >= i0; --i) {
@@ -442,8 +457,8 @@ __device__ inline void lawson_warp_bwd(const T* __restrict__ L,
 template <typename T>
 __device__ inline void lawson_slab_ensure_open(T* L, int ld, int np_max, int m, int* sm_open)
 {
-  if ((m & 31) != 0) return;  // only the first row of a panel opens it (warp-uniform)
-  const int lane = threadIdx.x & 31;
+  if (lawson_warp::mod(m) != 0) return;  // only the first row of a panel opens it (warp-uniform)
+  const int lane = lawson_warp::mod(threadIdx.x);
   // Lane 0 alone reads and writes the shared counter, so there is no race between lanes;
   // everyone learns the value by shuffle.
   int open_to = 0;
@@ -452,12 +467,12 @@ __device__ inline void lawson_slab_ensure_open(T* L, int ld, int np_max, int m, 
   __syncwarp();  // (the load may be issued by every lane; order it before lane 0's store below)
   if (m < open_to) return;              // already open (an earlier problem of this block got here)
   const int reach = (np_max + 3) & ~3;  // rows / columns the unguarded loads can touch
-  const int rows  = min(m + 32, reach);
-  const int cols  = min(m + 32, reach);
+  const int rows  = min(m + raft::WarpSize, reach);
+  const int cols  = min(m + raft::WarpSize, reach);
   if (m + lane < rows)
     for (int cc = m; cc < cols; ++cc)
       L[(m + lane) + static_cast<std::size_t>(cc) * ld] = T(0);
-  if (lane == 0) *sm_open = m + 32;
+  if (lane == 0) *sm_open = m + raft::WarpSize;
   __syncwarp();  // the cleared block is visible to every lane before the append reads it
 }
 
@@ -488,7 +503,7 @@ __device__ inline bool lawson_warp_append(T* L,
                                           T* dinv,
                                           T* sc)
 {
-  const int lane             = threadIdx.x & 31;
+  const int lane             = lawson_warp::mod(threadIdx.x);
   const int m                = np - 1;
   const int j_star           = idx[m];
   const T* __restrict__ Gcol = G + static_cast<std::size_t>(j_star) * n;
@@ -499,19 +514,19 @@ __device__ inline bool lawson_warp_append(T* L,
     T av[4];
 #pragma unroll
     for (int t = 0; t < 4; ++t) {
-      const int i = base + lane + 32 * t;
+      const int i = base + lane + raft::WarpSize * t;
       av[t]       = (i < m) ? Gcol[idx[i]] : T(0);
     }
 #pragma unroll
     for (int t = 0; t < 4; ++t) {
-      const int i = base + lane + 32 * t;
+      const int i = base + lane + raft::WarpSize * t;
       if (i < m) sc[i] = av[t];
     }
   }
   __syncwarp();
   lawson_warp_fwd(L, ld, m, dinv, sc);
   T dll = T(0), dly = T(0);
-  for (int j = lane; j < m; j += 32) {
+  for (int j = lane; j < m; j += raft::WarpSize) {
     const T lj                              = sc[j];
     L[m + static_cast<std::size_t>(j) * ld] = lj;
     dll += lj * lj;
@@ -557,10 +572,10 @@ template <typename T>
 __device__ inline void lawson_warp_delete_one(
   T* L, int ld, int np, int p, T* y, T* dg, T* dinv, T* v)
 {
-  const int lane = threadIdx.x & 31;
+  const int lane = lawson_warp::mod(threadIdx.x);
   const int q    = np - 1 - p;  // trailing block size
   // Columns left of p: drop row p by shifting rows [p, np-1) up one (lane = column).
-  for (int j = lane; j < p; j += 32) {
+  for (int j = lane; j < p; j += raft::WarpSize) {
     T* col = L + static_cast<std::size_t>(j) * ld;
     for (int i = p; i < np - 1; i += 8) {
       T t[8];
@@ -573,14 +588,14 @@ __device__ inline void lawson_warp_delete_one(
     }
   }
   // Save l3p = L(p+1 : np-1, p) before the trailing shift overwrites column p.
-  for (int i = lane; i < q; i += 32)
+  for (int i = lane; i < q; i += raft::WarpSize)
     v[i] = L[(p + 1 + i) + static_cast<std::size_t>(p) * ld];
   T partner = T(0);
   if (lane == 0) partner = y[p];
   __syncwarp();
   // Compact y and dg (drop position p); the trailing diagonal entries are rewritten
   // by the sweep below.
-  for (int base = p; base < np - 1; base += 32) {
+  for (int base = p; base < np - 1; base += raft::WarpSize) {
     const int i = base + lane;
     const T val = (i + 1 < np) ? y[i + 1] : T(0);
     const T dv  = (i + 1 < np) ? dg[i + 1] : T(0);
@@ -595,7 +610,7 @@ __device__ inline void lawson_warp_delete_one(
   // diagonals d = i - j >= 1.  One lane walks one diagonal from the top, reading each
   // source before this same lane later overwrites it; diagonals never alias across
   // lanes, so the whole shift is a sync-free warp-wide pass.
-  for (int d = 1 + lane; d < q; d += 32) {
+  for (int d = 1 + lane; d < q; d += raft::WarpSize) {
     for (int k = 0; k <= q - 1 - d; k += 8) {
       T t[8];
 #pragma unroll
@@ -630,7 +645,7 @@ __device__ inline void lawson_warp_delete_one(
     }
     c = raft::shfl(c, 0);
     s = raft::shfl(s, 0);
-    for (int t = k + 1 + lane; t < q; t += 32) {
+    for (int t = k + 1 + lane; t < q; t += raft::WarpSize) {
       const int row       = p + t;
       const std::size_t o = row + static_cast<std::size_t>(p + k) * ld;
       const T lik         = L[o];
@@ -654,13 +669,13 @@ template <typename T>
 __device__ inline int lawson_post_solve(
   T* L, int ld, int& npc, T* xp, T* s, T* y, T* dg, T* dinv, int* idx, int* rem, std::uint32_t* act)
 {
-  const int lane = threadIdx.x & 31;
+  const int lane = lawson_warp::mod(threadIdx.x);
   T mn           = std::numeric_limits<T>::infinity();
-  for (int i = lane; i < npc; i += 32)
+  for (int i = lane; i < npc; i += raft::WarpSize)
     mn = min(mn, s[i]);
   mn = raft::warpReduce(mn, raft::min_op{});
   if (mn > T(0)) {
-    for (int i = lane; i < npc; i += 32)
+    for (int i = lane; i < npc; i += raft::WarpSize)
       xp[i] = s[i];
     __syncwarp();
     return 0;
@@ -669,7 +684,7 @@ __device__ inline int lawson_post_solve(
   // and how many of them are binding.
   T amin  = std::numeric_limits<T>::infinity();
   int cnt = 0;
-  for (int i = lane; i < npc; i += 32) {
+  for (int i = lane; i < npc; i += raft::WarpSize) {
     const T sj = s[i];
     if (sj <= T(0)) {
       const T xj    = xp[i];
@@ -685,7 +700,7 @@ __device__ inline int lawson_post_solve(
   amin = raft::warpReduce(amin, raft::min_op{});
   cnt  = raft::warpReduce(cnt);
   if (cnt == 0) return 2;
-  for (int i = lane; i < npc; i += 32) {
+  for (int i = lane; i < npc; i += raft::WarpSize) {
     const T xi = xp[i];
     const T si = s[i];
     // The coordinate that attained the minimum ratio is the one the step is sized to
@@ -703,7 +718,7 @@ __device__ inline int lawson_post_solve(
   // ever go to slots at or below the lane's own, and a chunk reads all of its inputs
   // before any of them is written.
   int new_n = 0, n_rem = 0;
-  for (int base = 0; base < npc; base += 32) {
+  for (int base = 0; base < npc; base += raft::WarpSize) {
     const int i = base + lane;
     int jv      = 0;
     T xv        = T(0);
@@ -728,7 +743,7 @@ __device__ inline int lawson_post_solve(
     if (drop) {
       rem[n_rem + __popc(md & lt)] = i;
       // Several lanes may clear bits of the same word.
-      atomicAnd(&act[jv >> 5], ~(1u << (jv & 31)));
+      atomicAnd(&act[lawson_word::div(jv)], ~(1u << lawson_word::mod(jv)));
     }
     new_n += __popc(mk);
     n_rem += __popc(md);
@@ -838,9 +853,9 @@ __global__ __launch_bounds__(
   __shared__ int sm_open;  // columns of the factor slab whose diagonal blocks are cleared
 
   const int tid     = threadIdx.x;
-  const int lane    = tid & 31;
-  const int warp    = tid >> 5;
-  const int n_words = (n + 31) / 32;
+  const int lane    = lawson_warp::mod(tid);
+  const int warp    = lawson_warp::div(tid);
+  const int n_words = lawson_word::div(lawson_word::roundUp(n));
 
   const int inner_budget_total = 3 * n + 1;
 
@@ -938,42 +953,80 @@ __global__ __launch_bounds__(
     // Residual norm ||b - A x||_2 from the np active columns only, O(m * np) per problem
     // (a closed form from G and c would cancel badly in float32 for a good fit).  S.idx and
     // S.xp are still intact: the next problem overwrites them only after its first barrier,
-    // which thread 0 reaches after the final read of S.red_val below.
+    // which every thread reaches after its last read of S.red_val below.
     if (args.rnorm != nullptr) {
       const T* __restrict__ b = args.B + static_cast<std::size_t>(p) * args.m;
-      T sq                    = T(0);
-      // Four rows per thread at a time: independent chains hide the load latency, which
-      // dominates for tall A (np is small).
-      constexpr int kRows = 4;
-      for (std::int64_t i0 = tid; i0 < args.m; i0 += kRows * BlockSize) {  // 64-bit: m <= INT_MAX
-        T r[kRows];
-#pragma unroll
-        for (int u = 0; u < kRows; ++u) {
-          const std::int64_t i = i0 + u * BlockSize;
-          r[u]                 = i < args.m ? b[i] : T(0);
-        }
-        for (int kk = 0; kk < np; ++kk) {
-          const T* __restrict__ col = args.A + static_cast<std::size_t>(S.idx[kk]) * args.m;
-          const T xk                = S.xp[kk];
+      // Sum of squares of (b - A x) / scale and the largest |b - A x| of this thread's rows.
+      auto partial = [&](auto scaled, T scale, T& sq, T& mx) {
+        sq = T(0);
+        mx = T(0);
+        // Four rows per thread at a time: independent chains hide the load latency, which
+        // dominates for tall A (np is small).
+        constexpr int kRows = 4;
+        for (std::int64_t i0 = tid; i0 < args.m; i0 += kRows * BlockSize) {  // 64-bit: m <= INT_MAX
+          T r[kRows];
 #pragma unroll
           for (int u = 0; u < kRows; ++u) {
             const std::int64_t i = i0 + u * BlockSize;
-            if (i < args.m) r[u] -= col[i] * xk;
+            r[u]                 = i < args.m ? b[i] : T(0);
+          }
+          for (int kk = 0; kk < np; ++kk) {
+            const T* __restrict__ col = args.A + static_cast<std::size_t>(S.idx[kk]) * args.m;
+            const T xk                = S.xp[kk];
+#pragma unroll
+            for (int u = 0; u < kRows; ++u) {
+              const std::int64_t i = i0 + u * BlockSize;
+              if (i < args.m) r[u] -= col[i] * xk;
+            }
+          }
+#pragma unroll
+          for (int u = 0; u < kRows; ++u) {
+            if constexpr (decltype(scaled)::value) {
+              const T v = r[u] / scale;
+              sq += v * v;
+            } else {
+              sq += r[u] * r[u];
+            }
+            mx = max(mx, abs(r[u]));
           }
         }
-#pragma unroll
-        for (int u = 0; u < kRows; ++u)
-          sq += r[u] * r[u];
-      }
-      sq = raft::warpReduce(sq);
-      if (lane == 0) S.red_val[warp] = sq;
-      __syncthreads();
-      if (tid == 0) {
-        T total = T(0);
-        for (int w = 0; w < kWarps; ++w)
+      };
+      // Block-wide sum and max, available to every thread; `last` skips the barrier that
+      // protects S.red_val from being overwritten by the next use (the caller adds one).
+      auto reduce = [&](T sq, T mx, T& total, T& mx_all, bool last) {
+        static_assert(2 * kWarps <= raft::WarpSize);
+        sq = raft::warpReduce(sq);
+        mx = raft::warpReduce(mx, raft::max_op{});
+        if (lane == 0) {
+          S.red_val[warp]          = sq;
+          S.red_val[kWarps + warp] = mx;
+        }
+        __syncthreads();
+        total  = T(0);
+        mx_all = T(0);
+        for (int w = 0; w < kWarps; ++w) {
           total += S.red_val[w];
-        args.rnorm[p] = std::sqrt(total);
+          mx_all = max(mx_all, S.red_val[kWarps + w]);
+        }
+        if (!last) __syncthreads();
+      };
+      T sq, mx, total, mx_all;
+      partial(std::false_type{}, T(1), sq, mx);
+      reduce(sq, mx, total, mx_all, true);
+      // The plain sum of squares overflows (or loses everything to underflow) when the
+      // residual is far from unit scale: redo it relative to the largest entry.  Rare, so
+      // the fast path above stays a bare FMA chain.  The decision is block-uniform.
+      constexpr T kTiny = std::numeric_limits<T>::min() / std::numeric_limits<T>::epsilon();
+      T rn              = std::sqrt(total);
+      if (!isfinite(total) || (mx_all > T(0) && total < kTiny)) {
+        if (isfinite(mx_all) && mx_all > T(0)) {
+          __syncthreads();  // everyone has read S.red_val of the first reduction
+          partial(std::true_type{}, mx_all, sq, mx);
+          reduce(sq, mx, total, mx_all, true);
+          rn = mx_all * std::sqrt(total);
+        }
       }
+      if (tid == 0) args.rnorm[p] = rn;
     }
   }
 }
