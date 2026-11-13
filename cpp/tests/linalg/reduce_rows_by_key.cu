@@ -14,8 +14,10 @@
 
 #include <gtest/gtest.h>
 
+#include <cmath>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <tuple>
 #include <vector>
 
@@ -285,6 +287,30 @@ INSTANTIATE_TEST_CASE_P(ReduceRowTests,
                         ReduceRowTestLargeClustersAndCols,
                         ::testing::ValuesIn(inputsf_vectorized));
 
+/** Reference sum and sum of absolute terms, both accumulated in double. */
+template <typename T>
+RAFT_KERNEL referenceSumsKernel(const T* d_A,
+                                const uint32_t* d_keys,
+                                const T* d_weight,
+                                int nrows,
+                                int ncols,
+                                double* sums,
+                                double* abs_sums)
+{
+  int c = threadIdx.x + blockIdx.x * blockDim.x;
+  if (c >= ncols) return;
+  uint32_t key = blockIdx.y;
+  double s = 0, a = 0;
+  for (int r = 0; r < nrows; r++) {
+    if (d_keys[r] != key) continue;
+    double t = double(d_A[size_t(r) * ncols + c]) * (d_weight ? double(d_weight[r]) : 1.0);
+    s += t;
+    a += std::abs(t);
+  }
+  sums[size_t(key) * ncols + c]     = s;
+  abs_sums[size_t(key) * ncols + c] = a;
+}
+
 struct DeterminismInputs {
   int nrows;
   int ncols;
@@ -310,7 +336,8 @@ class ReduceRowsByKeyDeterminism : public ::testing::TestWithParam<DeterminismIn
     rmm::device_uvector<T> weights(p.nrows, stream);
     rmm::device_uvector<uint32_t> keys(p.nrows, stream);
     rmm::device_uvector<T> sums(static_cast<size_t>(p.nkeys) * p.ncols, stream);
-    rmm::device_uvector<T> ref(static_cast<size_t>(p.nkeys) * p.ncols, stream);
+    rmm::device_uvector<double> ref(static_cast<size_t>(p.nkeys) * p.ncols, stream);
+    rmm::device_uvector<double> abs_ref(static_cast<size_t>(p.nkeys) * p.ncols, stream);
     rmm::device_uvector<char> unused(p.nrows, stream);
     raft::random::RngState r(1234ULL);
     // Mixed signs and magnitudes, so that the summation order shows in the result bits.
@@ -325,16 +352,20 @@ class ReduceRowsByKeyDeterminism : public ::testing::TestWithParam<DeterminismIn
         [k = keys.data()] __device__(int i) { return i % 2 == 0 ? 0u : k[i]; });
     }
     const T* w = p.weighted ? weights.data() : nullptr;
-    naiveReduceRowsByKey(in.data(),
-                         p.ncols,
-                         keys.data(),
-                         w,
-                         unused.data(),
-                         p.nrows,
-                         p.ncols,
-                         p.nkeys,
-                         ref.data(),
-                         stream);
+    raft::launch_kernel(stream,
+                        dim3(raft::ceildiv(p.ncols, 32), p.nkeys),
+                        dim3(32),
+                        referenceSumsKernel<T>,
+                        in.data(),
+                        keys.data(),
+                        w,
+                        p.nrows,
+                        p.ncols,
+                        ref.data(),
+                        abs_ref.data());
+    std::vector<double> h_ref(ref.size()), h_abs_ref(abs_ref.size());
+    raft::update_host(h_ref.data(), ref.data(), ref.size(), stream);
+    raft::update_host(h_abs_ref.data(), abs_ref.data(), abs_ref.size(), stream);
 
     std::vector<T> first;
     for (int run = 0; run < 4; ++run) {
@@ -354,13 +385,13 @@ class ReduceRowsByKeyDeterminism : public ::testing::TestWithParam<DeterminismIn
       resource::sync_stream(handle, stream);
       if (run == 0) {
         first = out;
-        // Inputs are up to 1e3 * 2 per row, so the absolute error bound scales with the row count.
-        const T tol = T(std::is_same_v<T, float> ? 1e-5 : 1e-12) * T(2e3) * T(p.nrows) / T(p.nkeys);
-        ASSERT_TRUE(raft::devArrMatch(ref.data(),
-                                      sums.data(),
-                                      sums.size(),
-                                      raft::CompareApprox<T>(std::max(tol, T(1e-3))),
-                                      stream));
+        // Every path computes a sum of these terms whose error is a small multiple of
+        // eps * sum(|terms|), so check against that bound with a wide margin.
+        const double tol = 64 * std::numeric_limits<T>::epsilon();
+        for (size_t i = 0; i < out.size(); ++i) {
+          ASSERT_LE(std::abs(double(out[i]) - h_ref[i]), tol * h_abs_ref[i])
+            << "output " << i << ": " << out[i] << " vs reference " << h_ref[i];
+        }
       } else {
         ASSERT_EQ(0, std::memcmp(first.data(), out.data(), out.size() * sizeof(T)))
           << "results differ between run 0 and run " << run;
@@ -400,6 +431,53 @@ TEST_P(ReduceRowsByKeyDeterminismD, Result) { run(); }
 INSTANTIATE_TEST_CASE_P(ReduceRowTests,
                         ReduceRowsByKeyDeterminismD,
                         ::testing::ValuesIn(determinism_inputs));
+
+TEST(ReduceRowsByKey, NonFinite)
+{
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle).get();
+  // Shapes that take each path: privatized, exact bins, sorted per-key, sorted chunks.
+  for (auto [nrows, ncols, nkeys] : {std::tuple{100000, 32, 8},
+                                     std::tuple{200000, 4, 10000},
+                                     std::tuple{200000, 64, 20000},
+                                     std::tuple{100000, 1024, 3000}}) {
+    // Row r has key r % nkeys and all ones, except column 0 of: key 0 gets one +Inf; key 1 gets
+    // one +Inf and one -Inf; key 2 gets one NaN.
+    std::vector<float> h_in(static_cast<size_t>(nrows) * ncols, 1.f);
+    std::vector<uint32_t> h_keys(nrows);
+    for (int r = 0; r < nrows; ++r) {
+      h_keys[r] = r % nkeys;
+    }
+    const float inf                 = std::numeric_limits<float>::infinity();
+    h_in[0]                         = inf;
+    h_in[size_t(1) * ncols]         = inf;
+    h_in[size_t(1 + nkeys) * ncols] = -inf;
+    h_in[size_t(2) * ncols]         = std::numeric_limits<float>::quiet_NaN();
+    rmm::device_uvector<float> in(h_in.size(), stream), sums(size_t(nkeys) * ncols, stream);
+    rmm::device_uvector<uint32_t> keys(nrows, stream);
+    raft::update_device(in.data(), h_in.data(), h_in.size(), stream);
+    raft::update_device(keys.data(), h_keys.data(), nrows, stream);
+    reduce_rows_by_key(in.data(),
+                       ncols,
+                       keys.data(),
+                       static_cast<char*>(nullptr),
+                       nrows,
+                       ncols,
+                       nkeys,
+                       sums.data(),
+                       stream,
+                       true);
+    std::vector<float> out(sums.size());
+    raft::update_host(out.data(), sums.data(), out.size(), stream);
+    resource::sync_stream(handle, stream);
+    const auto label = ::testing::Message()
+                       << "nrows=" << nrows << " ncols=" << ncols << " nkeys=" << nkeys;
+    EXPECT_EQ(out[0], inf) << label;
+    EXPECT_TRUE(std::isnan(out[size_t(1) * ncols])) << label;
+    EXPECT_TRUE(std::isnan(out[size_t(2) * ncols])) << label;
+    EXPECT_EQ(out[size_t(3) * ncols], float((nrows - 1 - 3) / nkeys + 1)) << label;
+  }
+}
 
 TEST(ReduceRowsByKeyDryRun, Allocations)
 {

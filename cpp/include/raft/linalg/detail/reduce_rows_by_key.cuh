@@ -217,8 +217,9 @@ rrbk_priv_plan rrbk_make_priv_plan(IdxT nrows, IdxT ncols, IdxT nkeys)
   pl.n_copies  = static_cast<int>(std::min<std::size_t>(
     kPrivMaxThreads / pl.tile_cols, kPrivSmemBytes / (sizeof(SumsT) * nkeys * pl.tile_cols)));
   // Few threads per block starve the loads; the sorted paths are faster there.
-  pl.ok =
-    pl.n_copies >= 2 && pl.n_copies * pl.tile_cols >= std::min<IdxT>(kPrivMinThreads, ncols * 16);
+  pl.ok = pl.n_copies >= 2 &&
+          pl.n_copies * pl.tile_cols >= std::min<IdxT>(kPrivMinThreads, ncols * 16) &&
+          ceildiv<IdxT>(ncols, pl.tile_cols) <= IdxT{MAX_BLOCKS};
   // Partial traffic (n_parts * nkeys * ncols) stays below ~1/16 of the input.
   pl.n_parts       = std::clamp<int64_t>(nrows / (16 * nkeys), 1, kPrivMaxParts);
   pl.rows_per_part = ceildiv<int64_t>(nrows, pl.n_parts);
@@ -322,7 +323,8 @@ RAFT_KERNEL __launch_bounds__(kBinsBlock) rrbk_bins_add_kernel(DataIteratorT d_A
                                                                IdxT ncols,
                                                                int lc_log2,
                                                                rrbk_bins_plan pl,
-                                                               unsigned long long* acc)
+                                                               unsigned long long* acc,
+                                                               float* d_sums)
 {
   const int lc      = 1 << lc_log2;
   const IdxT groups = static_cast<IdxT>(gridDim.x) * (blockDim.x >> lc_log2);
@@ -335,8 +337,14 @@ RAFT_KERNEL __launch_bounds__(kBinsBlock) rrbk_bins_add_kernel(DataIteratorT d_A
     const float w            = rrbk_weight<float>(d_weights, i);
     unsigned long long* base = acc + key * pl.nbins * ncols;
     for (IdxT c = c0; c < ncols; c += lc) {
-      const unsigned u = __float_as_uint(__fmul_rn(static_cast<float>(d_A[i * lda + c]), w));
+      const float x    = __fmul_rn(static_cast<float>(d_A[i * lda + c]), w);
+      const unsigned u = __float_as_uint(x);
       const unsigned e = (u >> 23) & 0xffu;
+      // Inf and NaN have no integer representation; any order of adding them gives the same result.
+      if (e == 0xffu) {
+        atomicAdd(d_sums + key * ncols + c, x);
+        continue;
+      }
       const unsigned long long m = (u & 0x7fffffu) | (e != 0 ? 0x800000u : 0u);
       if (m == 0) { continue; }
       const int l                 = static_cast<int>(e != 0 ? e : 1u) - 1 + pl.off;
@@ -411,7 +419,8 @@ void rrbk_bins(DataIteratorT d_A,
                       ncols,
                       lc_log2,
                       pl,
-                      acc.data());
+                      acc.data(),
+                      d_sums);
   raft::launch_kernel({st, 0, dry_run},
                       dim3(static_cast<uint32_t>(ceildiv<IdxT>(nkeys * ncols, 256))),
                       dim3(256),
@@ -801,7 +810,7 @@ void rrbk_seg(const float* d_A,
   RAFT_CUDA_TRY(cub::DeviceRadixSort::SortPairs(
     nullptr, sort_bytes, keys_db, row_ids_db, static_cast<int>(nrows), 0, end_bit, st));
   RAFT_CUDA_TRY(cub::DeviceScan::ExclusiveSum(
-    nullptr, scan_bytes, counts.data(), chunk_offsets.data(), static_cast<int>(nkeys + 1), st));
+    nullptr, scan_bytes, counts.data(), chunk_offsets.data(), static_cast<int64_t>(nkeys) + 1, st));
   rmm::device_buffer tmp(std::max(sort_bytes, scan_bytes), st);
   // A key with more than one chunk has more than kSegChunkRows rows.
   const IdxT max_parts = nrows / kSegChunkRows + std::min<IdxT>(nkeys, nrows / (kSegChunkRows + 1));
@@ -839,7 +848,7 @@ void rrbk_seg(const float* d_A,
                                                 scan_bytes,
                                                 counts.data(),
                                                 chunk_offsets.data(),
-                                                static_cast<int>(nkeys + 1),
+                                                static_cast<int64_t>(nkeys) + 1,
                                                 st));
   }
   const bool vectorized = ncols % 4 == 0 && lda % 4 == 0 && raft::is_aligned(d_A, 16);
@@ -1207,7 +1216,7 @@ void rrbk_csr(DataIteratorT d_A,
   rmm::device_uvector<IdxT> off(nkeys + 1, st);
   rmm::device_uvector<uint64_t> cnt(nkeys + 1, st), cnt_off(nkeys + 1, st);
   RAFT_CUDA_TRY(cub::DeviceScan::ExclusiveSum(
-    nullptr, scan_bytes, cnt.data(), cnt_off.data(), static_cast<int>(nkeys + 1), st));
+    nullptr, scan_bytes, cnt.data(), cnt_off.data(), static_cast<int64_t>(nkeys) + 1, st));
   rmm::device_buffer tmp(std::max(sort_bytes, scan_bytes), st);
 
   constexpr int kVecLen = 16 / sizeof(SumsT);
@@ -1261,7 +1270,7 @@ void rrbk_csr(DataIteratorT d_A,
                         counters.data());
     if (!dry_run) {
       RAFT_CUDA_TRY(cub::DeviceScan::ExclusiveSum(
-        tmp.data(), scan_bytes, cnt.data(), cnt_off.data(), static_cast<int>(nkeys + 1), st));
+        tmp.data(), scan_bytes, cnt.data(), cnt_off.data(), static_cast<int64_t>(nkeys) + 1, st));
     }
     const auto batch_A     = d_A + batch_start * lda;
     const WeightT* batch_w = d_weights != nullptr ? d_weights + batch_start : nullptr;
