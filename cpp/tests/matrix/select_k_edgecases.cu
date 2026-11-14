@@ -125,4 +125,49 @@ TEST(SelectK, EdgeInfNaN)
   ASSERT_EQ(h_idx[2], 0);
 }
 
+TEST(SelectK, SortedRadixUint64KeyUint32Idx)
+{
+  raft::device_resources handle;
+  auto stream = raft::resource::get_cuda_stream(handle);
+
+  // Upper 32 bits order: idx 0 < idx 2 < idx 3 < idx 1.
+  // Lower 32 bits order is reversed (4, 1, 3, 2), so sorting only 32 bits mis-orders outputs.
+  constexpr uint64_t v1      = (1ULL << 32) | 4ULL;
+  constexpr uint64_t v4      = (4ULL << 32) | 1ULL;
+  constexpr uint64_t v2      = (2ULL << 32) | 3ULL;
+  constexpr uint64_t v3      = (3ULL << 32) | 2ULL;
+  std::vector<uint64_t> h_in = {v1, v4, v2, v3};
+  const int64_t n_cols       = h_in.size();
+  const int64_t k            = 3;
+
+  auto in_values  = raft::make_device_matrix<uint64_t, int64_t, raft::row_major>(handle, 1, n_cols);
+  auto out_values = raft::make_device_matrix<uint64_t, int64_t, raft::row_major>(handle, 1, k);
+  auto out_indices = raft::make_device_matrix<uint32_t, int64_t, raft::row_major>(handle, 1, k);
+  raft::copy(in_values.data_handle(), h_in.data(), n_cols, stream);
+
+  for (bool select_min : {false, true}) {
+    raft::matrix::select_k<uint64_t, uint32_t>(handle,
+                                               in_values.view(),
+                                               std::nullopt,
+                                               out_values.view(),
+                                               out_indices.view(),
+                                               select_min,
+                                               /*sorted=*/true,
+                                               SelectAlgo::kRadix8bits);
+    std::vector<uint64_t> h_out(k);
+    std::vector<uint32_t> h_idx(k);
+    raft::copy(h_out.data(), out_values.data_handle(), k, stream);
+    raft::copy(h_idx.data(), out_indices.data_handle(), k, stream);
+    raft::resource::sync_stream(handle, stream);
+
+    if (select_min) {
+      EXPECT_EQ(h_out, (std::vector<uint64_t>{v1, v2, v3}));
+      EXPECT_EQ(h_idx, (std::vector<uint32_t>{0, 2, 3}));
+    } else {
+      EXPECT_EQ(h_out, (std::vector<uint64_t>{v4, v3, v2}));
+      EXPECT_EQ(h_idx, (std::vector<uint32_t>{1, 3, 2}));
+    }
+  }
+}
+
 }  // namespace raft::matrix
