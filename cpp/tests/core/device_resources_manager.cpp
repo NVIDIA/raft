@@ -55,7 +55,7 @@ TEST(DeviceResourcesManager, ObeysSetters)
     auto upstream      = rmm::mr::get_current_device_resource_ref();
     default_mrs[i] = cuda::mr::resource_cast<rmm::mr::cuda_memory_resource>(&upstream) != nullptr;
     device_resources_manager::set_workspace_memory_resource(
-      raft::mr::device_resource{
+      cuda::mr::any_device_resource{
         rmm::mr::pool_memory_resource(upstream, workspace_init, workspace_limit)},
       devices[i]);
   }
@@ -102,7 +102,7 @@ TEST(DeviceResourcesManager, ObeysSetters)
     device_resources_manager::set_mem_pool();
     device_resources_manager::set_workspace_allocation_limit(1024);
     device_resources_manager::set_workspace_memory_resource(
-      raft::mr::device_resource{rmm::mr::get_current_device_resource_ref()},
+      cuda::mr::any_device_resource{rmm::mr::get_current_device_resource_ref()},
       devices[i % devices.size()]);
   }
 
