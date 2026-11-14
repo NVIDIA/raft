@@ -216,7 +216,11 @@ TEST(KernelLaunch, ErrorReportsCallSite)
 
   std::string re_exp{R"(CUDA error encountered at: file=.*kernel_launch\.cu line=)"};
   re_exp += std::to_string(launch_line);
+#if defined(RAFT_COMPACT_DIAGNOSTICS) && RAFT_COMPACT_DIAGNOSTICS
+  re_exp += R"(: call='cudaLaunchKernelExC', Reason=.*)";
+#else
   re_exp += R"( function=.*ErrorReportsCallSite.*: call='cudaLaunchKernelExC', Reason=.*)";
+#endif
   EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
     << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
 }
@@ -491,8 +495,12 @@ TEST(KernelLaunch, RuntimeKernelErrorReportsCallSite)
 
   std::string re_exp{R"(CUDA error encountered at: file=.*kernel_launch\.cu line=)"};
   re_exp += std::to_string(launch_line);
+#if defined(RAFT_COMPACT_DIAGNOSTICS) && RAFT_COMPACT_DIAGNOSTICS
+  re_exp += R"(: call='cudaLaunchKernelExC', Reason=.*)";
+#else
   re_exp +=
     R"( function=.*RuntimeKernelErrorReportsCallSite.*: call='cudaLaunchKernelExC', Reason=.*)";
+#endif
   EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
     << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
 }

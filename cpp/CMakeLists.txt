@@ -64,6 +64,14 @@ option(DETECT_CONDA_ENV "Enable detection of conda environment for dependencies"
 option(DISABLE_DEPRECATION_WARNINGS "Disable deprecaction warnings " ON)
 option(DISABLE_OPENMP "Disable OpenMP" OFF)
 option(RAFT_NVTX "Enable nvtx markers" OFF)
+set(RAFT_COMPACT_DIAGNOSTICS_DEFAULT ON)
+string(TOUPPER "${CMAKE_BUILD_TYPE}" _raft_build_type)
+if(_raft_build_type MATCHES "^(DEBUG|RELWITHDEBINFO)$")
+  set(RAFT_COMPACT_DIAGNOSTICS_DEFAULT OFF)
+endif()
+option(RAFT_COMPACT_DIAGNOSTICS "Capture diagnostic file and line without function signatures"
+       ${RAFT_COMPACT_DIAGNOSTICS_DEFAULT}
+)
 
 set(RAFT_COMPILE_LIBRARY_DEFAULT OFF)
 if(BUILD_TESTS OR BUILD_PRIMS_BENCH)
@@ -208,6 +216,11 @@ target_compile_options(
 target_compile_definitions(
   raft INTERFACE "RAFT_LOG_ACTIVE_LEVEL=RAPIDS_LOGGER_LOG_LEVEL_${LIBRAFT_LOGGING_LEVEL}"
 )
+
+# Keep this a target usage requirement so source and installed consumers inherit the same mode.
+if(RAFT_COMPACT_DIAGNOSTICS)
+  target_compile_definitions(raft INTERFACE RAFT_COMPACT_DIAGNOSTICS=1)
+endif()
 
 set(RAFT_CUSOLVER_DEPENDENCY CUDA::cusolver${_ctk_static_suffix})
 set(RAFT_CUBLAS_DEPENDENCY CUDA::cublas${_ctk_static_suffix})

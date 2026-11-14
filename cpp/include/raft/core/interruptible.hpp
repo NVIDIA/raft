@@ -10,6 +10,7 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/error.hpp>
+#include <raft/core/source_location.hpp>
 #include <raft/util/cudart_utils.hpp>
 
 #include <cuda/stream>
@@ -18,7 +19,6 @@
 #include <memory>
 #include <mutex>
 #include <optional>
-#include <source_location>
 #include <thread>
 #include <unordered_map>
 
@@ -77,7 +77,7 @@ class interruptible {
    * @throw raft::cuda_error if another CUDA error happens.
    */
   static inline void synchronize(cuda::stream_ref stream,
-                                 std::source_location location = std::source_location::current())
+                                 raft::source_location location = raft::source_location::current())
   {
     get_token()->synchronize_impl(cudaStreamQuery, stream.get(), "cudaStreamQuery", location);
   }
@@ -95,7 +95,7 @@ class interruptible {
    * @throw raft::cuda_error if another CUDA error happens.
    */
   static inline void synchronize(cudaEvent_t event,
-                                 std::source_location location = std::source_location::current())
+                                 raft::source_location location = raft::source_location::current())
   {
     get_token()->synchronize_impl(cudaEventQuery, event, "cudaEventQuery", location);
   }
@@ -117,7 +117,7 @@ class interruptible {
    * @throw raft::interrupted_exception if interruptible::cancel() was called on the current CPU
    * thread.
    */
-  static inline void yield(std::source_location location = std::source_location::current())
+  static inline void yield(raft::source_location location = raft::source_location::current())
   {
     get_token()->yield_impl(location);
   }
@@ -282,7 +282,7 @@ class interruptible {
 
   interruptible() noexcept { yield_no_throw_impl(); }
 
-  void yield_impl(std::source_location location)
+  void yield_impl(raft::source_location location)
   {
     if (!yield_no_throw_impl()) {
       throw interrupted_exception(raft::format_error_message(
@@ -305,7 +305,7 @@ class interruptible {
   inline void synchronize_impl(Query query,
                                Object object,
                                char const* call,
-                               std::source_location location)
+                               raft::source_location location)
   {
     cudaError_t query_result;
     while (true) {

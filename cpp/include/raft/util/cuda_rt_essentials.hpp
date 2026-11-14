@@ -11,11 +11,11 @@
 // minimized. Please make sure not to include large / expensive files from here.
 
 #include <raft/core/error.hpp>
+#include <raft/core/source_location.hpp>
 
 #include <cuda_runtime.h>
 
 #include <cstdio>
-#include <source_location>
 
 namespace raft {
 
@@ -42,7 +42,7 @@ struct cuda_error : public raft::exception {
  */
 inline void check_cuda_error(cudaError_t status,
                              char const* call,
-                             std::source_location location = std::source_location::current())
+                             raft::source_location location = raft::source_location::current())
 {
   if (status == cudaSuccess) { return; }
   cudaGetLastError();  // clear the error, so that it does not affect the subsequent calls
