@@ -63,6 +63,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <optional>
 #include <type_traits>
 #include <utility>
@@ -127,6 +128,28 @@ RAFT_KERNEL kernel_clamp_down_vector(T* vec, T threshold, int size)
   if (idx < size) { vec[idx] = (fabs(vec[idx]) < threshold) ? 0 : vec[idx]; }
 }
 
+/** Retry float nonconvergence with Jacobi for the small projected problem.
+ * Input and output must not alias: eigDC overwrites output even on failure.
+ * CUDA/API errors and a failed Jacobi solve propagate to the caller.
+ */
+template <typename T>
+void lanczos_eig_dc_with_fallback(
+  raft::resources const& handle, const T* input, uint32_t n, T* vectors, T* values)
+{
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
+  try {
+    raft::linalg::eigDC(handle, input, n, n, vectors, values, stream);
+  } catch (raft::linalg::detail::eigensolver_convergence_error const&) {
+    if constexpr (std::is_same_v<T, float>) {
+      // Retry the untouched projected matrix, not the failed eigDC output.
+      raft::linalg::detail::eigJacobi(
+        handle, input, n, n, vectors, values, stream, std::numeric_limits<T>::epsilon(), 100, true);
+    } else {
+      throw;
+    }
+  }
+}
+
 template <typename IndexTypeT, typename ValueTypeT>
 void lanczos_solve_ritz(
   raft::resources const& handle,
@@ -179,11 +202,11 @@ void lanczos_solve_ritz(
                         ncv);
   }
 
-  auto triangular_matrix_view =
-    raft::make_device_matrix_view<const ValueTypeT, uint32_t, raft::col_major>(
-      triangular_matrix.data_handle(), ncv, ncv);
-
-  raft::linalg::eig_dc(handle, triangular_matrix_view, eigenvectors, eigenvalues);
+  lanczos_eig_dc_with_fallback(handle,
+                               triangular_matrix.data_handle(),
+                               static_cast<uint32_t>(ncv),
+                               eigenvectors.data_handle(),
+                               eigenvalues.data_handle());
 
   IndexTypeT nEigVecs = k;
 
