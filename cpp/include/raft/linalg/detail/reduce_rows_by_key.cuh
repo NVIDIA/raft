@@ -380,7 +380,9 @@ RAFT_KERNEL rrbk_bins_finish_kernel(
   for (int b = pl.nbins - 1; b >= 0; --b) {
     s += static_cast<double>(bins[b]) * rrbk_pow2(b * pl.bw - pl.off - 149);
   }
-  d_sums[i] += static_cast<float>(s);
+  // An Inf or NaN already added by the add kernel absorbs any finite total; adding a finite total
+  // that overflows float could otherwise turn +Inf into NaN.
+  if (isfinite(d_sums[i])) { d_sums[i] += static_cast<float>(s); }
 }
 
 template <typename DataIteratorT, typename KeysIteratorT, typename WeightT, typename IdxT>

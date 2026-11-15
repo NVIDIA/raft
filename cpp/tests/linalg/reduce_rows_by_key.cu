@@ -479,6 +479,36 @@ TEST(ReduceRowsByKey, NonFinite)
   }
 }
 
+TEST(ReduceRowsByKey, InfWithOverflowingFiniteSum)
+{
+  // +Inf with finite terms whose sum overflows float must stay +Inf, not become NaN.
+  raft::resources handle;
+  auto stream                  = resource::get_cuda_stream(handle).get();
+  constexpr int nrows          = 3;
+  constexpr int nkeys          = 10000;
+  const float max              = std::numeric_limits<float>::max();
+  std::vector<float> h_in      = {std::numeric_limits<float>::infinity(), -max, -max};
+  std::vector<uint32_t> h_keys = {0, 0, 0};
+  rmm::device_uvector<float> in(nrows, stream), sums(nkeys, stream);
+  rmm::device_uvector<uint32_t> keys(nrows, stream);
+  raft::update_device(in.data(), h_in.data(), nrows, stream);
+  raft::update_device(keys.data(), h_keys.data(), nrows, stream);
+  reduce_rows_by_key(in.data(),
+                     1,
+                     keys.data(),
+                     static_cast<char*>(nullptr),
+                     nrows,
+                     1,
+                     nkeys,
+                     sums.data(),
+                     stream,
+                     true);
+  float out = 0;
+  raft::update_host(&out, sums.data(), 1, stream);
+  resource::sync_stream(handle, stream);
+  EXPECT_EQ(out, std::numeric_limits<float>::infinity());
+}
+
 TEST(ReduceRowsByKeyDryRun, Allocations)
 {
   raft::resources handle;
