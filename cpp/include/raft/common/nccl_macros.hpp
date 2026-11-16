@@ -9,17 +9,17 @@
  * Invokes a NCCL runtime API function call, if the call does not return ncclSuccess, throws an
  * exception detailing the NCCL error that occurred
  */
-#define RAFT_NCCL_TRY(call)                                                               \
-  do {                                                                                    \
-    ncclResult_t const status = (call);                                                   \
-    if (ncclSuccess != status) {                                                          \
-      throw raft::logic_error(raft::format_error_message(std::source_location::current(), \
-                                                         "NCCL error encountered at: ",   \
-                                                         "call='%s', Reason=%d:%s",       \
-                                                         #call,                           \
-                                                         status,                          \
-                                                         ncclGetErrorString(status)));    \
-    }                                                                                     \
+#define RAFT_NCCL_TRY(call)                                                                \
+  do {                                                                                     \
+    ncclResult_t const status = (call);                                                    \
+    if (ncclSuccess != status) {                                                           \
+      throw raft::logic_error(raft::format_error_message(raft::source_location::current(), \
+                                                         "NCCL error encountered at: ",    \
+                                                         "call='%s', Reason=%d:%s",        \
+                                                         #call,                            \
+                                                         status,                           \
+                                                         ncclGetErrorString(status)));     \
+    }                                                                                      \
   } while (0);
 
 // FIXME: Remove after consumer rename
