@@ -138,8 +138,6 @@ const std::vector<mutualInfoParam> inputs = {{199, 1, 10, false, 0.000001},
                                              {10, 1, 10, true, 0.000001},
                                              {198, 1, 100, true, 0.000001},
                                              {300, 3, 99, true, 0.000001},
-                                             // few large clusters: the products of the marginal
-                                             // counts exceed the range of a 32-bit integer
                                              {200000, 1, 2, false, 0.000001},
                                              {200000, 1, 2, true, 0.000001},
                                              {500000, 1, 5, false, 0.000001},
@@ -152,6 +150,42 @@ TEST_P(mutualInfoTestClass, Result)
   ASSERT_NEAR(computedmutualInfo, truthmutualInfo, params.tolerance);
 }
 INSTANTIATE_TEST_CASE_P(mutualInfo, mutualInfoTestClass, ::testing::ValuesIn(inputs));
+
+// 2x2 contingency matrices (in row-major order) of nearly independent labelings, for which
+// rounding errors make the sum of the terms of the mutual information slightly negative
+const std::vector<std::vector<int>> nearlyIndependentContingencies = {
+  {3200, 3201, 3199, 3200}, {2000, 3999, 4001, 8000}, {1800, 4801, 4799, 12800}};
+
+TEST(mutualInfoNearlyIndependent, NonNegative)
+{
+  raft::resources handle;
+  cudaStream_t stream = resource::get_cuda_stream(handle).get();
+
+  for (const auto& contingency : nearlyIndependentContingencies) {
+    // generating the labelings from the contingency matrix
+    std::vector<int> arr1, arr2;
+    for (int cell = 0; cell < 4; ++cell) {
+      arr1.insert(arr1.end(), contingency[cell], cell / 2);
+      arr2.insert(arr2.end(), contingency[cell], cell % 2);
+    }
+    int nElements = arr1.size();
+
+    rmm::device_uvector<int> firstClusterArray(nElements, stream);
+    rmm::device_uvector<int> secondClusterArray(nElements, stream);
+    raft::update_device(firstClusterArray.data(), arr1.data(), nElements, stream);
+    raft::update_device(secondClusterArray.data(), arr2.data(), nElements, stream);
+
+    double computedmutualInfo = raft::stats::mutual_info_score(
+      handle,
+      raft::make_device_vector_view<const int>(firstClusterArray.data(), nElements),
+      raft::make_device_vector_view<const int>(secondClusterArray.data(), nElements),
+      0,
+      1);
+
+    ASSERT_GE(computedmutualInfo, 0.0);
+    ASSERT_NEAR(computedmutualInfo, 0.0, 0.000001);
+  }
+}
 
 }  // end namespace stats
 }  // end namespace raft

@@ -29,6 +29,8 @@
 
 #include <math.h>
 
+#include <algorithm>
+
 namespace raft {
 namespace stats {
 namespace detail {
@@ -178,7 +180,8 @@ double mutual_info_score(bool dry_run,
 
   raft::interruptible::synchronize(stream);
 
-  return h_MI / size;
+  // MI must be non-negative
+  return std::max(h_MI / size, 0.0);
 }
 
 };  // end namespace detail
