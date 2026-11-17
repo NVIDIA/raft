@@ -59,11 +59,12 @@ RAFT_KERNEL mutual_info_kernel(const int* dContingencyMatrix,
   // thread-local variable to count the mutual info
   double localMI = 0.0;
 
-  if (i < numUniqueClasses && j < numUniqueClasses && a[i] * b[j] != 0 &&
+  // the product of the marginals is evaluated as double, as it can exceed the int range
+  if (i < numUniqueClasses && j < numUniqueClasses && a[i] != 0 && b[j] != 0 &&
       dContingencyMatrix[i * numUniqueClasses + j] != 0) {
     localMI += (double(dContingencyMatrix[i * numUniqueClasses + j])) *
                (log(double(size) * double(dContingencyMatrix[i * numUniqueClasses + j])) -
-                log(double(a[i] * b[j])));
+                log(double(a[i]) * double(b[j])));
   }
 
   // specialize blockReduce for a 2D block of 1024 threads of type uint64_t
@@ -103,7 +104,7 @@ double mutual_info_score(bool dry_run,
 {
   int numUniqueClasses = upperLabelRange - lowerLabelRange + 1;
 
-  // declaring, allocating and initializing memory for the contingency marix
+  // declaring, allocating and initializing memory for the contingency matrix
   rmm::device_uvector<int> dContingencyMatrix(numUniqueClasses * numUniqueClasses, stream);
   if (!dry_run) {
     RAFT_CUDA_TRY(cudaMemsetAsync(

@@ -81,11 +81,12 @@ class mutualInfoTest : public ::testing::TestWithParam<mutualInfoParam> {
     // calculating the truth mutual information
     for (int i = 0; i < numUniqueClasses; ++i) {
       for (int j = 0; j < numUniqueClasses; ++j) {
-        if (a[i] * b[j] != 0 && hGoldenOutput[i * numUniqueClasses + j] != 0) {
+        // the product of the marginals is evaluated as double, as it can exceed the int range
+        if (a[i] != 0 && b[j] != 0 && hGoldenOutput[i * numUniqueClasses + j] != 0) {
           truthmutualInfo +=
             (double)(hGoldenOutput[i * numUniqueClasses + j]) *
             (log((double)(double(nElements) * hGoldenOutput[i * numUniqueClasses + j])) -
-             log((double)(a[i] * b[j])));
+             log(double(a[i]) * double(b[j])));
         }
       }
     }
@@ -136,7 +137,13 @@ const std::vector<mutualInfoParam> inputs = {{199, 1, 10, false, 0.000001},
                                              {100, 1, 20, true, 0.000001},
                                              {10, 1, 10, true, 0.000001},
                                              {198, 1, 100, true, 0.000001},
-                                             {300, 3, 99, true, 0.000001}};
+                                             {300, 3, 99, true, 0.000001},
+                                             // few large clusters: the products of the marginal
+                                             // counts exceed the range of a 32-bit integer
+                                             {200000, 1, 2, false, 0.000001},
+                                             {200000, 1, 2, true, 0.000001},
+                                             {500000, 1, 5, false, 0.000001},
+                                             {500000, 1, 5, true, 0.000001}};
 
 // writing the test suite
 typedef mutualInfoTest<int> mutualInfoTestClass;
