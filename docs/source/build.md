@@ -73,7 +73,7 @@ pip install raft-dask-cu12
 ## Building C++ and Python from source
 
 ### CUDA/GPU Requirements
-- cmake 4.0+
+- cmake 4.3+
 - GCC 13.3+
 - CUDA Toolkit 12.9+
 - For CUDA Toolkit 12:
