@@ -17,6 +17,18 @@ Linear Assignment Problem
     :project: RAFT
     :members:
 
+Batched Non-negative Least Squares
+##################################
+
+``#include <raft/solver/nnls.cuh>``
+
+.. doxygenstruct:: raft::solver::nnls_params
+    :project: RAFT
+    :members:
+
+.. doxygenfunction:: raft::solver::nnls
+    :project: RAFT
+
 Minimum Spanning Tree
 #####################
 
