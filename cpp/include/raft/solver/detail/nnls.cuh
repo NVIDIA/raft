@@ -225,15 +225,11 @@ void nnls(
   T* slab_ptr = C_ptr + c_elems;
 
   // A col-major (m, n) buffer viewed as row-major (n, m) is A^T.
-  const bool dry_run = raft::resource::get_dry_run_flag(res);
-  if (!dry_run) {
-    auto At =
-      raft::make_device_matrix_view<const T, index_t, raft::row_major>(A.data_handle(), n, m);
-    auto G = raft::make_device_matrix_view<T, index_t, raft::col_major>(G_ptr, n, n);
-    auto C = raft::make_device_matrix_view<T, index_t, raft::col_major>(C_ptr, n, P);
-    raft::linalg::gemm(res, At, A, G);
-    raft::linalg::gemm(res, At, B, C);
-  }
+  auto At = raft::make_device_matrix_view<const T, index_t, raft::row_major>(A.data_handle(), n, m);
+  auto G  = raft::make_device_matrix_view<T, index_t, raft::col_major>(G_ptr, n, n);
+  auto C  = raft::make_device_matrix_view<T, index_t, raft::col_major>(C_ptr, n, P);
+  raft::linalg::gemm(res, At, A, G);
+  raft::linalg::gemm(res, At, B, C);
 
   lawson_args<T> args{G_ptr,
                       C_ptr,

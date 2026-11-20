@@ -129,7 +129,7 @@ class GemmLayoutTest : public ::testing::TestWithParam<GemmLayoutInputs<T>> {
           gemm(h, x_view_row_major, y_view_row_major, z_view_row_major);
         }
       },
-      raft::alloc_behavior::NO_ALLOCATIONS);
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
 
     resource::sync_stream(handle);
 

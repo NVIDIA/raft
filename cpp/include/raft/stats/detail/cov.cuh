@@ -46,11 +46,12 @@ void cov(raft::resources const& handle,
          bool stable,
          cudaStream_t stream)
 {
-  if (resource::get_dry_run_flag(handle)) { return; }
   if (stable) {
     // since mean operation is assumed to be along a given column, broadcast
     // must be along rows!
-    raft::stats::meanCenter<rowMajor, true>(data, data, mu, D, N, stream);
+    if (!resource::get_dry_run_flag(handle)) {
+      raft::stats::meanCenter<rowMajor, true>(data, data, mu, D, N, stream);
+    }
     Type alpha = Type(1) / (sample ? Type(N - 1) : Type(N));
     Type beta  = Type(0);
     auto ldd   = rowMajor ? D : N;

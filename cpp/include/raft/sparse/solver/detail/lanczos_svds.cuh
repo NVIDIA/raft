@@ -698,11 +698,27 @@ void sparse_lanczos_svd(
                           stream);
     }
 
-    if (resource::get_dry_run_flag(handle)) { break; }
-
     std::vector<ValueTypeT> h_s(active_ncv);
     std::vector<ValueTypeT> h_P(static_cast<std::size_t>(active_ncv) * active_ncv);
     std::vector<ValueTypeT> h_Qt(static_cast<std::size_t>(active_ncv) * active_ncv);
+    if (resource::get_dry_run_flag(handle)) {
+      // Run compute_ritz_vectors with the maximum size to get an upper bound on the workspace size.
+      std::vector<int> selected(std::min(k - n_locked, active_ncv));
+      std::iota(selected.begin(), selected.end(), 0);
+      compute_ritz_vectors(handle,
+                           m,
+                           n,
+                           active_ncv,
+                           n_locked,
+                           selected,
+                           h_s,
+                           h_P,
+                           h_Qt,
+                           U_full.view(),
+                           V_full.view(),
+                           locked_singular_values);
+      break;
+    }
     {
       common::nvtx::range<common::nvtx::domain::raft> scope("lanczos_svds::copy_small_svd_host");
       raft::update_host(h_s.data(), S_full.data_handle(), active_ncv, stream);
