@@ -426,7 +426,7 @@ void matmul_strided_batched(raft::resources const& res,
     cublastlt_matrix_layout::for_strided_batched_matmul<C>(true, m, n, ldc, batch_count, stride_c);
 
   const uint64_t workspace_budget = std::min<std::uint64_t>(
-    resource::get_cublaslt_workspace_size(res), resource::get_workspace_total_bytes(res));
+    resource::get_cublaslt_workspace_size(res), resource::get_workspace_free_bytes(res));
   cublastlt_matmul_preference preference;
   RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceSetAttribute(preference,
                                                        CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
@@ -521,7 +521,7 @@ void matmul(raft::resources const& res,
     "linalg::matmul(m = %d, n = %d, k = %d)", m, n, k);
   std::shared_ptr<matmul_desc> mm_desc{nullptr};
   const uint64_t workspace_budget = std::min<std::uint64_t>(
-    resource::get_cublaslt_workspace_size(res), resource::get_workspace_total_bytes(res));
+    resource::get_cublaslt_workspace_size(res), resource::get_workspace_free_bytes(res));
   matmul_key_t mm_key{m, n, k, lda, ldb, ldc, trans_a, trans_b, workspace_budget};
   auto& cache =
     resource::get_custom_resource<matmul_cache<S, A, B, C, DevicePointerMode>>(res)->value;
