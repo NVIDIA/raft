@@ -7,6 +7,7 @@
 #include "curand_wrappers.hpp"
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
@@ -193,6 +194,8 @@ class multi_variable_gaussian_impl {
     const bool dry_run  = resource::get_dry_run_flag(handle);
     auto cusolverHandle = resource::get_cusolver_dn_handle(handle);
     auto cudaStream     = resource::get_cuda_stream(handle).get();
+    // cublasLt does not support in-place gemm, so the noise is generated out of place.
+    auto noise = raft::make_device_vector<T, int>(handle, (nPoints * dim) + (nPoints * dim) % 2);
     if (!dry_run) {
       if (method == chol_decomp) {
         // lower part will contains chol_decomp
@@ -220,9 +223,9 @@ class multi_variable_gaussian_impl {
       RAFT_CUDA_TRY(cudaStreamSynchronize(cudaStream));
       ASSERT(info_h == 0, "mvg: error in syevj/syevd/potrf, info=%d | expected=0", info_h);
       T mean = 0.0, stddv = 1.0;
-      // generate nxN gaussian nums in X
+      // generate nxN gaussian nums
       CURAND_CHECK(
-        detail::curandGenerateNormal(gen, X, (nPoints * dim) + (nPoints * dim) % 2, mean, stddv));
+        detail::curandGenerateNormal(gen, noise.data_handle(), noise.size(), mean, stddv));
     }
     T alfa = 1.0, beta = 0.0;
     if (method == chol_decomp) {
@@ -232,8 +235,21 @@ class multi_variable_gaussian_impl {
       raft::launch_kernel(handle, grid, block, fill_uplo<T>, dim, UPPER, (T)0.0, P);
 
       // P is lower triangular chol decomp mtrx
-      raft::linalg::gemm(
-        handle, false, false, dim, nPoints, dim, &alfa, P, dim, X, dim, &beta, X, dim, cudaStream);
+      raft::linalg::gemm(handle,
+                         false,
+                         false,
+                         dim,
+                         nPoints,
+                         dim,
+                         &alfa,
+                         P,
+                         dim,
+                         noise.data_handle(),
+                         dim,
+                         &beta,
+                         X,
+                         dim,
+                         cudaStream);
     } else {
       dim3 block(64);
       dim3 grid(raft::ceildiv(dim, (int)block.x));
@@ -252,8 +268,21 @@ class multi_variable_gaussian_impl {
       }
 
       // Got Q = eigvect*eigvals.sqrt in P, Q*X in X below
-      raft::linalg::gemm(
-        handle, false, false, dim, nPoints, dim, &alfa, P, dim, X, dim, &beta, X, dim, cudaStream);
+      raft::linalg::gemm(handle,
+                         false,
+                         false,
+                         dim,
+                         nPoints,
+                         dim,
+                         &alfa,
+                         P,
+                         dim,
+                         noise.data_handle(),
+                         dim,
+                         &beta,
+                         X,
+                         dim,
+                         cudaStream);
     }
     // working to make mean not 0
     // since we are working with column-major, nPoints and dim are swapped
