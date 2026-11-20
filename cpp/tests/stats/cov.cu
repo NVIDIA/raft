@@ -74,7 +74,7 @@ class CovTest : public ::testing::TestWithParam<CovInputs<T>> {
               params.sample,
               params.stable);
         },
-        raft::alloc_behavior::NO_ALLOCATIONS);
+        raft::alloc_behavior::ARGUMENT_DRIVEN);
     } else {
       using layout = raft::col_major;
       raft::stats::mean<false>(mean_act.data(), data.data(), cols, rows, stream);
@@ -88,7 +88,7 @@ class CovTest : public ::testing::TestWithParam<CovInputs<T>> {
               params.sample,
               params.stable);
         },
-        raft::alloc_behavior::NO_ALLOCATIONS);
+        raft::alloc_behavior::ARGUMENT_DRIVEN);
     }
 
     T data_h[6]       = {1.0, 2.0, 5.0, 4.0, 2.0, 1.0};
@@ -118,7 +118,7 @@ class CovTest : public ::testing::TestWithParam<CovInputs<T>> {
                    true,
                    resource::get_cuda_stream(h).get());
       },
-      raft::alloc_behavior::NO_ALLOCATIONS);
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
   }
 
  protected:

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -29,21 +29,22 @@ void legacy_gemm(raft::resources const& res,
                  const int ldc,
                  cudaStream_t stream)
 {
-  return legacy_matmul<DevicePointerMode, S_T, A_T, B_T, C_T>(res,
-                                                              trans_a,
-                                                              trans_b,
-                                                              static_cast<uint64_t>(m),
-                                                              static_cast<uint64_t>(n),
-                                                              static_cast<uint64_t>(k),
-                                                              alpha,
-                                                              A,
-                                                              static_cast<uint64_t>(lda),
-                                                              B,
-                                                              static_cast<uint64_t>(ldb),
-                                                              beta,
-                                                              C,
-                                                              static_cast<uint64_t>(ldc),
-                                                              stream);
+  raft::resources res_with_stream{res};
+  resource::set_cuda_stream(res_with_stream, stream);
+  return matmul<DevicePointerMode, S_T, A_T, B_T, C_T>(res_with_stream,
+                                                       trans_a,
+                                                       trans_b,
+                                                       static_cast<uint64_t>(m),
+                                                       static_cast<uint64_t>(n),
+                                                       static_cast<uint64_t>(k),
+                                                       alpha,
+                                                       A,
+                                                       static_cast<uint64_t>(lda),
+                                                       B,
+                                                       static_cast<uint64_t>(ldb),
+                                                       beta,
+                                                       C,
+                                                       static_cast<uint64_t>(ldc));
 }
 
 template <typename A_T, typename B_T, typename C_T, typename S_T>
@@ -64,22 +65,22 @@ void legacy_gemm(raft::resources const& res,
   int m  = n_rows_c;
   int n  = n_cols_c;
   auto k = trans_a == CUBLAS_OP_T ? n_rows_a : n_cols_a;
-  return legacy_matmul<false, S_T, A_T, B_T, C_T>(
-    res,
-    trans_a == CUBLAS_OP_T,
-    trans_b == CUBLAS_OP_T,
-    static_cast<uint64_t>(n_rows_c),
-    static_cast<uint64_t>(n_cols_c),
-    static_cast<uint64_t>(k),
-    &alpha,
-    a,
-    static_cast<uint64_t>(trans_a == CUBLAS_OP_T ? k : m),
-    b,
-    static_cast<uint64_t>(trans_b == CUBLAS_OP_T ? n : k),
-    &beta,
-    c,
-    static_cast<uint64_t>(m),
-    stream);
+  raft::resources res_with_stream{res};
+  resource::set_cuda_stream(res_with_stream, stream);
+  return matmul<false, S_T, A_T, B_T, C_T>(res_with_stream,
+                                           trans_a == CUBLAS_OP_T,
+                                           trans_b == CUBLAS_OP_T,
+                                           static_cast<uint64_t>(n_rows_c),
+                                           static_cast<uint64_t>(n_cols_c),
+                                           static_cast<uint64_t>(k),
+                                           &alpha,
+                                           a,
+                                           static_cast<uint64_t>(trans_a == CUBLAS_OP_T ? k : m),
+                                           b,
+                                           static_cast<uint64_t>(trans_b == CUBLAS_OP_T ? n : k),
+                                           &beta,
+                                           c,
+                                           static_cast<uint64_t>(m));
 }
 
 template <typename A_T, typename B_T, typename C_T>
@@ -114,9 +115,11 @@ void legacy_gemm(raft::resources const& res,
                  const s_T* alpha,
                  const s_T* beta)
 {
+  raft::resources res_with_stream{res};
+  resource::set_cuda_stream(res_with_stream, stream);
   if (isZColMajor) {
-    return legacy_matmul<DevicePointerMode, s_T, x_T, y_T, z_T>(
-      res,
+    return matmul<DevicePointerMode, s_T, x_T, y_T, z_T>(
+      res_with_stream,
       !isXColMajor,
       !isYColMajor,
       static_cast<uint64_t>(_M),
@@ -129,8 +132,7 @@ void legacy_gemm(raft::resources const& res,
       static_cast<uint64_t>(isYColMajor ? _K : _N),
       beta,
       z,
-      static_cast<uint64_t>(_M),
-      stream);
+      static_cast<uint64_t>(_M));
   } else {
     return legacy_gemm<x_T, y_T, z_T, s_T, DevicePointerMode>(
       res, z, y, x, _N, _M, _K, true, !isYColMajor, !isXColMajor, stream, alpha, beta);

@@ -6,10 +6,12 @@
 
 #include <raft/core/cublas_macros.hpp>
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/nvtx.hpp>
 #include <raft/core/resource/cublaslt_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/custom_resource.hpp>
+#include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resource/dry_run_flag.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/util/cache.hpp>
@@ -19,6 +21,8 @@
 
 #include <cublasLt.h>
 
+#include <algorithm>
+#include <optional>
 #include <type_traits>
 #include <utility>
 
@@ -86,18 +90,21 @@ struct matmul_key_t {
   uint64_t ldc;
   bool trans_a;
   bool trans_b;
+  uint64_t workspace_budget{0};
 };
 
 inline auto operator==(const matmul_key_t& a, const matmul_key_t& b) -> bool
 {
   return a.m == b.m && a.n == b.n && a.k == b.k && a.lda == b.lda && a.ldb == b.ldb &&
-         a.ldc == b.ldc && a.trans_a == b.trans_a && a.trans_b == b.trans_b;
+         a.ldc == b.ldc && a.trans_a == b.trans_a && a.trans_b == b.trans_b &&
+         a.workspace_budget == b.workspace_budget;
 }
 
 struct matmul_key_hash {
   inline auto operator()(const matmul_key_t& x) const noexcept -> std::size_t
   {
-    return x.m * x.n * x.k + x.lda * x.ldb * x.ldc + size_t{x.trans_a} + size_t{x.trans_b} * 2;
+    return x.m * x.n * x.k + x.lda * x.ldb * x.ldc + size_t{x.trans_a} + size_t{x.trans_b} * 2 +
+           x.workspace_budget;
   }
 };
 
@@ -282,6 +289,10 @@ struct matmul_desc {
 
     int algo_count;
     cublastlt_matmul_preference preference;
+    RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceSetAttribute(preference,
+                                                         CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+                                                         &args.workspace_budget,
+                                                         sizeof(args.workspace_budget)));
     const auto query_heuristic = [&](cublasLtMatrixLayout_t a_layout,
                                      cublasLtMatrixLayout_t c_layout) {
       RAFT_CUBLAS_TRY(cublasLtMatmulAlgoGetHeuristic(resource::get_cublaslt_handle(res),
@@ -397,7 +408,6 @@ void matmul_strided_batched(raft::resources const& res,
                             int32_t batch_count,
                             cublasComputeType_t compute_type)
 {
-  if (resource::get_dry_run_flag(res)) { return; }
   common::nvtx::range<common::nvtx::domain::raft> batch_scope(
     "linalg::detail::matmul_strided_batched(m = %d, n = %d, k = %d, batch_count = %d)",
     m,
@@ -415,6 +425,37 @@ void matmul_strided_batched(raft::resources const& res,
   auto c_layout =
     cublastlt_matrix_layout::for_strided_batched_matmul<C>(true, m, n, ldc, batch_count, stride_c);
 
+  const uint64_t workspace_budget = std::min<std::uint64_t>(
+    resource::get_cublaslt_workspace_size(res), resource::get_workspace_free_bytes(res));
+  cublastlt_matmul_preference preference;
+  RAFT_CUBLAS_TRY(cublasLtMatmulPreferenceSetAttribute(preference,
+                                                       CUBLASLT_MATMUL_PREF_MAX_WORKSPACE_BYTES,
+                                                       &workspace_budget,
+                                                       sizeof(workspace_budget)));
+  cublasLtMatmulHeuristicResult_t heuristics;
+  int algo_count;
+  RAFT_CUBLAS_TRY(cublasLtMatmulAlgoGetHeuristic(resource::get_cublaslt_handle(res),
+                                                 operation,
+                                                 a_layout,
+                                                 b_layout,
+                                                 c_layout,
+                                                 c_layout,
+                                                 preference,
+                                                 1,
+                                                 &heuristics,
+                                                 &algo_count));
+  RAFT_EXPECTS(algo_count > 0, "cuBLASLt did not return a matmul algorithm");
+
+  // Allocated before the dry-run check so that dry runs account for the workspace.
+  std::optional<raft::device_vector<char, std::size_t>> workspace;
+  if (heuristics.workspaceSize > 0) {
+    workspace.emplace(raft::make_device_mdarray<char, std::size_t>(
+      res,
+      resource::get_workspace_resource_ref(res),
+      raft::make_extents<std::size_t>(heuristics.workspaceSize)));
+  }
+  if (resource::get_dry_run_flag(res)) { return; }
+
   auto stream = resource::get_cuda_stream(res);
   coef_wrapper<DevicePointerMode, S> coefficients(alpha, beta, stream);
   RAFT_CUBLAS_TRY(cublasLtMatmul(resource::get_cublaslt_handle(res),
@@ -429,68 +470,10 @@ void matmul_strided_batched(raft::resources const& res,
                                  c_layout,
                                  c_ptr,
                                  c_layout,
-                                 nullptr,
-                                 nullptr,
-                                 0,
+                                 &heuristics.algo,
+                                 workspace ? workspace->data_handle() : nullptr,
+                                 heuristics.workspaceSize,
                                  stream.get()));
-}
-
-/**
- * Compatibility version of the cublasLt matmul wrapper: It takes the cudaStream_t argument
- * explicitly rather than through the raft::resources. This function is used by other legacy
- * functions, which take the cudaStream_t argument explicitly; by using `legacy_matmul`, such
- * functions do not need to duplicate the raft resources handle to set the explicit stream before
- * passing it to `matmul` (thus avoid the extra overheads associated with that).
- *
- * The use of this function in any new code in deprecated.
- */
-template <bool DevicePointerMode = false, typename S, typename A, typename B, typename C>
-[[deprecated]] void legacy_matmul(raft::resources const& res,
-                                  bool trans_a,
-                                  bool trans_b,
-                                  uint64_t m,
-                                  uint64_t n,
-                                  uint64_t k,
-                                  const S* alpha,
-                                  const A* a_ptr,
-                                  uint64_t lda,
-                                  const B* b_ptr,
-                                  uint64_t ldb,
-                                  const S* beta,
-                                  C* c_ptr,
-                                  uint64_t ldc,
-                                  cudaStream_t stream)
-{
-  // We pass nullptr to the workspace, so the extra memory usage should be zero.
-  if (resource::get_dry_run_flag(res)) { return; }
-  common::nvtx::range<common::nvtx::domain::raft> batch_scope(
-    "linalg::matmul(m = %d, n = %d, k = %d)", m, n, k);
-  std::shared_ptr<matmul_desc> mm_desc{nullptr};
-  matmul_key_t mm_key{m, n, k, lda, ldb, ldc, trans_a, trans_b};
-  auto& cache =
-    resource::get_custom_resource<matmul_cache<S, A, B, C, DevicePointerMode>>(res)->value;
-  if (!cache.get(mm_key, &mm_desc)) {
-    mm_desc.reset(new matmul_desc{matmul_desc::create<S, A, B, C, DevicePointerMode>(res, mm_key)});
-    cache.set(mm_key, mm_desc);
-  }
-  // Allocate alpha and beta pointers if not provided.
-  coef_wrapper<DevicePointerMode, S> w(alpha, beta, stream);
-  RAFT_CUBLAS_TRY(cublasLtMatmul(resource::get_cublaslt_handle(res),
-                                 mm_desc->desc,
-                                 w.alpha,
-                                 a_ptr,
-                                 mm_desc->a,
-                                 b_ptr,
-                                 mm_desc->b,
-                                 w.beta,
-                                 c_ptr,
-                                 mm_desc->c,
-                                 c_ptr,
-                                 mm_desc->c,
-                                 &(mm_desc->heuristics.algo),
-                                 nullptr,
-                                 0,
-                                 stream));
 }
 
 /**
@@ -534,21 +517,45 @@ void matmul(raft::resources const& res,
             C* c_ptr,
             uint64_t ldc)
 {
-  return legacy_matmul<DevicePointerMode>(res,
-                                          trans_a,
-                                          trans_b,
-                                          m,
-                                          n,
-                                          k,
-                                          alpha,
-                                          a_ptr,
-                                          lda,
-                                          b_ptr,
-                                          ldb,
-                                          beta,
-                                          c_ptr,
-                                          ldc,
-                                          resource::get_cuda_stream(res).get());
+  common::nvtx::range<common::nvtx::domain::raft> batch_scope(
+    "linalg::matmul(m = %d, n = %d, k = %d)", m, n, k);
+  std::shared_ptr<matmul_desc> mm_desc{nullptr};
+  const uint64_t workspace_budget = std::min<std::uint64_t>(
+    resource::get_cublaslt_workspace_size(res), resource::get_workspace_free_bytes(res));
+  matmul_key_t mm_key{m, n, k, lda, ldb, ldc, trans_a, trans_b, workspace_budget};
+  auto& cache =
+    resource::get_custom_resource<matmul_cache<S, A, B, C, DevicePointerMode>>(res)->value;
+  if (!cache.get(mm_key, &mm_desc)) {
+    mm_desc.reset(new matmul_desc{matmul_desc::create<S, A, B, C, DevicePointerMode>(res, mm_key)});
+    cache.set(mm_key, mm_desc);
+  }
+  const auto workspace_size = mm_desc->heuristics.workspaceSize;
+  std::optional<raft::device_vector<char, std::size_t>> workspace;
+  if (workspace_size > 0) {
+    workspace.emplace(raft::make_device_mdarray<char, std::size_t>(
+      res,
+      resource::get_workspace_resource_ref(res),
+      raft::make_extents<std::size_t>(workspace_size)));
+  }
+  if (resource::get_dry_run_flag(res)) { return; }
+  // Allocate alpha and beta pointers if not provided.
+  coef_wrapper<DevicePointerMode, S> w(alpha, beta, resource::get_cuda_stream(res));
+  RAFT_CUBLAS_TRY(cublasLtMatmul(resource::get_cublaslt_handle(res),
+                                 mm_desc->desc,
+                                 w.alpha,
+                                 a_ptr,
+                                 mm_desc->a,
+                                 b_ptr,
+                                 mm_desc->b,
+                                 w.beta,
+                                 c_ptr,
+                                 mm_desc->c,
+                                 c_ptr,
+                                 mm_desc->c,
+                                 &(mm_desc->heuristics.algo),
+                                 workspace ? workspace->data_handle() : nullptr,
+                                 workspace_size,
+                                 resource::get_cuda_stream(res).get()));
 }
 
 }  // namespace linalg::detail

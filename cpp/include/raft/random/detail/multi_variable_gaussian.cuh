@@ -7,6 +7,7 @@
 #include "curand_wrappers.hpp"
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/core/device_mdarray.hpp>
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/cusolver_dn_handle.hpp>
@@ -190,38 +191,42 @@ class multi_variable_gaussian_impl {
 
   void give_gaussian(const int nPoints, T* P, T* X, const T* x = 0)
   {
-    if (resource::get_dry_run_flag(handle)) { return; }
+    const bool dry_run  = resource::get_dry_run_flag(handle);
     auto cusolverHandle = resource::get_cusolver_dn_handle(handle);
     auto cudaStream     = resource::get_cuda_stream(handle).get();
-    if (method == chol_decomp) {
-      // lower part will contains chol_decomp
-      RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDnpotrf(
-        cusolverHandle, uplo, dim, P, dim, workspace_decomp, Lwork, info, cudaStream));
-    } else if (method == jacobi) {
-      RAFT_CUSOLVER_TRY(
-        raft::linalg::detail::cusolverDnsyevj(cusolverHandle,
-                                              jobz,
-                                              uplo,
-                                              dim,
-                                              P,
-                                              dim,
-                                              eig,
-                                              workspace_decomp,
-                                              Lwork,
-                                              info,
-                                              syevj_params,
-                                              cudaStream));  // vectors stored as cols. & col major
-    } else {                                                 // qr
-      RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDnsyevd(
-        cusolverHandle, jobz, uplo, dim, P, dim, eig, workspace_decomp, Lwork, info, cudaStream));
+    // cublasLt does not support in-place gemm, so the noise is generated out of place.
+    auto noise = raft::make_device_vector<T, int>(handle, (nPoints * dim) + (nPoints * dim) % 2);
+    if (!dry_run) {
+      if (method == chol_decomp) {
+        // lower part will contains chol_decomp
+        RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDnpotrf(
+          cusolverHandle, uplo, dim, P, dim, workspace_decomp, Lwork, info, cudaStream));
+      } else if (method == jacobi) {
+        RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDnsyevj(
+          cusolverHandle,
+          jobz,
+          uplo,
+          dim,
+          P,
+          dim,
+          eig,
+          workspace_decomp,
+          Lwork,
+          info,
+          syevj_params,
+          cudaStream));  // vectors stored as cols. & col major
+      } else {           // qr
+        RAFT_CUSOLVER_TRY(raft::linalg::detail::cusolverDnsyevd(
+          cusolverHandle, jobz, uplo, dim, P, dim, eig, workspace_decomp, Lwork, info, cudaStream));
+      }
+      raft::update_host(&info_h, info, 1, cudaStream);
+      RAFT_CUDA_TRY(cudaStreamSynchronize(cudaStream));
+      ASSERT(info_h == 0, "mvg: error in syevj/syevd/potrf, info=%d | expected=0", info_h);
+      T mean = 0.0, stddv = 1.0;
+      // generate nxN gaussian nums
+      CURAND_CHECK(
+        detail::curandGenerateNormal(gen, noise.data_handle(), noise.size(), mean, stddv));
     }
-    raft::update_host(&info_h, info, 1, cudaStream);
-    RAFT_CUDA_TRY(cudaStreamSynchronize(cudaStream));
-    ASSERT(info_h == 0, "mvg: error in syevj/syevd/potrf, info=%d | expected=0", info_h);
-    T mean = 0.0, stddv = 1.0;
-    // generate nxN gaussian nums in X
-    CURAND_CHECK(
-      detail::curandGenerateNormal(gen, X, (nPoints * dim) + (nPoints * dim) % 2, mean, stddv));
     T alfa = 1.0, beta = 0.0;
     if (method == chol_decomp) {
       // upper part (0) being filled with 0.0
@@ -230,28 +235,58 @@ class multi_variable_gaussian_impl {
       raft::launch_kernel(handle, grid, block, fill_uplo<T>, dim, UPPER, (T)0.0, P);
 
       // P is lower triangular chol decomp mtrx
-      raft::linalg::gemm(
-        handle, false, false, dim, nPoints, dim, &alfa, P, dim, X, dim, &beta, X, dim, cudaStream);
+      raft::linalg::gemm(handle,
+                         false,
+                         false,
+                         dim,
+                         nPoints,
+                         dim,
+                         &alfa,
+                         P,
+                         dim,
+                         noise.data_handle(),
+                         dim,
+                         &beta,
+                         X,
+                         dim,
+                         cudaStream);
     } else {
-      epsilonToZero(eig, epsilon, dim, cudaStream);
       dim3 block(64);
       dim3 grid(raft::ceildiv(dim, (int)block.x));
-      RAFT_CUDA_TRY(cudaMemsetAsync(info, 0, sizeof(int), cudaStream));
+      if (!dry_run) {
+        epsilonToZero(eig, epsilon, dim, cudaStream);
+        RAFT_CUDA_TRY(cudaMemsetAsync(info, 0, sizeof(int), cudaStream));
+      }
       grid.x = raft::ceildiv(dim * dim, (int)block.x);
       raft::launch_kernel(handle, grid, block, combined_dot_product<T>, dim, dim, eig, P, info);
 
       // checking if any eigen vals were negative
-      raft::update_host(&info_h, info, 1, cudaStream);
-      RAFT_CUDA_TRY(cudaStreamSynchronize(cudaStream));
-      ASSERT(info_h == 0, "mvg: Cov matrix has %dth Eigenval negative", info_h);
+      if (!dry_run) {
+        raft::update_host(&info_h, info, 1, cudaStream);
+        RAFT_CUDA_TRY(cudaStreamSynchronize(cudaStream));
+        ASSERT(info_h == 0, "mvg: Cov matrix has %dth Eigenval negative", info_h);
+      }
 
       // Got Q = eigvect*eigvals.sqrt in P, Q*X in X below
-      raft::linalg::gemm(
-        handle, false, false, dim, nPoints, dim, &alfa, P, dim, X, dim, &beta, X, dim, cudaStream);
+      raft::linalg::gemm(handle,
+                         false,
+                         false,
+                         dim,
+                         nPoints,
+                         dim,
+                         &alfa,
+                         P,
+                         dim,
+                         noise.data_handle(),
+                         dim,
+                         &beta,
+                         X,
+                         dim,
+                         cudaStream);
     }
     // working to make mean not 0
     // since we are working with column-major, nPoints and dim are swapped
-    if (x != NULL) matVecAdd(X, X, x, T(1.0), nPoints, dim, cudaStream);
+    if (x != NULL && !dry_run) matVecAdd(X, X, x, T(1.0), nPoints, dim, cudaStream);
   }
 
   void deinit()

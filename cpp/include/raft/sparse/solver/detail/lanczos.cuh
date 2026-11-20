@@ -53,6 +53,7 @@
 #include <raft/util/kernel_launch.hpp>
 
 #include <cuda.h>
+#include <thrust/sequence.h>
 #include <thrust/sort.h>
 
 #include <cublasLt.h>
