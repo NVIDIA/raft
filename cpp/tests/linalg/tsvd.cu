@@ -172,7 +172,7 @@ class TsvdTest : public ::testing::TestWithParam<TsvdInputs<T>> {
       [&](raft::resources const& h) {
         tsvd_inverse_transform(h, prms, trans_in_view, comp_in_view, output_view);
       },
-      raft::alloc_behavior::NO_ALLOCATIONS);
+      raft::alloc_behavior::ARGUMENT_DRIVEN);
 
     // The U-based sign-flip branch is unreachable through tsvd_fit_transform's default arguments;
     // exercise it on scratch copies so that the reference comparisons above stay untouched.
