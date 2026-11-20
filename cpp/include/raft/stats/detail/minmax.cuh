@@ -134,7 +134,11 @@ RAFT_KERNEL minmaxKernel(const T* data,
         atomicMinBits<T, E>(&s_min[(int)(i / nrows)], coldata);
         atomicMaxBits<T, E>(&s_max[(int)(i / nrows)], coldata);
       }
-      if (sampledcols != nullptr) { sampledcols[batch_id * orig_batch_ncols + i] = coldata; }
+      // `i` indexes the current batch (column-major, nrows per column), so the batch
+      // offset in sampledcols is the number of elements in all previous batches.
+      if (sampledcols != nullptr) {
+        sampledcols[batch_id * orig_batch_ncols * nrows + i] = coldata;
+      }
     }
     __syncthreads();
 
