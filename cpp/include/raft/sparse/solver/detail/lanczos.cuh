@@ -16,7 +16,6 @@
 #include <raft/core/host_mdspan.hpp>
 #include <raft/core/logger.hpp>
 #include <raft/core/mdspan_types.hpp>
-#include <raft/core/operators.hpp>
 #include <raft/core/resource/cublas_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/dry_run_flag.hpp>
@@ -54,6 +53,7 @@
 #include <raft/util/kernel_launch.hpp>
 
 #include <cuda.h>
+#include <thrust/sequence.h>
 #include <thrust/sort.h>
 
 #include <cublasLt.h>
@@ -207,7 +207,7 @@ void lanczos_solve_ritz(
       eigenvectors.data_handle() + (ncv - nEigVecs) * ncv, ncv, nEigVecs);
   } else if (which == LANCZOS_WHICH::SM || which == LANCZOS_WHICH::LM) {
     if (!is_dry_run) {  // TODO: we must be missing some allocations in thrust helpers here
-      raft::linalg::map_offset(handle, indices.view(), raft::cast_op<int>{});
+      thrust::sequence(thrust::device, indices.data_handle(), indices.data_handle() + ncv, 0);
 
       // Sort indices by absolute eigenvalues (magnitude) using a custom comparator
       thrust::sort(thrust::device,
