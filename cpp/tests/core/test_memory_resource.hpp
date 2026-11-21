@@ -22,7 +22,7 @@ namespace raft::test {
 
 struct device_resource_restore_guard {
   int device_id;
-  raft::mr::device_resource resource;
+  cuda::mr::any_device_resource resource;
 
   ~device_resource_restore_guard()
   {
@@ -42,7 +42,7 @@ inline auto install_pool_device_resource(int device_id) -> device_resource_resto
   auto scoped_device = raft::device_setter{device_id};
   auto upstream      = rmm::mr::get_current_device_resource_ref();
   auto installed_resource =
-    raft::mr::device_resource{rmm::mr::pool_memory_resource(upstream, 1 << 20, 2 << 20)};
+    cuda::mr::any_device_resource{rmm::mr::pool_memory_resource(upstream, 1 << 20, 2 << 20)};
   auto old_resource = rmm::mr::set_current_device_resource(std::move(installed_resource));
   return device_resource_restore_guard{device_id, std::move(old_resource)};
 }

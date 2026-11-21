@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -15,6 +15,8 @@
 #include <rmm/device_uvector.hpp>
 #include <rmm/mr/per_device_resource.hpp>
 #include <rmm/mr/pool_memory_resource.hpp>
+
+#include <cuda/memory_resource>
 
 namespace raft::bench::matrix {
 
@@ -107,7 +109,7 @@ struct Gather : public fixture {
  private:
   GatherParams<IdxT> params;
   rmm::mr::pool_memory_resource pool_mr;
-  cuda::mr::any_resource<cuda::mr::device_accessible> prev_res_;
+  cuda::mr::any_device_resource prev_res_;
   raft::device_matrix<T, IdxT> matrix, out;
   raft::host_matrix<T, IdxT> matrix_h;
   raft::device_vector<T, IdxT> stencil;

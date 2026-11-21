@@ -9,8 +9,7 @@
 #include <raft/core/resource/cuda_stream.hpp>
 #include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resources.hpp>
-
-#include <rmm/resource_ref.hpp>
+#include <raft/mr/host_device_resource.hpp>
 
 #include <unistd.h>
 
