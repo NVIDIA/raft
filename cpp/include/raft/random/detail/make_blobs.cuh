@@ -25,7 +25,8 @@ namespace random {
 
 namespace detail {
 
-// generate the labels first and shuffle them instead of shuffling the dataset
+// Generate labels in permuted row order before generating the data. Each row's
+// samples are then drawn from the center selected by its final label.
 template <typename IdxT>
 void generate_labels(IdxT* labels,
                      IdxT n_rows,
@@ -34,16 +35,20 @@ void generate_labels(IdxT* labels,
                      raft::random::RngState& r,
                      cudaStream_t stream)
 {
+  if (n_rows == 0) { return; }
   raft::handle_t handle(stream);
-  IdxT a, b;
-  raft::random::affine_transform_params(r, n_clusters, a, b);
-  auto op = [=] __device__(IdxT idx) {
-    if (shuffle) { idx = static_cast<IdxT>((a * int64_t(idx)) + b); }
-    idx %= n_clusters;
-    return idx;
-  };
   auto labels_view = raft::make_device_vector_view<IdxT, IdxT>(labels, n_rows);
-  linalg::map_offset(handle, labels_view, op);
+  if (shuffle) {
+    splitmix64 rng(r.seed + r.base_subsequence);
+    cuda::shuffle_iterator shuffled_indices{cuda::random_bijection{n_rows, rng}};
+    auto op = [=] __device__(IdxT idx) {
+      return static_cast<IdxT>(shuffled_indices[idx] % n_clusters);
+    };
+    linalg::map_offset(handle, labels_view, op);
+  } else {
+    auto op = [=] __device__(IdxT idx) { return idx % n_clusters; };
+    linalg::map_offset(handle, labels_view, op);
+  }
 }
 
 template <typename DataT, typename IdxT>
@@ -234,6 +239,8 @@ void generate_data(DataT* out,
  *                                centers. Useful only if 'centers' is nullptr
  * @param[in]  seed               seed for the RNG
  * @param[in]  type               RNG type
+ * @param[out] generated_centers  optional output for randomly generated centers;
+ *                                must be nullptr when centers is provided
  */
 template <typename DataT, typename IdxT>
 void make_blobs_caller(bool dry_run,
@@ -251,21 +258,20 @@ void make_blobs_caller(bool dry_run,
                        DataT center_box_min,
                        DataT center_box_max,
                        uint64_t seed,
-                       raft::random::GeneratorType type)
+                       raft::random::GeneratorType type,
+                       DataT* generated_centers = nullptr)
 {
+  RAFT_EXPECTS(centers == nullptr || generated_centers == nullptr,
+               "generated_centers requires centers to be nullptr");
   raft::random::RngState r(seed, type);
   // use the right centers buffer for data generation
-  rmm::device_uvector<DataT> rand_centers(centers == nullptr ? n_clusters * n_cols : 0, stream);
-  const DataT* _centers;
-  if (centers == nullptr) {
-    _centers = rand_centers.data();
-  } else {
-    _centers = centers;
-  }
+  rmm::device_uvector<DataT> rand_centers(
+    centers == nullptr && generated_centers == nullptr ? n_clusters * n_cols : 0, stream);
+  DataT* center_output  = generated_centers == nullptr ? rand_centers.data() : generated_centers;
+  const DataT* _centers = centers == nullptr ? center_output : centers;
   if (dry_run) { return; }
   if (centers == nullptr) {
-    detail::uniform(
-      r, rand_centers.data(), n_clusters * n_cols, center_box_min, center_box_max, stream);
+    detail::uniform(r, center_output, n_clusters * n_cols, center_box_min, center_box_max, stream);
   }
   generate_labels(labels, n_rows, n_clusters, shuffle, r, stream);
   generate_data(out,
