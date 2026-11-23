@@ -5,13 +5,22 @@
 
 #include <raft/core/copy.hpp>
 #include <raft/core/device_mdarray.hpp>
+#include <raft/core/dry_run_resources.hpp>
 #include <raft/core/host_mdarray.hpp>
+#include <raft/core/resource/cublaslt_handle.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/core/resource/device_memory_resource.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/linalg/gemm.cuh>
 
+#include <rmm/mr/per_device_resource.hpp>
+
 #include <gtest/gtest.h>
 
+#include <algorithm>
+#include <cstddef>
+#include <cstdint>
+#include <optional>
 #include <vector>
 
 namespace raft::linalg {
@@ -316,6 +325,150 @@ TEST(Raft, GemmCublasLt136WorkaroundHeuristicArgs)
   EXPECT_EQ(heuristic_args.ldc, args.ldc);
   EXPECT_EQ(heuristic_args.trans_a, args.trans_a);
   EXPECT_EQ(heuristic_args.trans_b, args.trans_b);
+}
+
+TEST(Raft, GemmCublasLtWorkspaceSize)
+{
+  constexpr std::size_t default_size = 32 * 1024 * 1024;
+
+  raft::resources res;
+  EXPECT_EQ(raft::resource::get_cublaslt_workspace_size(res), default_size);
+
+  raft::resources copy(res);
+  raft::resource::set_cublaslt_workspace_size(copy, 12345);
+  EXPECT_EQ(raft::resource::get_cublaslt_workspace_size(copy), 12345);
+  EXPECT_EQ(raft::resource::get_cublaslt_workspace_size(res), default_size);
+
+  raft::resource::set_cublaslt_workspace_size(copy, default_size);
+  EXPECT_EQ(raft::resource::get_cublaslt_workspace_size(copy), default_size);
+}
+
+namespace {
+
+// A skinny problem, for which cuBLASLt prefers split-K algorithms that need a workspace:
+// z[rows x dim] = x[rows x dim] * y[dim x dim], with row-major x and z, and col-major y.
+constexpr int64_t kSkinnyRows = 32;
+constexpr int64_t kSkinnyDim  = 1024;
+
+// Small integers keep the products and sums exact regardless of the reduction order.
+auto skinny_value(int64_t i) -> float { return static_cast<float>(i % 5) - 2.0f; }
+
+void run_skinny_gemm(raft::resources const& res, const float* x, const float* y, float* z)
+{
+  raft::linalg::gemm(
+    res,
+    raft::make_device_matrix_view<const float, int64_t, raft::row_major>(
+      x, kSkinnyRows, kSkinnyDim),
+    raft::make_device_matrix_view<const float, int64_t, raft::col_major>(y, kSkinnyDim, kSkinnyDim),
+    raft::make_device_matrix_view<float, int64_t, raft::row_major>(z, kSkinnyRows, kSkinnyDim));
+}
+
+/** The cache key `run_skinny_gemm` uses. */
+auto skinny_matmul_key(raft::resources const& res) -> detail::matmul_key_t
+{
+  return detail::matmul_key_t{
+    kSkinnyDim,
+    kSkinnyRows,
+    kSkinnyDim,
+    kSkinnyDim,
+    kSkinnyDim,
+    kSkinnyDim,
+    true,
+    false,
+    std::min<std::size_t>(raft::resource::get_cublaslt_workspace_size(res),
+                          raft::resource::get_workspace_total_bytes(res))};
+}
+
+void test_gemm_skinny(raft::resources const& res)
+{
+  auto stream = raft::resource::get_cuda_stream(res);
+
+  std::vector<float> x_host(kSkinnyRows * kSkinnyDim);
+  std::vector<float> y_host(kSkinnyDim * kSkinnyDim);
+  for (int64_t i = 0; i < static_cast<int64_t>(x_host.size()); i++) {
+    x_host[i] = skinny_value(i);
+  }
+  for (int64_t i = 0; i < static_cast<int64_t>(y_host.size()); i++) {
+    y_host[i] = skinny_value(i * 7 + 3);
+  }
+
+  auto x = raft::make_device_vector<float, int64_t>(res, x_host.size());
+  auto y = raft::make_device_vector<float, int64_t>(res, y_host.size());
+  auto z = raft::make_device_vector<float, int64_t>(res, kSkinnyRows * kSkinnyDim);
+  raft::copy(x.data_handle(), x_host.data(), x_host.size(), stream);
+  raft::copy(y.data_handle(), y_host.data(), y_host.size(), stream);
+
+  run_skinny_gemm(res, x.data_handle(), y.data_handle(), z.data_handle());
+
+  std::vector<float> z_host(kSkinnyRows * kSkinnyDim);
+  raft::copy(z_host.data(), z.data_handle(), z_host.size(), stream);
+  raft::resource::sync_stream(res);
+
+  for (int64_t i = 0; i < kSkinnyRows; i++) {
+    for (int64_t j = 0; j < kSkinnyDim; j++) {
+      float expected = 0;
+      for (int64_t l = 0; l < kSkinnyDim; l++) {
+        expected += x_host[i * kSkinnyDim + l] * y_host[j * kSkinnyDim + l];
+      }
+      ASSERT_EQ(z_host[i * kSkinnyDim + j], expected) << "Mismatch at (" << i << ", " << j << ")";
+    }
+  }
+}
+
+}  // namespace
+
+TEST(Raft, GemmSkinnyDefaultWorkspace)
+{
+  raft::resources res;
+  test_gemm_skinny(res);
+}
+
+TEST(Raft, GemmSkinnyNoWorkspace)
+{
+  raft::resources res;
+  raft::resource::set_cublaslt_workspace_size(res, 0);
+  test_gemm_skinny(res);
+}
+
+TEST(Raft, GemmWorkspaceBudgetClampedByLimit)
+{
+  constexpr std::size_t kLimit = 64 * 1024;
+  raft::resources res;
+  raft::resource::set_workspace_resource(
+    res, raft::mr::device_resource{rmm::mr::get_current_device_resource_ref()}, kLimit);
+  test_gemm_skinny(res);
+
+  auto x     = raft::make_device_vector<float, int64_t>(res, kSkinnyRows * kSkinnyDim);
+  auto y     = raft::make_device_vector<float, int64_t>(res, kSkinnyDim * kSkinnyDim);
+  auto z     = raft::make_device_vector<float, int64_t>(res, kSkinnyRows * kSkinnyDim);
+  auto stats = raft::util::dry_run_execute(res, [&](raft::resources const& r) {
+    run_skinny_gemm(r, x.data_handle(), y.data_handle(), z.data_handle());
+  });
+  EXPECT_LE(stats.device_workspace, kLimit);
+}
+
+TEST(Raft, GemmDryRunCountsWorkspace)
+{
+  for (std::optional<std::size_t> workspace_size : {std::optional<std::size_t>{}, {0}}) {
+    raft::resources res;
+    if (workspace_size.has_value()) {
+      raft::resource::set_cublaslt_workspace_size(res, *workspace_size);
+    }
+    auto x = raft::make_device_vector<float, int64_t>(res, kSkinnyRows * kSkinnyDim);
+    auto y = raft::make_device_vector<float, int64_t>(res, kSkinnyDim * kSkinnyDim);
+    auto z = raft::make_device_vector<float, int64_t>(res, kSkinnyRows * kSkinnyDim);
+
+    std::size_t expected = 0;
+    auto stats           = raft::util::dry_run_execute(res, [&](raft::resources const& r) {
+      expected = detail::matmul_desc::create<float, float, float, float>(r, skinny_matmul_key(r))
+                   .heuristics.workspaceSize;
+      run_skinny_gemm(r, x.data_handle(), y.data_handle(), z.data_handle());
+    });
+
+    if (workspace_size == std::optional<std::size_t>{0}) { EXPECT_EQ(expected, 0); }
+    EXPECT_GE(stats.device_workspace, expected);
+    EXPECT_LT(stats.device_workspace, expected + 256);
+  }
 }
 
 }  // namespace raft::linalg

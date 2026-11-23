@@ -11,6 +11,7 @@
 
 #include <cublasLt.h>
 
+#include <cstddef>
 #include <memory>
 
 namespace RAFT_EXPORT raft {
@@ -18,25 +19,53 @@ namespace resource {
 
 class cublaslt_resource : public resource {
  public:
-  cublaslt_resource() { RAFT_CUBLAS_TRY(cublasLtCreate(&handle_)); }
+  explicit cublaslt_resource(std::size_t workspace_size) : workspace_size_(workspace_size)
+  {
+    RAFT_CUBLAS_TRY(cublasLtCreate(&handle_));
+  }
   ~cublaslt_resource() noexcept override { RAFT_CUBLAS_TRY_NO_THROW(cublasLtDestroy(handle_)); }
-  auto get_resource() -> void* override { return &handle_; }
+  auto get_resource() -> void* override { return this; }
+
+  [[nodiscard]] auto handle() const noexcept -> cublasLtHandle_t { return handle_; }
+  [[nodiscard]] auto workspace_size() const noexcept -> std::size_t { return workspace_size_; }
 
  private:
   cublasLtHandle_t handle_;
+  std::size_t workspace_size_;
 };
 
 /** Factory that knows how to construct a specific raft::resource to populate the res_t. */
 class cublaslt_resource_factory : public resource_factory {
  public:
+  explicit cublaslt_resource_factory(std::size_t workspace_size = 32 * 1024 * 1024)
+    : workspace_size_(workspace_size)
+  {
+  }
   auto get_resource_type() -> resource_type override { return resource_type::CUBLASLT_HANDLE; }
-  auto make_resource() -> resource* override { return new cublaslt_resource(); }
+  auto make_resource() -> resource* override { return new cublaslt_resource(workspace_size_); }
+
+ private:
+  std::size_t workspace_size_;
 };
 
 /**
  * @defgroup resource_cublaslt cuBLASLt handle resource functions
  * @{
  */
+
+/**
+ * Load the cuBLASLt resource from raft res if it exists, otherwise add it and return it.
+ *
+ * @param[in] res the raft resources object
+ * @return cuBLASLt resource
+ */
+inline auto get_cublaslt_resource(resources const& res) -> cublaslt_resource const&
+{
+  if (!res.has_resource_factory(resource_type::CUBLASLT_HANDLE)) {
+    res.ensure_default_factory(std::make_shared<cublaslt_resource_factory>());
+  }
+  return *res.get_resource<cublaslt_resource>(resource_type::CUBLASLT_HANDLE);
+}
 
 /**
  * Load a `cublasLtHandle_t` from raft res if it exists, otherwise add it and return it.
@@ -46,10 +75,35 @@ class cublaslt_resource_factory : public resource_factory {
  */
 inline auto get_cublaslt_handle(resources const& res) -> cublasLtHandle_t
 {
-  if (!res.has_resource_factory(resource_type::CUBLASLT_HANDLE)) {
-    res.ensure_default_factory(std::make_shared<cublaslt_resource_factory>());
-  }
-  return *res.get_resource<cublasLtHandle_t>(resource_type::CUBLASLT_HANDLE);
+  return get_cublaslt_resource(res).handle();
+};
+
+/**
+ * Get the maximum workspace size (in bytes) the cuBLASLt matmul wrappers may request from the
+ * workspace resource for a single call.
+ *
+ * @param[in] res the raft resources object
+ * @return workspace budget in bytes
+ */
+inline auto get_cublaslt_workspace_size(resources const& res) -> std::size_t
+{
+  return get_cublaslt_resource(res).workspace_size();
+};
+
+/**
+ * Create a new cuBLASLt handle in the raft resources object with the given workspace budget.
+ *
+ * The budget is the maximum workspace size (in bytes) the cuBLASLt matmul wrappers may allocate
+ * from the workspace resource for a single call; it is further capped by the workspace resource
+ * allocation limit. A larger budget lets cuBLASLt pick faster algorithms (e.g. split-K for skinny
+ * matrices); zero disables the workspace.
+ *
+ * @param[in] res the raft resources object
+ * @param[in] workspace_size workspace budget in bytes
+ */
+inline void set_cublaslt_workspace_size(resources& res, std::size_t workspace_size)
+{
+  res.add_resource_factory(std::make_shared<cublaslt_resource_factory>(workspace_size));
 };
 
 /**
