@@ -18,7 +18,11 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <limits>
+#include <optional>
+#include <vector>
 
 namespace raft {
 namespace stats {
@@ -194,6 +198,73 @@ TEST_P(MinMaxTestD, Result)
 INSTANTIATE_TEST_CASE_P(MinMaxTests, MinMaxTestF, ::testing::ValuesIn(inputsf));
 
 INSTANTIATE_TEST_CASE_P(MinMaxTests, MinMaxTestD, ::testing::ValuesIn(inputsd));
+
+// The sampled columns must be written in the same column-major layout no matter how many
+// shared-memory batches the kernel needs, so use more columns than fit in one batch.
+template <typename T>
+void minmax_sampledcols_test(bool use_colids)
+{
+  raft::resources handle;
+  auto stream     = resource::get_cuda_stream(handle).get();
+  const int nrows = 3;
+  const int ncols = raft::getSharedMemPerBlock() / int(2 * sizeof(T)) + 7;
+
+  std::vector<T> data_h(size_t(nrows) * ncols);
+  // Distinct, exactly representable values, so a misplaced element is always detected.
+  for (size_t i = 0; i < data_h.size(); ++i) {
+    data_h[i] = T(int64_t(i) - int64_t(data_h.size() / 2));
+  }
+  std::vector<unsigned> colids_h(ncols);
+  for (int c = 0; c < ncols; ++c) {
+    colids_h[c] = use_colids ? unsigned(ncols - 1 - c) : unsigned(c);
+  }
+  std::vector<T> sampled_ref(data_h.size()), min_ref(ncols), max_ref(ncols);
+  for (int c = 0; c < ncols; ++c) {
+    min_ref[c] = std::numeric_limits<T>::max();
+    max_ref[c] = std::numeric_limits<T>::lowest();
+    for (int r = 0; r < nrows; ++r) {
+      T v                                = data_h[r + size_t(colids_h[c]) * nrows];
+      sampled_ref[r + size_t(c) * nrows] = v;
+      min_ref[c]                         = std::min(min_ref[c], v);
+      max_ref[c]                         = std::max(max_ref[c], v);
+    }
+  }
+
+  rmm::device_uvector<T> data(data_h.size(), stream);
+  rmm::device_uvector<unsigned> colids(ncols, stream);
+  rmm::device_uvector<T> globalmin(ncols, stream);
+  rmm::device_uvector<T> globalmax(ncols, stream);
+  rmm::device_uvector<T> sampled(data_h.size(), stream);
+  raft::update_device(data.data(), data_h.data(), data_h.size(), stream);
+  raft::update_device(colids.data(), colids_h.data(), ncols, stream);
+  RAFT_CUDA_TRY(cudaMemsetAsync(sampled.data(), 0, sampled.size() * sizeof(T), stream));
+
+  std::optional<raft::device_vector_view<const unsigned, int>> colids_view = std::nullopt;
+  if (use_colids) {
+    colids_view = raft::make_device_vector_view<const unsigned, int>(colids.data(), ncols);
+  }
+  raft::stats::minmax<T, int>(
+    handle,
+    raft::make_device_matrix_view<const T, int, raft::layout_f_contiguous>(
+      data.data(), nrows, ncols),
+    std::nullopt,
+    colids_view,
+    raft::make_device_vector_view<T, int>(globalmin.data(), ncols),
+    raft::make_device_vector_view<T, int>(globalmax.data(), ncols),
+    std::make_optional(raft::make_device_vector_view<T, int>(sampled.data(), nrows * ncols)));
+
+  ASSERT_TRUE(raft::devArrMatchHost(
+    sampled_ref.data(), sampled.data(), sampled.size(), raft::Compare<T>(), stream));
+  ASSERT_TRUE(
+    raft::devArrMatchHost(min_ref.data(), globalmin.data(), ncols, raft::Compare<T>(), stream));
+  ASSERT_TRUE(
+    raft::devArrMatchHost(max_ref.data(), globalmax.data(), ncols, raft::Compare<T>(), stream));
+}
+
+TEST(MinMaxSampledCols, FloatMultipleBatches) { minmax_sampledcols_test<float>(false); }
+TEST(MinMaxSampledCols, FloatMultipleBatchesColids) { minmax_sampledcols_test<float>(true); }
+TEST(MinMaxSampledCols, DoubleMultipleBatches) { minmax_sampledcols_test<double>(false); }
+TEST(MinMaxSampledCols, DoubleMultipleBatchesColids) { minmax_sampledcols_test<double>(true); }
 
 }  // end namespace stats
 }  // end namespace raft
