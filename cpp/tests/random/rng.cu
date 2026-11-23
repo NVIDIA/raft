@@ -19,7 +19,9 @@
 #include <gtest/gtest.h>
 #include <sys/timeb.h>
 
+#include <algorithm>
 #include <memory>
+#include <vector>
 
 namespace raft {
 namespace random {
@@ -387,6 +389,32 @@ std::ostream& operator<<(std::ostream& out, const std::vector<T>& v)
 // a number of experiments computing the mean, giving us a distribution of the mean itself. The
 // mean error is simply the standard deviation of this distribution (the standard deviation of the
 // mean).
+// Uniform half values must stay in [0, 1). next_half() used to round a float from
+// next_float() to half, which gives 1.0 for about one sample in 4096.
+TEST(Rng, UniformHalfExcludesEnd)
+{
+  constexpr int len = 1 << 20;
+
+  raft::resources handle;
+  auto stream = resource::get_cuda_stream(handle);
+
+  rmm::device_uvector<half> data(len, stream);
+  std::vector<half> h_data(len);
+
+  for (auto rtype : {GenPhilox, GenPC}) {
+    RngState r(1234ULL, rtype);
+    uniform(handle, r, data.data(), len, __float2half(0.f), __float2half(1.f));
+    update_host(h_data.data(), data.data(), len, stream);
+    resource::sync_stream(handle, stream);
+
+    auto n_out_of_range = std::count_if(h_data.begin(), h_data.end(), [](half v) {
+      float f = __half2float(v);
+      return !(f >= 0.f && f < 1.f);
+    });
+    ASSERT_EQ(n_out_of_range, 0) << "generator " << rtype;
+  }
+}
+
 TEST(Rng, MeanError)
 {
   timeb time_struct;

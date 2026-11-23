@@ -252,6 +252,7 @@ if(BUILD_TESTS)
     PATH
     linalg/eigen_solvers.cu
     lap/lap.cu
+    solver/nnls.cu
     sparse/mst.cu
     sparse/solver/lanczos.cu
     sparse/solver/lanczos_svds.cu

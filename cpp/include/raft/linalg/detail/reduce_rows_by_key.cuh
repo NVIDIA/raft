@@ -6,6 +6,7 @@
 #pragma once
 
 #include <raft/core/detail/macros.hpp>
+#include <raft/linalg/detail/coalesced_reduction.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/kernel_launch.hpp>
@@ -181,7 +182,8 @@ constexpr size_t kFewKeysSmemBytes = 48 * 1024;  // 48 KiB - Each GPU from Amper
  * - Each thread owns one column in one copy. It sums the rows in its column of its copy, using the
  * row's key. Therefore, each thread owns different addresses in shared memory, so no atomics are
  * needed.
- * - At the end, the copies are summed into the global sums.
+ * - At the end, the copies are summed into the partial sums (i.e. d_partials[key][col][block]) in
+ * global memory
  */
 template <int kRowsAhead,
           typename DataIteratorT,
@@ -198,7 +200,7 @@ RAFT_KERNEL __launch_bounds__(kFewKeysMaxThreads)
                                                          IdxT ncols,
                                                          IdxT nkeys,
                                                          IdxT rows_per_block,
-                                                         SumsT* d_sums)
+                                                         SumsT* d_partials)
 {
   // Shared memory which holds multiple copies. Chosen layout: smem[n_copies][nkeys][ncols]
   /// Layout choice:
@@ -250,13 +252,13 @@ RAFT_KERNEL __launch_bounds__(kFewKeysMaxThreads)
   }
   __syncthreads();
 
-  // Sum the copies into the global sums
+  // Sum the copies into the partial sums
   for (IdxT i = threadIdx.x; i < nkeys * ncols; i += blockDim.x) {
     SumsT t = SumsT(0);
     for (int q = 0; q < n_copies; ++q) {
       t += private_sums[static_cast<IdxT>(q) * nkeys * ncols + i];
     }
-    raft::myAtomicAdd(d_sums + i, t);
+    d_partials[static_cast<size_t>(i) * gridDim.x + blockIdx.x] = t;
   }
 }
 
@@ -282,38 +284,53 @@ void sum_rows_by_key_rowmajor_few_keys(const DataIteratorT d_A,
                                        IdxT ncols,
                                        IdxT nkeys,
                                        SumsT* d_sums,
-                                       cudaStream_t st)
+                                       cudaStream_t st,
+                                       bool dry_run)
 {
   RAFT_EXPECTS(
     ncols > 0 && ncols <= kFewKeysMaxThreads && sum_rows_by_key_few_keys_fits<SumsT>(nkeys, ncols),
     "The sums do not fit in shared memory");
-  constexpr int kRowsAhead = 8;
-  const size_t copy_bytes  = std::max<size_t>(1, sizeof(SumsT) * nkeys * ncols);
-  const int n_copies       = static_cast<int>(std::max<size_t>(
+  if (nrows == 0) { return; }
+  constexpr int kRowsAhead  = 8;
+  const size_t copy_bytes   = std::max<size_t>(1, sizeof(SumsT) * nkeys * ncols);
+  const int n_copies        = static_cast<int>(std::max<size_t>(
     1, std::min<size_t>(kFewKeysMaxThreads / ncols, kFewKeysSmemBytes / copy_bytes)));
-  const auto block_dim     = static_cast<uint32_t>(n_copies * ncols);
-  const int blocks_per_sm  = block_dim >= 256 ? 2 : 4;
-  const IdxT rows_per_block =
-    ceildiv<IdxT>(nrows, static_cast<IdxT>(blocks_per_sm) * raft::getMultiProcessorCount());
+  const auto block_dim      = static_cast<uint32_t>(n_copies * ncols);
+  const int blocks_per_sm   = block_dim >= 256 ? 2 : 4;
+  const IdxT rows_per_block = std::max<IdxT>(
+    ceildiv<IdxT>(nrows, static_cast<IdxT>(blocks_per_sm) * raft::getMultiProcessorCount()),
+    n_copies * kRowsAhead);
   const auto grid_dim = static_cast<uint32_t>(ceildiv<IdxT>(nrows, rows_per_block));
-  raft::launch_kernel({st, copy_bytes * n_copies},
-                      grid_dim,
-                      block_dim,
-                      sum_rows_by_key_kernel_rowmajor_small_keys_narrow_rows<kRowsAhead,
-                                                                             DataIteratorT,
-                                                                             KeysIteratorT,
-                                                                             WeightT,
-                                                                             SumsT,
-                                                                             IdxT>,
-                      d_A,
-                      lda,
-                      d_weights,
-                      d_keys,
-                      nrows,
-                      ncols,
-                      nkeys,
-                      rows_per_block,
-                      d_sums);
+  rmm::device_uvector<SumsT> partials(size_t{grid_dim} * nkeys * ncols, st);
+  if (!dry_run) {
+    raft::launch_kernel({st, copy_bytes * n_copies},
+                        grid_dim,
+                        block_dim,
+                        sum_rows_by_key_kernel_rowmajor_small_keys_narrow_rows<kRowsAhead,
+                                                                               DataIteratorT,
+                                                                               KeysIteratorT,
+                                                                               WeightT,
+                                                                               SumsT,
+                                                                               IdxT>,
+                        d_A,
+                        lda,
+                        d_weights,
+                        d_keys,
+                        nrows,
+                        ncols,
+                        nkeys,
+                        rows_per_block,
+                        partials.data());
+  }
+  // Reduce partial sums into the final sum.
+  coalescedReduction<SumsT, SumsT, IdxT>(dry_run,
+                                         d_sums,
+                                         partials.data(),
+                                         static_cast<IdxT>(grid_dim),
+                                         nkeys * ncols,
+                                         SumsT(0),
+                                         st,
+                                         /* inplace */ true);
 }
 
 /** Prepare keys and row ids for radix-sort. */
@@ -640,7 +657,7 @@ void sum_rows_by_keyrowmajor(const DataIteratorT d_A,
                              bool dry_run)
 {
   const auto plan = sum_rows_by_key_select_kernel(d_A, lda, nrows, ncols, nkeys, d_sums);
-  if (dry_run && plan.kernel != sum_rows_by_key_kernel::sorted) { return; }
+  if (dry_run && plan.kernel == sum_rows_by_key_kernel::elementwise) { return; }
 
   constexpr bool kCanVectorize =
     std::is_same_v<SumsT, float> &&
@@ -653,7 +670,7 @@ void sum_rows_by_keyrowmajor(const DataIteratorT d_A,
       break;
     case sum_rows_by_key_kernel::few_keys:
       sum_rows_by_key_rowmajor_few_keys(
-        d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st);
+        d_A, lda, d_keys, d_weights, nrows, ncols, nkeys, d_sums, st, dry_run);
       break;
     case sum_rows_by_key_kernel::elementwise:
       if constexpr (kCanVectorize) {
@@ -690,6 +707,7 @@ void sum_rows_by_keyrowmajor(const DataIteratorT d_A,
  * @param[out] d_sums      Row sums by key (ncols x d_keys)
  * @param[in]  stream      CUDA stream
  * @param[in]  reset_sums  Whether to reset the output sums to zero before reducing
+ * @param[in]  dry_run     dry run mode
  */
 template <typename DataIteratorT,
           typename KeysIteratorT,
@@ -742,6 +760,7 @@ void reduce_rows_by_key(const DataIteratorT d_A,
  * @param[out] d_sums      Row sums by key (ncols x d_keys)
  * @param[in]  stream      CUDA stream
  * @param[in]  reset_sums  Whether to reset the output sums to zero before reducing
+ * @param[in]  dry_run     dry run mode
  */
 template <typename DataIteratorT, typename KeysIteratorT, typename SumsT, typename IdxT>
 void reduce_rows_by_key(const DataIteratorT d_A,

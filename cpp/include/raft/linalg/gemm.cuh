@@ -219,8 +219,8 @@ template <typename ValueType,
                            std::is_same<ScalarViewType, raft::host_scalar_view<ValueType, ScalarIdxType>>,
                            std::is_same<ScalarViewType, raft::device_scalar_view<ValueType, ScalarIdxType>>>>>
 void gemm(raft::resources const& res,
-          raft::device_matrix_view<ValueType, IndexType, LayoutPolicyX> x,
-          raft::device_matrix_view<ValueType, IndexType, LayoutPolicyY> y,
+          raft::device_matrix_view<const ValueType, IndexType, LayoutPolicyX> x,
+          raft::device_matrix_view<const ValueType, IndexType, LayoutPolicyY> y,
           raft::device_matrix_view<ValueType, IndexType, LayoutPolicyZ> z,
           std::optional<ScalarViewType> alpha = std::nullopt,
           std::optional<ScalarViewType> beta  = std::nullopt)
@@ -281,6 +281,38 @@ void gemm(raft::resources const& res,
       z.data_handle(),
       static_cast<uint64_t>(z.extent(1)));
   }
+}
+
+/**
+ * @brief Mutable-input overload retained for backward compatibility.
+ *
+ * Inputs are only read. Prefer the const-input overload, using raft::make_const_mdspan
+ * when needed. See that overload for parameter documentation.
+ */
+template <typename ValueType,
+          typename IndexType,
+          typename LayoutPolicyX,
+          typename LayoutPolicyY,
+          typename LayoutPolicyZ,
+          typename ScalarIdxType  = std::uint32_t,
+          typename ScalarViewType = raft::host_scalar_view<ValueType, ScalarIdxType>,
+          typename                = std::enable_if_t<std::disjunction_v<
+                           std::is_same<ScalarViewType, raft::host_scalar_view<ValueType, ScalarIdxType>>,
+                           std::is_same<ScalarViewType, raft::device_scalar_view<ValueType, ScalarIdxType>>>>>
+void gemm(raft::resources const& res,
+          raft::device_matrix_view<ValueType, IndexType, LayoutPolicyX> x,
+          raft::device_matrix_view<ValueType, IndexType, LayoutPolicyY> y,
+          raft::device_matrix_view<ValueType, IndexType, LayoutPolicyZ> z,
+          std::optional<ScalarViewType> alpha = std::nullopt,
+          std::optional<ScalarViewType> beta  = std::nullopt)
+{
+  gemm<ValueType,
+       IndexType,
+       LayoutPolicyX,
+       LayoutPolicyY,
+       LayoutPolicyZ,
+       ScalarIdxType,
+       ScalarViewType>(res, raft::make_const_mdspan(x), raft::make_const_mdspan(y), z, alpha, beta);
 }
 
 /**
