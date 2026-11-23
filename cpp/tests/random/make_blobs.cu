@@ -312,6 +312,7 @@ TEST(MakeBlobsClusterStd, DoubleColMajor)
   check_cluster_std_by_label<double, raft::layout_f_contiguous>();
 }
 
+/** @brief Verify generated-center output preserves the seeded samples and labels. */
 template <typename T, typename Layout>
 void check_generated_centers_output()
 {
@@ -402,6 +403,38 @@ TEST(MakeBlobsGeneratedCenters, DoubleRowMajor)
 TEST(MakeBlobsGeneratedCenters, DoubleColMajor)
 {
   check_generated_centers_output<double, raft::layout_f_contiguous>();
+}
+
+TEST(MakeBlobsGeneratedCenters, DryRun)
+{
+  constexpr int n_rows     = 32;
+  constexpr int n_cols     = 3;
+  constexpr int n_clusters = 4;
+  raft::resources handle;
+  auto data   = make_device_matrix<float, int, raft::layout_c_contiguous>(handle, n_rows, n_cols);
+  auto labels = make_device_vector<int, int>(handle, n_rows);
+  auto generated_centers =
+    make_device_matrix<float, int, raft::layout_c_contiguous>(handle, n_clusters, n_cols);
+
+  raft::execute_with_dry_run_check(
+    handle,
+    [&](raft::resources const& res) {
+      make_blobs<float, int, raft::layout_c_contiguous>(
+        res,
+        data.view(),
+        labels.view(),
+        n_clusters,
+        std::nullopt,
+        std::nullopt,
+        0.f,
+        true,
+        -3.f,
+        3.f,
+        42ULL,
+        raft::random::GenPC,
+        std::make_optional(generated_centers.view()));
+    },
+    raft::alloc_behavior::NO_ALLOCATIONS);
 }
 
 TEST(MakeBlobsShuffle, PermutesRowsDeterministically)

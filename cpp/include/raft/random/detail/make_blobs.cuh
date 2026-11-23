@@ -25,8 +25,13 @@ namespace random {
 
 namespace detail {
 
-// Generate labels in permuted row order before generating the data. Each row's
-// samples are then drawn from the center selected by its final label.
+/**
+ * @brief Generate cyclic cluster labels, optionally permuted across rows.
+ *
+ * The shuffled path uses a seeded bijection over all row indices. This keeps
+ * each cluster's label count while changing the row order. Data generation
+ * then uses each row's final label to select its center.
+ */
 template <typename IdxT>
 void generate_labels(IdxT* labels,
                      IdxT n_rows,

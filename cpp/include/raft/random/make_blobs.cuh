@@ -54,8 +54,11 @@ namespace random {
  *                                centers. Useful only if 'centers' is nullptr
  * @param[in]  seed               seed for the RNG
  * @param[in]  type               RNG type
- * @param[out] generated_centers  optional output for randomly generated centers;
- *                                must be nullptr when centers is provided
+ * @param[out] generated_centers  optional output for randomly generated centers
+ *                                [on device] [dim = n_clusters x n_cols]. Uses
+ *                                the same layout as `out` (column-major when
+ *                                `row_major` is false). Must be nullptr when
+ *                                centers is provided.
  */
 template <typename DataT, typename IdxT>
 void make_blobs(DataT* out,
@@ -127,8 +130,10 @@ void make_blobs(DataT* out,
  *                                centers. Useful only if 'centers' is nullptr
  * @param[in]  seed               seed for the RNG
  * @param[in]  type               RNG type
- * @param[out] generated_centers  optional output for randomly generated centers;
- *                                must be absent when centers is provided
+ * @param[out] generated_centers  optional output for randomly generated centers
+ *                                [on device] [dim = n_clusters x n_cols]. Uses
+ *                                the same row or column layout as `out`. Must
+ *                                be absent when centers is provided.
  */
 template <typename DataT, typename IdxT, typename layout>
 void make_blobs(
