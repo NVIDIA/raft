@@ -107,7 +107,7 @@ void segmented_sort_by_key(raft::resources const& handle,
                                              offsets,
                                              offsets + 1,
                                              0,
-                                             sizeof(ValT) * 8,
+                                             sizeof(KeyT) * 8,
                                              stream);
   } else {
     cub::DeviceSegmentedRadixSort::SortPairsDescending(nullptr,
@@ -121,7 +121,7 @@ void segmented_sort_by_key(raft::resources const& handle,
                                                        offsets,
                                                        offsets + 1,
                                                        0,
-                                                       sizeof(ValT) * 8,
+                                                       sizeof(KeyT) * 8,
                                                        stream);
   }
 
@@ -143,7 +143,7 @@ void segmented_sort_by_key(raft::resources const& handle,
                                              offsets,
                                              offsets + 1,
                                              0,
-                                             sizeof(ValT) * 8,
+                                             sizeof(KeyT) * 8,
                                              stream);
 
   } else {
@@ -159,7 +159,7 @@ void segmented_sort_by_key(raft::resources const& handle,
                                                        offsets,
                                                        offsets + 1,
                                                        0,
-                                                       sizeof(ValT) * 8,
+                                                       sizeof(KeyT) * 8,
                                                        stream);
   }
 

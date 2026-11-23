@@ -63,7 +63,8 @@ RAFT_DASK_BUILD_DIR=${REPODIR}/python/raft-dask/_skbuild
 PYLIBRAFT_BUILD_DIR=${REPODIR}/python/pylibraft/_skbuild
 BUILD_DIRS="${LIBRAFT_BUILD_DIR} ${PYLIBRAFT_BUILD_DIR} ${RAFT_DASK_BUILD_DIR}"
 
-CUDA_VERSION="${RAPIDS_CUDA_VERSION:-$(nvcc --version | sed -E -n 's/^.*release ([0-9]+\.[0-9]+).*$/\1/p')}"
+RAPIDS_CUDA_VERSION_MAJOR_MINOR="${RAPIDS_CUDA_VERSION%.*}"
+CUDA_VERSION="${RAPIDS_CUDA_VERSION_MAJOR_MINOR:-$(nvcc --version | sed -E -n 's/^.*release ([0-9]+\.[0-9]+).*$/\1/p')}"
 if [[ -z "$CUDA_VERSION" ]]; then
     echo "Could not determine CUDA version. Please set RAPIDS_CUDA_VERSION or make sure your $PATH contains a valid nvcc."
     exit 1
