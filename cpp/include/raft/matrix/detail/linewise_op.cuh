@@ -499,6 +499,58 @@ inline uint getOptimalGridSize()
   return OptimalSmOccupancy * static_cast<uint>(smCount * maxBlockSize / BlockSize);
 }
 
+/** Launch the unaligned tail independently of the vectorized main loop. */
+template <typename Type, typename IdxType, std::size_t MaxOffset, typename Lambda, typename... Vecs>
+void matrixLinewiseVecColsTail(Type* out,
+                               const Type* in,
+                               IdxType alignedOff,
+                               IdxType alignedEnd,
+                               IdxType rowLen,
+                               IdxType totalLen,
+                               Lambda op,
+                               cudaStream_t stream,
+                               const Vecs*... vecs)
+{
+  raft::launch_kernel(stream,
+                      dim3(2, 1, 1),
+                      dim3(MaxOffset, 1, 1),
+                      matrixLinewiseVecColsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
+                      out,
+                      in,
+                      alignedOff,
+                      alignedEnd,
+                      rowLen,
+                      totalLen,
+                      op,
+                      vecs...);
+}
+
+/** Launch the unaligned tail independently of the vectorized main loop. */
+template <typename Type, typename IdxType, std::size_t MaxOffset, typename Lambda, typename... Vecs>
+void matrixLinewiseVecRowsTail(Type* out,
+                               const Type* in,
+                               IdxType alignedOff,
+                               IdxType alignedEnd,
+                               IdxType rowLen,
+                               IdxType totalLen,
+                               Lambda op,
+                               cudaStream_t stream,
+                               const Vecs*... vecs)
+{
+  raft::launch_kernel(stream,
+                      dim3(2, 1, 1),
+                      dim3(MaxOffset, 1, 1),
+                      matrixLinewiseVecRowsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
+                      out,
+                      in,
+                      alignedOff,
+                      alignedEnd,
+                      rowLen,
+                      totalLen,
+                      op,
+                      vecs...);
+}
+
 template <typename Type,
           typename IdxType,
           std::size_t VecBytes,
@@ -549,18 +601,8 @@ void matrixLinewiseVecCols(Type* out,
   if (alignedLen < totalLen) {
     // should be not smaller than the warp size for better branching
     constexpr std::size_t MaxOffset = std::max(std::size_t(raft::WarpSize), VecBytes);
-    raft::launch_kernel(stream,
-                        dim3(2, 1, 1),
-                        dim3(MaxOffset, 1, 1),
-                        matrixLinewiseVecColsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
-                        out,
-                        in,
-                        alignedOff,
-                        alignedEnd,
-                        rowLen,
-                        totalLen,
-                        op,
-                        vecs...);
+    matrixLinewiseVecColsTail<Type, IdxType, MaxOffset, Lambda, Vecs...>(
+      out, in, alignedOff, alignedEnd, rowLen, totalLen, op, stream, vecs...);
   }
 }
 
@@ -685,18 +727,8 @@ void matrixLinewiseVecRows(Type* out,
   if (alignedLen < totalLen) {
     // should be not smaller than the warp size for better branching
     constexpr std::size_t MaxOffset = std::max(std::size_t(raft::WarpSize), VecBytes);
-    raft::launch_kernel(stream,
-                        dim3(2, 1, 1),
-                        dim3(MaxOffset, 1, 1),
-                        matrixLinewiseVecRowsTailKernel<Type, IdxType, MaxOffset, Lambda, Vecs...>,
-                        out,
-                        in,
-                        alignedOff,
-                        alignedEnd,
-                        rowLen,
-                        totalLen,
-                        op,
-                        vecs...);
+    matrixLinewiseVecRowsTail<Type, IdxType, MaxOffset, Lambda, Vecs...>(
+      out, in, alignedOff, alignedEnd, rowLen, totalLen, op, stream, vecs...);
   }
 }
 

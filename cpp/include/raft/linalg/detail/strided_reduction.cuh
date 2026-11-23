@@ -130,27 +130,21 @@ RAFT_KERNEL stridedReductionKernel(OutType* dots,
     raft::myAtomicReduce(dots + colStart, temp[myidx], reduce_op);
 }
 
+/** Launch the reduction independently of output initialization and the final transform. */
 template <typename InType,
-          typename OutType      = InType,
-          typename IdxType      = int,
-          typename MainLambda   = raft::identity_op,
-          typename ReduceLambda = raft::add_op,
-          typename FinalLambda  = raft::identity_op>
-void stridedReduction(OutType* dots,
-                      const InType* data,
-                      IdxType D,
-                      IdxType N,
-                      OutType init,
-                      cudaStream_t stream,
-                      bool inplace           = false,
-                      MainLambda main_op     = raft::identity_op(),
-                      ReduceLambda reduce_op = raft::add_op(),
-                      FinalLambda final_op   = raft::identity_op())
+          typename OutType,
+          typename IdxType,
+          typename MainLambda,
+          typename ReduceLambda>
+void stridedReductionLaunch(OutType* dots,
+                            const InType* data,
+                            IdxType D,
+                            IdxType N,
+                            OutType init,
+                            cudaStream_t stream,
+                            MainLambda main_op,
+                            ReduceLambda reduce_op)
 {
-  ///@todo: this extra should go away once we have eliminated the need
-  /// for atomics in stridedKernel (redesign for this is already underway)
-  if (!inplace) raft::linalg::unaryOp(dots, dots, D, raft::const_op(init), stream);
-
   ///@todo: this complication should go away once we have eliminated the need
   /// for atomics in stridedKernel (redesign for this is already underway)
   if constexpr (std::is_same<ReduceLambda, raft::add_op>::value &&
@@ -198,6 +192,30 @@ void stridedReduction(OutType* dots,
                         main_op,
                         reduce_op);
   }
+}
+
+template <typename InType,
+          typename OutType      = InType,
+          typename IdxType      = int,
+          typename MainLambda   = raft::identity_op,
+          typename ReduceLambda = raft::add_op,
+          typename FinalLambda  = raft::identity_op>
+void stridedReduction(OutType* dots,
+                      const InType* data,
+                      IdxType D,
+                      IdxType N,
+                      OutType init,
+                      cudaStream_t stream,
+                      bool inplace           = false,
+                      MainLambda main_op     = raft::identity_op(),
+                      ReduceLambda reduce_op = raft::add_op(),
+                      FinalLambda final_op   = raft::identity_op())
+{
+  ///@todo: this extra should go away once we have eliminated the need
+  /// for atomics in stridedKernel (redesign for this is already underway)
+  if (!inplace) raft::linalg::unaryOp(dots, dots, D, raft::const_op(init), stream);
+
+  stridedReductionLaunch(dots, data, D, N, init, stream, main_op, reduce_op);
 
   ///@todo: this complication should go away once we have eliminated the need
   /// for atomics in stridedKernel (redesign for this is already underway)
