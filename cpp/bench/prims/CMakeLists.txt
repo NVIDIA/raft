@@ -99,6 +99,8 @@ if(BUILD_PRIMS_BENCH)
     main.cpp
   )
 
+  ConfigureBench(NAME SOLVER_BENCH PATH solver/nnls.cu main.cpp)
+
   ConfigureBench(
     NAME SPARSE_BENCH PATH sparse/bitmap_to_csr.cu sparse/convert_csr.cu sparse/select_k_csr.cu
     sparse/svds.cu main.cpp
