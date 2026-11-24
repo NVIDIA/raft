@@ -24,7 +24,7 @@ namespace linalg {
 
 /**
  * @brief the wrapper of cublas gemm function
- *  It computes the following equation: C = alpha .* opA(A) * opB(B) + beta .* C
+ *  It computes the following equation: C = alpha .* opA(A) * opB(B) + beta .* C (+ bias)
  *
  * @tparam A_t the element type of A
  * @tparam B_t the element type of B
@@ -46,6 +46,8 @@ namespace linalg {
  * @param [inout] C column-major matrix of size [m, n]
  * @param [in] ldc leading dimension of C
  * @param [in] stream
+ * @param [in] bias optional device vector of m elements added to every column of C,
+ *   C[i, j] += bias[i], in the GEMM's epilogue (no extra pass over C); nullptr adds nothing
  */
 template <typename A_t, typename B_t, typename C_t, typename S_t, bool DevicePointerMode = false>
 void gemm(raft::resources const& handle,
@@ -62,10 +64,11 @@ void gemm(raft::resources const& handle,
           const S_t* beta,
           C_t* C,
           const int ldc,
-          cudaStream_t stream)
+          cudaStream_t stream,
+          const C_t* bias = nullptr)
 {
   return detail::legacy_gemm(
-    handle, trans_a, trans_b, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc, stream);
+    handle, trans_a, trans_b, m, n, k, alpha, A, lda, B, ldb, beta, C, ldc, stream, bias);
 }
 
 /**

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -27,7 +27,8 @@ void legacy_gemm(raft::resources const& res,
                  const S_T* beta,
                  C_T* C,
                  const int ldc,
-                 cudaStream_t stream)
+                 cudaStream_t stream,
+                 const C_T* bias = nullptr)
 {
   return legacy_matmul<DevicePointerMode, S_T, A_T, B_T, C_T>(res,
                                                               trans_a,
@@ -43,7 +44,8 @@ void legacy_gemm(raft::resources const& res,
                                                               beta,
                                                               C,
                                                               static_cast<uint64_t>(ldc),
-                                                              stream);
+                                                              stream,
+                                                              bias);
 }
 
 template <typename A_T, typename B_T, typename C_T, typename S_T>
