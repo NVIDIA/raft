@@ -11,13 +11,13 @@
 #include <raft/core/device_mdspan.hpp>
 #include <raft/core/device_resources.hpp>
 #include <raft/core/resource/cuda_stream.hpp>
+#include <raft/linalg/detail/pca_tsvd.cuh>
 #include <raft/linalg/eig.cuh>
 #include <raft/linalg/eltwise.cuh>
 #include <raft/linalg/matrix_vector.cuh>
 #include <raft/linalg/multiply.cuh>
 #include <raft/linalg/pca_types.hpp>
 #include <raft/linalg/transpose.cuh>
-#include <raft/linalg/tsvd.cuh>
 #include <raft/matrix/copy.cuh>
 #include <raft/matrix/init.cuh>
 #include <raft/matrix/ratio.cuh>

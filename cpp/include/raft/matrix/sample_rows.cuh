@@ -11,7 +11,7 @@
 #include <raft/core/logger.hpp>
 #include <raft/core/resources.hpp>
 #include <raft/matrix/detail/sample_rows.cuh>
-#include <raft/random/rng.cuh>
+#include <raft/random/rng_state.hpp>
 
 namespace raft {
 namespace matrix {
