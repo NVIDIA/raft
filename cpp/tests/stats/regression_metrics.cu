@@ -111,8 +111,14 @@ class RegressionTest : public ::testing::TestWithParam<RegressionInputs<T>> {
   double ref_median_abs_error   = 0;
 };
 
-const std::vector<RegressionInputs<float>> inputsf = {
-  {0.001f, 30, 1234ULL}, {0.001f, 100, 1234ULL}, {0.001f, 4000, 1234ULL}};
+// Odd and even lengths cover both median paths; the 1M+ lengths run more than one grid-stride pass.
+const std::vector<RegressionInputs<float>> inputsf = {{0.001f, 30, 1234ULL},
+                                                      {0.001f, 31, 1234ULL},
+                                                      {0.001f, 100, 1234ULL},
+                                                      {0.001f, 4000, 1234ULL},
+                                                      {0.001f, 4001, 1234ULL},
+                                                      {0.001f, 2000000, 1234ULL},
+                                                      {0.001f, 2000001, 1234ULL}};
 typedef RegressionTest<float> RegressionTestF;
 TEST_P(RegressionTestF, Result)
 {
@@ -123,8 +129,13 @@ TEST_P(RegressionTestF, Result)
 }
 INSTANTIATE_TEST_CASE_P(RegressionTests, RegressionTestF, ::testing::ValuesIn(inputsf));
 
-const std::vector<RegressionInputs<double>> inputsd = {
-  {0.001, 30, 1234ULL}, {0.001, 100, 1234ULL}, {0.001, 4000, 1234ULL}};
+const std::vector<RegressionInputs<double>> inputsd = {{0.001, 30, 1234ULL},
+                                                       {0.001, 31, 1234ULL},
+                                                       {0.001, 100, 1234ULL},
+                                                       {0.001, 4000, 1234ULL},
+                                                       {0.001, 4001, 1234ULL},
+                                                       {0.001, 2000000, 1234ULL},
+                                                       {0.001, 2000001, 1234ULL}};
 typedef RegressionTest<double> RegressionTestD;
 TEST_P(RegressionTestD, Result)
 {
