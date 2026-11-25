@@ -80,12 +80,20 @@ class RegressionTest : public ::testing::TestWithParam<RegressionInputs<T>> {
     uniform(handle, r, predictions.data(), params.len, T(-10.0), T(10.0));
     uniform(handle, r, ref_predictions.data(), params.len, T(-10.0), T(10.0));
 
-    regression_metrics(handle,
-                       raft::make_device_vector_view<const T>(predictions.data(), params.len),
-                       raft::make_device_vector_view<const T>(ref_predictions.data(), params.len),
-                       raft::make_host_scalar_view(&mean_abs_error),
-                       raft::make_host_scalar_view(&mean_squared_error),
-                       raft::make_host_scalar_view(&median_abs_error));
+    // Two length-n double buffers (absolute errors and their sorted copy) plus the sort workspace.
+    raft::execute_with_dry_run_check(
+      handle,
+      [&](raft::resources const& h) {
+        regression_metrics(
+          h,
+          raft::make_device_vector_view<const T>(predictions.data(), params.len),
+          raft::make_device_vector_view<const T>(ref_predictions.data(), params.len),
+          raft::make_host_scalar_view(&mean_abs_error),
+          raft::make_host_scalar_view(&mean_squared_error),
+          raft::make_host_scalar_view(&median_abs_error));
+      },
+      alloc_behavior::ARGUMENT_DRIVEN,
+      2 * sizeof(double) * params.len);
     std::vector<T> h_predictions(params.len, 0);
     std::vector<T> h_ref_predictions(params.len, 0);
     raft::update_host(h_predictions.data(), predictions.data(), params.len, stream);
