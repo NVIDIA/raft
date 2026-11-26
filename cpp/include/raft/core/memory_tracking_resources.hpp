@@ -18,7 +18,6 @@
 #include <raft/mr/statistics_adaptor.hpp>
 
 #include <rmm/mr/per_device_resource.hpp>
-#include <rmm/resource_ref.hpp>
 
 #include <cuda/stream>
 
@@ -155,13 +154,13 @@ class memory_tracking_resources : public resources {
   raft::mr::resource_monitor report_;
 
   raft::mr::host_resource old_host_;
-  raft::mr::device_resource old_device_;
+  cuda::mr::any_device_resource old_device_;
 
-  using host_stats_t  = raft::mr::statistics_adaptor<raft::mr::host_resource_ref>;
+  using host_stats_t  = raft::mr::statistics_adaptor<raft::mr::synchronous_host_resource_ref>;
   using host_notify_t = raft::mr::notifying_adaptor<host_stats_t>;
   std::unique_ptr<host_notify_t> host_adaptor_;
 
-  using device_stats_t  = raft::mr::statistics_adaptor<rmm::device_async_resource_ref>;
+  using device_stats_t  = raft::mr::statistics_adaptor<cuda::mr::device_resource_ref>;
   using device_notify_t = raft::mr::notifying_adaptor<device_stats_t>;
 
   std::unique_ptr<device_notify_t> device_adaptor_;
@@ -194,7 +193,7 @@ class memory_tracking_resources : public resources {
 
     // --- Host (global) ---
     {
-      host_stats_t sa{raft::mr::host_resource_ref{old_host_}};
+      host_stats_t sa{raft::mr::synchronous_host_resource_ref{old_host_}};
       report_.register_source("host", sa.get_stats());
       host_adaptor_ = std::make_unique<host_notify_t>(std::move(sa), report_.get_notifier());
       raft::mr::set_default_host_resource(*host_adaptor_);
@@ -202,7 +201,7 @@ class memory_tracking_resources : public resources {
 
     // --- Pinned ---
     {
-      using stats_t  = raft::mr::statistics_adaptor<raft::mr::host_device_resource_ref>;
+      using stats_t  = raft::mr::statistics_adaptor<cuda::mr::host_device_resource_ref>;
       using notify_t = raft::mr::notifying_adaptor<stats_t>;
       stats_t sa{pinned_ref};
       report_.register_source("pinned", sa.get_stats());
@@ -212,7 +211,7 @@ class memory_tracking_resources : public resources {
 
     // --- Managed ---
     {
-      using stats_t  = raft::mr::statistics_adaptor<raft::mr::host_device_resource_ref>;
+      using stats_t  = raft::mr::statistics_adaptor<cuda::mr::host_device_resource_ref>;
       using notify_t = raft::mr::notifying_adaptor<stats_t>;
       stats_t sa{managed_ref};
       report_.register_source("managed", sa.get_stats());
@@ -227,7 +226,7 @@ class memory_tracking_resources : public resources {
     // the originals alive, so it gets lazily rebuilt against the new device MR.
     cells_[resource::resource_type::THRUST_POLICY] = std::make_shared<resource::resource_cell>();
     {
-      device_stats_t sa{rmm::device_async_resource_ref{old_device_}};
+      device_stats_t sa{cuda::mr::device_resource_ref{old_device_}};
       report_.register_source("device", sa.get_stats());
       device_adaptor_ = std::make_unique<device_notify_t>(std::move(sa), report_.get_notifier());
       rmm::mr::set_per_device_resource(rmm::cuda_device_id{resource::get_device_id(*this)},
@@ -236,7 +235,7 @@ class memory_tracking_resources : public resources {
 
     // --- Workspace (track upstream to preserve limiting_resource_adaptor) ---
     {
-      using ws_stats_t  = raft::mr::statistics_adaptor<rmm::device_async_resource_ref>;
+      using ws_stats_t  = raft::mr::statistics_adaptor<cuda::mr::device_resource_ref>;
       using ws_notify_t = raft::mr::notifying_adaptor<ws_stats_t>;
       ws_stats_t sa{upstream_ref};
       report_.register_source("workspace", sa.get_stats());
@@ -246,7 +245,7 @@ class memory_tracking_resources : public resources {
 
     // --- Large workspace ---
     {
-      using lws_stats_t  = raft::mr::statistics_adaptor<rmm::device_async_resource_ref>;
+      using lws_stats_t  = raft::mr::statistics_adaptor<cuda::mr::device_resource_ref>;
       using lws_notify_t = raft::mr::notifying_adaptor<lws_stats_t>;
       lws_stats_t sa{lws_ref};
       report_.register_source("large_workspace", sa.get_stats());

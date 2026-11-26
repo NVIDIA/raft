@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -12,9 +12,10 @@
 
 #include <raft/core/detail/macros.hpp>
 #include <raft/core/resources.hpp>
+#include <raft/mr/host_device_resource.hpp>
 #include <raft/random/random_types.hpp>
 
-#include <rmm/resource_ref.hpp>
+#include <rmm/mr/per_device_resource.hpp>
 
 namespace raft {
 namespace random {
@@ -26,7 +27,7 @@ namespace random {
 
 template <typename ValueType>
 void multi_variable_gaussian(raft::resources const& handle,
-                             rmm::device_async_resource_ref mem_resource,
+                             cuda::mr::device_resource_ref mem_resource,
                              std::optional<raft::device_vector_view<const ValueType, int>> x,
                              raft::device_matrix_view<ValueType, int, raft::col_major> P,
                              raft::device_matrix_view<ValueType, int, raft::col_major> X,
