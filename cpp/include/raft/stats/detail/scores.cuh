@@ -24,6 +24,7 @@
 #include <thrust/reduce.h>
 
 #include <algorithm>
+#include <cstdint>
 #include <memory>
 
 #define N_THREADS 512
@@ -117,7 +118,10 @@ RAFT_KERNEL reg_metrics_kernel(
   // same two addresses, which serialized the kernel.
   double abs_diff_sum = 0;
   double sq_diff_sum  = 0;
-  for (int i = threadIdx.x + blockIdx.x * BLOCK_SIZE; i < n; i += BLOCK_SIZE * gridDim.x) {
+  // 64-bit index and stride: with n near INT_MAX, the last int increment could wrap negative.
+  const int64_t stride = static_cast<int64_t>(BLOCK_SIZE) * gridDim.x;
+  for (int64_t i = threadIdx.x + static_cast<int64_t>(blockIdx.x) * BLOCK_SIZE; i < n;
+       i += stride) {
     double diff     = predictions[i] - ref_predictions[i];
     double abs_diff = abs(diff);
     abs_diff_sum += abs_diff;
@@ -185,7 +189,8 @@ void regression_metrics(bool dry_run,
 
   constexpr int thread_cnt = 256;
   // Grid-stride loop: enough blocks to fill the GPU, and one global atomic per block.
-  int block_cnt = std::min(raft::ceildiv(n, thread_cnt), 8 * raft::getMultiProcessorCount());
+  int block_cnt = static_cast<int>(
+    std::min<int64_t>(raft::ceildiv<int64_t>(n, thread_cnt), 8 * raft::getMultiProcessorCount()));
   std::vector<double> mean_errors(2);
 
   RAFT_CUDA_TRY(cudaMemsetAsync(tmp_sums.data(), 0, 2 * sizeof(double), stream));
