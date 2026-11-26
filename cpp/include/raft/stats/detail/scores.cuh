@@ -16,12 +16,15 @@
 #include <rmm/device_scalar.hpp>
 #include <rmm/device_uvector.hpp>
 
+#include <cub/block/block_reduce.cuh>
 #include <cub/device/device_radix_sort.cuh>
 #include <thrust/count.h>
 #include <thrust/device_ptr.h>
 #include <thrust/execution_policy.h>
 #include <thrust/reduce.h>
 
+#include <algorithm>
+#include <cstdint>
 #include <memory>
 
 #define N_THREADS 512
@@ -106,32 +109,38 @@ float accuracy_score(bool dry_run,
   return accuracy;
 }
 
-template <typename T>
+template <typename T, int BLOCK_SIZE>
 RAFT_KERNEL reg_metrics_kernel(
   const T* predictions, const T* ref_predictions, int n, double* abs_diffs, double* tmp_sums)
 {
-  int tid = threadIdx.x + blockIdx.x * blockDim.x;
-  __shared__ double shmem[2];  // {abs_difference_sum, squared difference sum}
-
-  for (int i = threadIdx.x; i < 2; i += blockDim.x) {
-    shmem[i] = 0;
-  }
-  __syncthreads();
-
-  for (int i = tid; i < n; i += blockDim.x * gridDim.x) {
+  // Each thread accumulates its own sums and the block reduces them once. A shared-memory
+  // double atomicAdd per element compiles to a CAS loop, and all 32 lanes of a warp hit the
+  // same two addresses, which serialized the kernel.
+  double abs_diff_sum = 0;
+  double sq_diff_sum  = 0;
+  // 64-bit index and stride: with n near INT_MAX, the last int increment could wrap negative.
+  const int64_t stride = static_cast<int64_t>(BLOCK_SIZE) * gridDim.x;
+  for (int64_t i = threadIdx.x + static_cast<int64_t>(blockIdx.x) * BLOCK_SIZE; i < n;
+       i += stride) {
     double diff     = predictions[i] - ref_predictions[i];
     double abs_diff = abs(diff);
-    raft::myAtomicAdd(&shmem[0], abs_diff);
-    raft::myAtomicAdd(&shmem[1], diff * diff);
+    abs_diff_sum += abs_diff;
+    sq_diff_sum += diff * diff;
 
     // update absolute difference in global memory for subsequent abs. median computation
     abs_diffs[i] = abs_diff;
   }
-  __syncthreads();
+
+  using BlockReduce = cub::BlockReduce<double, BLOCK_SIZE>;
+  __shared__ typename BlockReduce::TempStorage abs_storage;
+  __shared__ typename BlockReduce::TempStorage sq_storage;
+  double block_abs_diff_sum = BlockReduce(abs_storage).Sum(abs_diff_sum);
+  double block_sq_diff_sum  = BlockReduce(sq_storage).Sum(sq_diff_sum);
 
   // Update tmp_sum w/ total abs_difference_sum and squared difference sum.
-  for (int i = threadIdx.x; i < 2; i += blockDim.x) {
-    raft::myAtomicAdd(&tmp_sums[i], shmem[i]);
+  if (threadIdx.x == 0) {
+    raft::myAtomicAdd(&tmp_sums[0], block_abs_diff_sum);
+    raft::myAtomicAdd(&tmp_sums[1], block_sq_diff_sum);
   }
 }
 
@@ -176,19 +185,20 @@ void regression_metrics(bool dry_run,
                                                stream));
   rmm::device_uvector<char> temp_storage_v(temp_storage_bytes, stream);
 
-  std::vector<double> mean_errors(2);
-  std::vector<double> h_sorted_abs_diffs(n);
-  int thread_cnt = 256;
-  int block_cnt  = raft::ceildiv(n, thread_cnt);
-
   if (dry_run) { return; }
+
+  constexpr int thread_cnt = 256;
+  // Grid-stride loop: enough blocks to fill the GPU, and one global atomic per block.
+  int block_cnt = static_cast<int>(
+    std::min<int64_t>(raft::ceildiv<int64_t>(n, thread_cnt), 8 * raft::getMultiProcessorCount()));
+  std::vector<double> mean_errors(2);
 
   RAFT_CUDA_TRY(cudaMemsetAsync(tmp_sums.data(), 0, 2 * sizeof(double), stream));
 
   raft::launch_kernel(stream,
                       block_cnt,
                       thread_cnt,
-                      reg_metrics_kernel<T>,
+                      reg_metrics_kernel<T, thread_cnt>,
                       predictions,
                       ref_predictions,
                       n,
@@ -211,15 +221,16 @@ void regression_metrics(bool dry_run,
                                                8 * sizeof(double),
                                                stream));
 
-  raft::update_host(h_sorted_abs_diffs.data(), sorted_abs_diffs.data(), n, stream);
+  // The median needs only the middle element (odd n) or the middle two (even n), so copy just
+  // those to the host rather than all n sorted values.
+  int middle = n / 2;
+  int first  = (n % 2 == 1) ? middle : middle - 1;
+  int count  = (n % 2 == 1) ? 1 : 2;
+  double h_middle[2];
+  raft::update_host(h_middle, sorted_abs_diffs.data() + first, count, stream);
   raft::interruptible::synchronize(stream);
 
-  int middle = n / 2;
-  if (n % 2 == 1) {
-    median_abs_error = h_sorted_abs_diffs[middle];
-  } else {
-    median_abs_error = (h_sorted_abs_diffs[middle] + h_sorted_abs_diffs[middle - 1]) / 2;
-  }
+  median_abs_error = (count == 1) ? h_middle[0] : (h_middle[0] + h_middle[1]) / 2;
 }
 }  // namespace detail
 }  // namespace stats
