@@ -28,7 +28,7 @@ namespace stats {
  * @tparam rowMajor: whether the input data is row or col major
  * @tparam Type the data type
  * @tparam IdxType Integer type used to for addressing
- * @param output the output mean vector
+ * @param output the output sum vector
  * @param input the input matrix
  * @param D number of columns of data
  * @param N number of rows of data
@@ -56,7 +56,7 @@ void sum(Type* output, const Type* input, IdxType D, IdxType N, cudaStream_t str
  * @tparam layout_t Layout type of the input matrix.
  * @param[in]  handle the raft handle
  * @param[in]  input the input matrix
- * @param[out] output the output mean vector
+ * @param[out] output the output sum vector
  */
 template <typename value_t, typename idx_t, typename layout_t>
 void sum(raft::resources const& handle,

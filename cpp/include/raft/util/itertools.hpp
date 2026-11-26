@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -23,7 +23,7 @@ namespace util::itertools {
  * Note that it's not optimized for use with large lists / many lists in performance-critical code!
  *
  * @tparam S    Type of the output structures.
- * @tparam Args Types of the elements of the initilizer lists, matching the types of the first
+ * @tparam Args Types of the elements of the initializer lists, matching the types of the first
  *              fields of the structure (if the structure has more fields, some might be initialized
  *              with their default value).
  * @param lists One or more initializer lists.

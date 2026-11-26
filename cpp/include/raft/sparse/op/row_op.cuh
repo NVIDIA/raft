@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __SPARSE_ROW_OP_H
@@ -16,13 +16,13 @@ namespace op {
 
 /**
  * @brief Perform a custom row operation on a CSR matrix in batches.
- * @tparam T numerical type of row_ind array
- * @tparam TPB_X number of threads per block to use for underlying kernel
+ * @tparam Index_ integer type of row_ind array
  * @tparam Lambda type of custom operation function
  * @param row_ind the CSR row_ind array to perform parallel operations over
  * @param n_rows total number vertices in graph
  * @param nnz number of non-zeros
- * @param op custom row operation functor accepting the row and beginning index.
+ * @param op custom row operation functor accepting the row, its start index and its stop
+ *           index (one past the last non-zero of the row).
  * @param stream cuda stream to use
  */
 template <typename Index_, typename Lambda = auto(Index_, Index_, Index_)->void>

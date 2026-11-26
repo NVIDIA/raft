@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -32,7 +32,7 @@ template <typename T>
 struct is_device_mdspan<T, true> : std::bool_constant<T::accessor_type::is_device_accessible> {};
 
 /**
- * @\brief Boolean to determine if template type T is either raft::device_mdspan or a derived type
+ * @brief Boolean to determine if template type T is either raft::device_mdspan or a derived type
  */
 template <typename T>
 using is_device_mdspan_t = is_device_mdspan<T, is_mdspan_v<T>>;
@@ -44,7 +44,7 @@ template <typename T>
 using is_output_device_mdspan_t = is_device_mdspan<T, is_output_mdspan_v<T>>;
 
 /**
- * @\brief Boolean to determine if variadic template types Tn are either raft::device_mdspan or a
+ * @brief Boolean to determine if variadic template types Tn are either raft::device_mdspan or a
  * derived type
  */
 template <typename... Tn>

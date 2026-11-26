@@ -34,7 +34,7 @@ struct slice_coordinates {
 };
 
 /**
- * @brief Slice a matrix (in-place)
+ * @brief Slice a matrix
  * @tparam m_t type of matrix elements
  * @tparam idx_t integer type used for indexing
  * @param[in] handle: raft handle

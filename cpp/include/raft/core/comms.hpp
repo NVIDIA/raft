@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -428,7 +428,7 @@ class comms_t {
   }
 
   /**
-   * Gathers data from all ranks and delivers to combined data to all ranks
+   * Gathers data from all ranks and delivers the combined data to all ranks
    * @tparam value_t datatype of underlying buffers
    * @param sendbuf buffer containing data to send
    * @param recvbuf buffer containing data to receive
@@ -454,10 +454,10 @@ class comms_t {
   }
 
   /**
-   * Gathers data from each rank onto all ranks
+   * Gathers data from each rank onto the root rank
    * @tparam value_t datatype of underlying buffers
    * @param sendbuff buffer containing data to gather
-   * @param recvbuff buffer containing gathered data from all ranks
+   * @param recvbuff buffer containing gathered data from all ranks (only used on root)
    * @param sendcount number of elements in send buffer
    * @param root rank to store the results
    * @param stream CUDA stream to synchronize operation
@@ -478,7 +478,7 @@ class comms_t {
   }
 
   /**
-   * Gathers data from all ranks and delivers to combined data to all ranks
+   * Gathers data from all ranks and delivers the combined data to the root rank
    * @tparam value_t datatype of underlying buffers
    * @param sendbuf buffer containing data to send
    * @param recvbuf buffer containing data to receive

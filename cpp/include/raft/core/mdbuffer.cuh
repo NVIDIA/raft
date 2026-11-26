@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -940,7 +940,7 @@ struct mdbuffer {
 };
 
 /**
- * @\brief Template checks and helpers to determine if type T is an mdbuffer
+ * @brief Template checks and helpers to determine if type T is an mdbuffer
  *         or a derived type
  */
 
@@ -975,7 +975,7 @@ template <typename T>
 using is_output_mdbuffer_t = is_output_mdbuffer<T>;
 
 /**
- * @\brief Boolean to determine if variadic template types Tn are
+ * @brief Boolean to determine if variadic template types Tn are
  *          raft::mdbuffer or derived types
  */
 template <typename... Tn>

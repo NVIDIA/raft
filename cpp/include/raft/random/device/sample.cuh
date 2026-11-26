@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -60,7 +60,7 @@ DI void warp_random_sample(rng_t& rng, T& weight, i_t& idx)
  * values.
  * @param rng random number generator, must have next_u32() function
  * @param shbuf shared memory region needed for storing intermediate results. It
- *             must alteast be of size: `(sizeof(T) + sizeof(i_t)) * WarpSize`
+ *             must at least be of size: `(sizeof(T) + sizeof(i_t)) * WarpSize`
  * @param weight weight of the rank/index.
  * @param idx index to be used as rank
  * @return only the thread0 will contain valid reduced result

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __CHOLESKY_R1_UPDATE_H
@@ -60,15 +60,15 @@ namespace linalg {
  *                                       stream);
  * rmm::device_uvector<char> workspace(n_bytes, stream);
  *
- * for (n=1; n<=n_rows; rank++) {
+ * for (n=1; n<=n_rows; n++) {
  *   // Calculate a new row/column of matrix A into A_new
  *   // ...
- *   // Copy new row to L[rank-1,:]
+ *   // Copy new row to L[n-1,:]
  *   RAFT_CUBLAS_TRY(cublasCopy(resource::get_cublas_handle(handle), n - 1, A_new, 1,
  *                           L + n - 1, ld_L, stream));
  *   // Update Cholesky factorization
  *   raft::linalg::choleskyRank1Update(
- *       handle, L, rank, ld_L, workspace, &n_bytes, CUBLAS_FILL_MODE_LOWER,
+ *       handle, L, n, ld_L, workspace, &n_bytes, CUBLAS_FILL_MODE_LOWER,
  *       stream);
  * }
  * Now L stores the Cholesky decomposition of A: A = L * L.T
@@ -79,10 +79,10 @@ namespace linalg {
  * // Initialize arrays
  * int ld_U = n_rows;
  * rmm::device_uvector<math_t> U(ld_U * n_rows, stream);
- * raft::linalg::choleskyRank1Update(handle, L, n_rows, ld_U, nullptr,
+ * raft::linalg::choleskyRank1Update(handle, U, n_rows, ld_U, nullptr,
  *                                       &n_bytes, CUBLAS_FILL_MODE_UPPER,
  *                                       stream);
- * rmm::device_uvector<char> workspace(stream, n_bytes, stream);
+ * rmm::device_uvector<char> workspace(n_bytes, stream);
  *
  * for (n=1; n<=n_rows; n++) {
  *   // Calculate a new row/column of matrix A into array A_new

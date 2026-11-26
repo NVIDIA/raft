@@ -234,7 +234,7 @@ class CSRAdjGraphTest : public ::testing::TestWithParam<CSRAdjGraphInputs<index_
     for (index_t i = 0; i < params.n_rows; ++i) {
       ASSERT_EQ(row_counters_host[i], nnz_per_row) << "where i = " << i;
     }
-    // 2. Check that all column indices are divisble by divisor
+    // 2. Check that all column indices are divisible by divisor
     for (index_t i = 0; i < params.n_rows; ++i) {
       index_t row_base = row_ind_host[i];
       for (index_t j = 0; j < nnz_per_row; ++j) {

@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2020-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -47,7 +47,7 @@ class Comms:
         from dask_cuda import LocalCUDACluster
         from dask.distributed import Client
 
-        from raft.dask.common import Comms, local_handle
+        from raft_dask.common import Comms, local_handle
 
         cluster = LocalCUDACluster()
         client = Client(cluster)
@@ -62,8 +62,8 @@ class Comms:
                                  comms.sessionId,
                                  workers=[w],
                                  pure=False) # Don't memoize
-                       for w in cb.worker_addresses]
-        wait(dfs, timeout=5)
+                       for w in comms.worker_addresses]
+        wait(futures, timeout=5)
 
         comms.destroy()
         client.close()
@@ -573,9 +573,7 @@ def _func_build_handle(
                    and not the client)
     """
     if verbose:
-        dask_worker.log_event(
-            topic="info", msg="Finished injecting comms on handle."
-        )
+        dask_worker.log_event(topic="info", msg="Injecting comms on handle.")
 
     handle = Handle(n_streams=streams_per_handle)
 

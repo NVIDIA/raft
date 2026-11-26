@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2020-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
@@ -110,7 +110,7 @@ def parse_args():
     if args.build_dir is None:
         args.build_dir = os.path.dirname(args.cdb)
     if not os.path.isdir(args.thrust_dir):
-        raise Exception("Cannot find custom thrust dir '%s" % args.thrust_dir)
+        raise Exception("Cannot find custom thrust dir '%s'" % args.thrust_dir)
     return args
 
 

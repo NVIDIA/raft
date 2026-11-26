@@ -103,7 +103,7 @@ double mutual_info_score(bool dry_run,
 {
   int numUniqueClasses = upperLabelRange - lowerLabelRange + 1;
 
-  // declaring, allocating and initializing memory for the contingency marix
+  // declaring, allocating and initializing memory for the contingency matrix
   rmm::device_uvector<int> dContingencyMatrix(numUniqueClasses * numUniqueClasses, stream);
   if (!dry_run) {
     RAFT_CUDA_TRY(cudaMemsetAsync(

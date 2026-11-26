@@ -1,5 +1,5 @@
 #
-# SPDX-FileCopyrightText: Copyright (c) 2022-2025, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -87,7 +87,7 @@ cdef extern from "<ostream>" namespace "std" nogil:
         pass
 
 cdef extern from "raft/core/mdspan.hpp" namespace "raft" nogil:
-    cdef cppclass dextents[IndentType, Rank]:
+    cdef cppclass dextents[IndexType, Rank]:
         pass
 
 cdef extern from "raft/core/serialize.hpp" namespace "raft" nogil:

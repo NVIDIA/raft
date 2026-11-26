@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -121,14 +121,14 @@ constexpr bool is_host_csr_sparsity_preserving_v = std::disjunction_v<
  * `resize()` invoked on the instance once the sparsity is known.
  *
  * @code{.cpp}
- * #include <raft/core/host_resources.hpp>
+ * #include <raft/core/resources.hpp>
  * #include <raft/core/host_csr_matrix.hpp>
  *
  * int n_rows = 100000;
  * int n_cols = 10000;
  *
  * raft::resources handle;
- * csr_matrix = raft::make_host_csr_matrix(handle, n_rows, n_cols);
+ * auto csr_matrix = raft::make_host_csr_matrix<float>(handle, n_rows, n_cols);
  * ...
  * // compute expected sparsity
  * ...
@@ -173,12 +173,13 @@ auto make_host_csr_matrix(raft::resources const& handle,
  * int n_cols = 10000;
  *
  * raft::resources handle;
- * coo_structure = raft::make_host_compressed_structure(handle, n_rows, n_cols);
+ * auto csr_structure = raft::make_host_compressed_structure(handle, n_rows, n_cols);
  * ...
  * // compute expected sparsity
  * ...
+ * int nnz = 5000;
  * csr_structure.initialize_sparsity(nnz);
- * csr_matrix = raft::make_host_csr_matrix(handle, csr_structure.view());
+ * auto csr_matrix = raft::make_host_csr_matrix<float>(handle, csr_structure.view());
  * @endcode
 
  *
@@ -202,9 +203,9 @@ auto make_host_csr_matrix(raft::resources const& handle,
 }
 
 /**
- * Create a non-owning sparse matrix view in the coordinate format. This is sparsity-preserving,
- * meaning that the underlying sparsity is known and cannot be changed. Use the sparsity-owning
- * coo_matrix if sparsity needs to be mutable.
+ * Create a non-owning sparse matrix view in the compressed-sparse row format. This is
+ * sparsity-preserving, meaning that the underlying sparsity is known and cannot be changed. Use the
+ * sparsity-owning csr_matrix if sparsity needs to be mutable.
  *
  * @code{.cpp}
  * #include <raft/core/resources.hpp>
@@ -218,8 +219,8 @@ auto make_host_csr_matrix(raft::resources const& handle,
  * float* h_elm_ptr = ...;
  *
  * raft::resources handle;
- * csr_structure = raft::make_host_compressed_structure(handle, n_rows, n_cols, nnz);
- * csr_matrix_view = raft::make_host_csr_matrix_view(handle, h_elm_ptr, csr_structure.view());
+ * auto csr_structure = raft::make_host_compressed_structure(handle, n_rows, n_cols, nnz);
+ * auto csr_matrix_view = raft::make_host_csr_matrix_view(h_elm_ptr, csr_structure.view());
  * @endcode
  *
  * @tparam ElementType
@@ -244,7 +245,7 @@ auto make_host_csr_matrix_view(
 /**
  * Create a non-owning sparse matrix view in the compressed-sparse row format. This is
  * sparsity-preserving, meaning that the underlying sparsity is known and cannot be changed. Use the
- * sparsity-owning coo_matrix if sparsity needs to be mutable.
+ * sparsity-owning csr_matrix if sparsity needs to be mutable.
  *
  * @code{.cpp}
  * #include <raft/core/resources.hpp>
@@ -259,8 +260,8 @@ auto make_host_csr_matrix_view(
  * raft::host_span<float> h_elm_ptr;
  *
  * raft::resources handle;
- * csr_structure = raft::make_host_compressed_structure(handle, n_rows, n_cols, nnz);
- * csr_matrix_view = raft::make_host_csr_matrix_view(handle, h_elm_ptr, csr_structure.view());
+ * auto csr_structure = raft::make_host_compressed_structure(handle, n_rows, n_cols, nnz);
+ * auto csr_matrix_view = raft::make_host_csr_matrix_view(h_elm_ptr, csr_structure.view());
  * @endcode
  *
  * @tparam ElementType
@@ -298,12 +299,12 @@ auto make_host_csr_matrix_view(
  * int nnz = 5000;
  *
  * raft::resources handle;
- * csr_structure = raft::make_host_compressed_structure(handle, n_rows, n_cols, nnz);
+ * auto csr_structure = raft::make_host_compressed_structure(handle, n_rows, n_cols, nnz);
  * ...
  * // compute expected sparsity
  * ...
  * csr_structure.initialize_sparsity(nnz);
- * @endcode *
+ * @endcode
  *
  * @tparam IndptrType
  * @tparam IndicesType
@@ -343,12 +344,11 @@ auto make_host_compressed_structure(raft::resources const& handle,
  * int *indices = ...;
  *
  * raft::resources handle;
- * csr_structure = raft::make_host_compressed_structure_view(handle, indptr, indices, n_rows,
- * n_cols, nnz);
+ * auto csr_structure =
+ *   raft::make_host_compressed_structure_view(indptr, indices, n_rows, n_cols, nnz);
  * @endcode
  *
  *
- * @tparam ElementType
  * @tparam IndptrType
  * @tparam IndicesType
  * @tparam NZType
@@ -389,8 +389,7 @@ auto make_host_compressed_structure_view(
  * raft::host_span<int> indices;
  *
  * raft::resources handle;
- * csr_structure = raft::make_host_compressed_structure_view(handle, indptr, indices, n_rows,
- * n_cols);
+ * auto csr_structure = raft::make_host_compressed_structure_view(indptr, indices, n_cols);
  * @endcode
  *
  * @tparam IndptrType

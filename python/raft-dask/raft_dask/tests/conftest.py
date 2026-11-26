@@ -93,9 +93,7 @@ def pytest_addoption(parser):
 
 def pytest_collection_modifyitems(config, items):
     if config.getoption("--run_ucx"):
-        skip_others = pytest.mark.skip(
-            reason="only runs when --run_ucx is not specified"
-        )
+        skip_others = pytest.mark.skip(reason="--run_ucx runs only UCX tests")
         for item in items:
             if "ucx" not in item.keywords:
                 item.add_marker(skip_others)

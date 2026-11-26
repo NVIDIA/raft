@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2021-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -32,7 +32,7 @@ using mpi_comms = detail::mpi_comms;
  * #include <raft/core/device_mdarray.hpp>
  *
  * MPI_Comm mpi_comm;
- * raft::raft::resources handle;
+ * raft::resources handle;
  *
  * initialize_mpi_comms(&handle, mpi_comm);
  * ...

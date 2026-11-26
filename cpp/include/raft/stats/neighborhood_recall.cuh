@@ -98,7 +98,7 @@ void neighborhood_recall(
     RAFT_EXPECTS(distances.value().extent(0) == ref_distances.value().extent(0),
                  "The number of rows in distances and reference distances should be equal");
     RAFT_EXPECTS(distances.value().extent(1) == ref_distances.value().extent(1),
-                 "The number of columns in indices and reference indices should be equal");
+                 "The number of columns in distances and reference distances should be equal");
 
     RAFT_EXPECTS(indices.extent(0) == distances.value().extent(0),
                  "The number of rows in indices and distances should be equal");

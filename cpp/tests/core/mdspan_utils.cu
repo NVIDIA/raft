@@ -221,7 +221,7 @@ TEST(MDArray, Reshape) { test_reshape(); }
 
 void test_const_mdspan()
 {
-  // 3d host array
+  // 2d host array
   {
     raft::resources handle;
     using two_d_extents = extents<int, 5, 5>;

@@ -44,7 +44,7 @@ void csr_row_normalize_l1(const indT* ia,  // csr row ex_scan (sorted by row)
  * @param vals: data array
  * @param nnz: size of data array
  * @param m: size of row_ind array
- * @param result: l1 normalized data array
+ * @param result: L_inf normalized data array
  * @param stream: cuda stream to use
  */
 template <typename T>

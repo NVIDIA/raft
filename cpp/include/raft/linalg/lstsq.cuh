@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2018-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __LSTSQ_H
@@ -178,10 +178,8 @@ void lstsq_svd_jacobi(raft::resources const& handle,
  *
  * @tparam ValueType the data-type of input/output
  * @param[in] handle raft::resources
- * @param[inout] A input raft::device_matrix_view
- *            Warning: the content of this matrix is modified by the cuSOLVER routines.
- * @param[inout] b input target raft::device_vector_view
- *            Warning: the content of this vector is modified by the cuSOLVER routines.
+ * @param[in] A input raft::device_matrix_view
+ * @param[in] b input target raft::device_vector_view
  * @param[out] w output coefficient raft::device_vector_view
  */
 template <typename ValueType, typename IndexType>

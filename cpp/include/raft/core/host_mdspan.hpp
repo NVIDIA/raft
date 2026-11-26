@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -32,7 +32,7 @@ template <typename T>
 struct is_host_mdspan<T, true> : std::bool_constant<T::accessor_type::is_host_accessible> {};
 
 /**
- * @\brief Boolean to determine if template type T is either raft::host_mdspan or a derived type
+ * @brief Boolean to determine if template type T is either raft::host_mdspan or a derived type
  */
 template <typename T>
 using is_host_mdspan_t = is_host_mdspan<T, is_mdspan_v<T>>;
@@ -44,7 +44,7 @@ template <typename T>
 using is_output_host_mdspan_t = is_host_mdspan<T, is_output_mdspan_v<T>>;
 
 /**
- * @\brief Boolean to determine if variadic template types Tn are either raft::host_mdspan or a
+ * @brief Boolean to determine if variadic template types Tn are either raft::host_mdspan or a
  * derived type
  */
 template <typename... Tn>
@@ -144,7 +144,7 @@ auto constexpr make_host_aligned_matrix_view(ElementType* ptr, IndexType n_rows,
  *
  * @tparam ElementType the data type of the matrix elements
  * @tparam IndexType the index type of the extents
- * @param[in] ptr on device to wrap
+ * @param[in] ptr on host to wrap
  */
 template <typename ElementType, typename IndexType = std::uint32_t>
 auto constexpr make_host_scalar_view(ElementType* ptr)

@@ -103,8 +103,8 @@ class adjustedRandIndexTest : public ::testing::TestWithParam<adjustedRandIndexP
           b[i] += hGoldenOutput[j * numUniqueClasses + i];
         }
       }
-      // claculating the sum of number pairwise points in ever column sum
-      // claculating the sum of number pairwise points in ever row sum
+      // calculating the sum of number pairwise points in every column sum
+      // calculating the sum of number pairwise points in every row sum
       for (int i = 0; i < numUniqueClasses; ++i) {
         sumOfAiCTwo += ((a[i]) * (a[i] - 1)) / 2;
         sumOfBiCTwo += ((b[i]) * (b[i] - 1)) / 2;
