@@ -82,7 +82,7 @@ inline const char* cublas_error_to_string(cublasStatus_t err)
     cublasStatus_t const status = (call);                                                  \
     if (CUBLAS_STATUS_SUCCESS != status) {                                                 \
       throw raft::cublas_error(                                                            \
-        raft::format_error_message(std::source_location::current(),                        \
+        raft::format_error_message(raft::source_location::current(),                       \
                                    "cuBLAS error encountered at: ",                        \
                                    "call='%s', Reason=%d:%s",                              \
                                    #call,                                                  \

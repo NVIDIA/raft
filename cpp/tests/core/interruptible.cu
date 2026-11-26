@@ -128,7 +128,7 @@ class capturing_stream {
 
 /** A utility synchronizing on behalf of its caller. */
 void sync_on_behalf_of_caller(raft::resources const& res,
-                              std::source_location location = std::source_location::current())
+                              raft::source_location location = raft::source_location::current())
 {
   resource::sync_stream(res, location);
 }
@@ -151,7 +151,11 @@ TEST(Raft, InterruptibleSynchronizeBlamesTheCallSite)
   EXPECT_EQ(caught.find("interruptible.hpp"), std::string::npos) << caught;
   std::string re_exp{R"(CUDA error encountered at: file=.*interruptible\.cu line=)"};
   re_exp += std::to_string(sync_line);
+#if defined(RAFT_COMPACT_DIAGNOSTICS) && RAFT_COMPACT_DIAGNOSTICS
+  re_exp += R"(: )";
+#else
   re_exp += R"( function=.*InterruptibleSynchronizeBlamesTheCallSite.*: )";
+#endif
   re_exp += R"(call='cudaStreamQuery', Reason=.*)";
   EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
     << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
@@ -178,7 +182,11 @@ TEST(Raft, SyncStreamBlamesTheCallSite)
     EXPECT_EQ(caught.find(implementation), std::string::npos) << caught;
   }
   std::string re_exp{R"(CUDA error encountered at: file=.*interruptible\.cu line=\d+)"};
+#if defined(RAFT_COMPACT_DIAGNOSTICS) && RAFT_COMPACT_DIAGNOSTICS
+  re_exp += R"(: )";
+#else
   re_exp += R"( function=.*SyncStreamBlamesTheCallSite.*: )";
+#endif
   re_exp += R"(call='cudaStreamQuery', Reason=.*)";
   EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
     << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
@@ -198,7 +206,11 @@ TEST(Raft, InterruptedExceptionBlamesTheCallSite)
 
   std::string re_exp{R"(RAFT failure at file=.*interruptible\.cu line=)"};
   re_exp += std::to_string(yield_line);
+#if defined(RAFT_COMPACT_DIAGNOSTICS) && RAFT_COMPACT_DIAGNOSTICS
+  re_exp += R"(: )";
+#else
   re_exp += R"( function=.*InterruptedExceptionBlamesTheCallSite.*: )";
+#endif
   re_exp += R"(The work in this thread was cancelled\.)";
   EXPECT_TRUE(std::regex_search(caught, std::regex(re_exp)))
     << "message:'" << caught << "'\nexpected regex:'" << re_exp << "'";
