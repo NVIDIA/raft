@@ -25,6 +25,12 @@ namespace raft {
 namespace linalg {
 namespace detail {
 
+/** A completed symmetric eigensolve that did not converge. */
+class eigensolver_convergence_error : public raft::exception {
+ public:
+  using raft::exception::exception;
+};
+
 template <typename math_t>
 void eigDC_legacy(raft::resources const& handle,
                   const math_t* in,
@@ -153,15 +159,18 @@ void eigDC(raft::resources const& handle,
   RAFT_CUDA_TRY(cudaGetLastError());
   RAFT_CUSOLVER_TRY(cusolverDnDestroyParams(dn_params));
   int dev_info = d_dev_info.value(stream_new);
-  ASSERT(dev_info == 0,
-         "eig.cuh: eigensolver couldn't converge to a solution. "
-         "This usually occurs when some of the features do not vary enough.");
 
   if (cusolver_version < 110603) {
     // Synchronize the created stream with the original stream before return
     RAFT_CUDA_TRY(cudaEventRecord(sync_event, stream_new));
     RAFT_CUDA_TRY(cudaStreamWaitEvent(stream, sync_event));
   }
+  if (dev_info > 0) {
+    throw eigensolver_convergence_error(
+      "eig.cuh: eigensolver couldn't converge to a solution. "
+      "This usually occurs when some of the features do not vary enough.");
+  }
+  RAFT_EXPECTS(dev_info == 0, "eig.cuh: invalid eigensolver argument (info=%d)", dev_info);
 }
 
 enum EigVecMemUsage { OVERWRITE_INPUT, COPY_INPUT };
@@ -275,7 +284,8 @@ void eigJacobi(raft::resources const& handle,
                math_t* eig_vals,
                cudaStream_t stream,
                math_t tol = 1.e-7,
-               int sweeps = 15)
+               int sweeps = 15,
+               bool check_convergence = false)
 {
   cusolverDnHandle_t cusolverH = resource::get_cusolver_dn_handle(handle);
 
@@ -326,6 +336,14 @@ void eigJacobi(raft::resources const& handle,
 
   RAFT_CUDA_TRY(cudaGetLastError());
   RAFT_CUSOLVER_TRY(cusolverDnDestroySyevjInfo(syevj_params));
+  // Only callers opting in read and check the convergence flag.
+  if (check_convergence) {
+    int info = dev_info.value(stream);
+    if (info > 0) {
+      throw eigensolver_convergence_error("eig.cuh: Jacobi eigensolver couldn't converge to a solution.");
+    }
+    RAFT_EXPECTS(info == 0, "eig.cuh: invalid Jacobi eigensolver argument (info=%d)", info);
+  }
 }
 
 }  // namespace detail

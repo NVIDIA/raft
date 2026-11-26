@@ -254,6 +254,7 @@ if(BUILD_TESTS)
     lap/lap.cu
     solver/nnls.cu
     sparse/mst.cu
+    sparse/solver/lanczos_fallback.cu
     sparse/solver/lanczos.cu
     sparse/solver/lanczos_svds.cu
     sparse/solver/randomized_svds.cu
