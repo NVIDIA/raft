@@ -45,7 +45,7 @@ class Comms:
         # of `raft::comms::comms_t`
 
         from dask_cuda import LocalCUDACluster
-        from dask.distributed import Client
+        from dask.distributed import Client, get_worker, wait
 
         from raft_dask.common import Comms, local_handle
 
@@ -53,7 +53,7 @@ class Comms:
         client = Client(cluster)
 
         def _use_comms(sessionId):
-            return run_algorithm(local_handle(sessionId))
+            return run_algorithm(local_handle(sessionId, dask_worker=get_worker()))
 
         comms = Comms(client=client)
         comms.init()
