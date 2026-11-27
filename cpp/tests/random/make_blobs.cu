@@ -314,7 +314,7 @@ TEST(MakeBlobsClusterStd, DoubleColMajor)
 
 /** @brief Verify generated-center output preserves the seeded samples and labels. */
 template <typename T, typename Layout>
-void check_generated_centers_output()
+void check_generated_centers_output(T cluster_std_scalar)
 {
   constexpr int n_rows     = 257;
   constexpr int n_cols     = 3;
@@ -333,7 +333,7 @@ void check_generated_centers_output()
                              n_clusters,
                              std::nullopt,
                              std::nullopt,
-                             T(0),
+                             cluster_std_scalar,
                              true,
                              T(-3),
                              T(3),
@@ -346,7 +346,7 @@ void check_generated_centers_output()
                              n_clusters,
                              std::nullopt,
                              std::nullopt,
-                             T(0),
+                             cluster_std_scalar,
                              true,
                              T(-3),
                              T(3),
@@ -380,29 +380,71 @@ void check_generated_centers_output()
       auto data_offset = row_major ? row * n_cols + col : col * n_rows + row;
       auto center_offset =
         row_major ? host_labels[row] * n_cols + col : col * n_clusters + host_labels[row];
-      EXPECT_EQ(host_data[data_offset], host_centers[center_offset]);
+      if (cluster_std_scalar == T(0)) {
+        EXPECT_EQ(host_data[data_offset], host_centers[center_offset]);
+      }
     }
   }
 }
 
 TEST(MakeBlobsGeneratedCenters, FloatRowMajor)
 {
-  check_generated_centers_output<float, raft::layout_c_contiguous>();
+  check_generated_centers_output<float, raft::layout_c_contiguous>(0.0f);
+  check_generated_centers_output<float, raft::layout_c_contiguous>(1.0f);
 }
 
 TEST(MakeBlobsGeneratedCenters, FloatColMajor)
 {
-  check_generated_centers_output<float, raft::layout_f_contiguous>();
+  check_generated_centers_output<float, raft::layout_f_contiguous>(0.0f);
+  check_generated_centers_output<float, raft::layout_f_contiguous>(1.0f);
 }
 
 TEST(MakeBlobsGeneratedCenters, DoubleRowMajor)
 {
-  check_generated_centers_output<double, raft::layout_c_contiguous>();
+  check_generated_centers_output<double, raft::layout_c_contiguous>(0.0);
+  check_generated_centers_output<double, raft::layout_c_contiguous>(1.0);
 }
 
 TEST(MakeBlobsGeneratedCenters, DoubleColMajor)
 {
-  check_generated_centers_output<double, raft::layout_f_contiguous>();
+  check_generated_centers_output<double, raft::layout_f_contiguous>(0.0);
+  check_generated_centers_output<double, raft::layout_f_contiguous>(1.0);
+}
+
+TEST(MakeBlobsSignature, LegacyFunctionPointers)
+{
+  using RawSignature         = void (*)(float*,
+                                int*,
+                                int,
+                                int,
+                                int,
+                                cudaStream_t,
+                                bool,
+                                const float*,
+                                const float*,
+                                const float,
+                                bool,
+                                float,
+                                float,
+                                uint64_t,
+                                GeneratorType);
+  using View                 = raft::device_matrix_view<float, int, raft::layout_c_contiguous>;
+  using ResourceSignature    = void (*)(raft::resources const&,
+                                     View,
+                                     raft::device_vector_view<int, int>,
+                                     int,
+                                     std::optional<View>,
+                                     std::optional<raft::device_vector_view<float, int>> const,
+                                     const float,
+                                     bool,
+                                     float,
+                                     float,
+                                     uint64_t,
+                                     GeneratorType);
+  RawSignature raw           = &make_blobs<float, int>;
+  ResourceSignature resource = &make_blobs<float, int, raft::layout_c_contiguous>;
+  EXPECT_NE(raw, nullptr);
+  EXPECT_NE(resource, nullptr);
 }
 
 TEST(MakeBlobsGeneratedCenters, DryRun)

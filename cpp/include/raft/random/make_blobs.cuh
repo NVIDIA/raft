@@ -67,16 +67,16 @@ void make_blobs(DataT* out,
                 IdxT n_cols,
                 IdxT n_clusters,
                 cudaStream_t stream,
-                bool row_major                 = true,
-                const DataT* centers           = nullptr,
-                const DataT* cluster_std       = nullptr,
-                const DataT cluster_std_scalar = (DataT)1.0,
-                bool shuffle                   = true,
-                DataT center_box_min           = (DataT)-10.0,
-                DataT center_box_max           = (DataT)10.0,
-                uint64_t seed                  = 0ULL,
-                GeneratorType type             = GenPC,
-                DataT* generated_centers       = nullptr)
+                bool row_major,
+                const DataT* centers,
+                const DataT* cluster_std,
+                const DataT cluster_std_scalar,
+                bool shuffle,
+                DataT center_box_min,
+                DataT center_box_max,
+                uint64_t seed,
+                GeneratorType type,
+                DataT* generated_centers)
 {
   detail::make_blobs_caller(false,
                             out,
@@ -95,6 +95,42 @@ void make_blobs(DataT* out,
                             seed,
                             type,
                             generated_centers);
+}
+
+/** @brief Preserve the existing make_blobs pointer signature and defaults. */
+template <typename DataT, typename IdxT>
+void make_blobs(DataT* out,
+                IdxT* labels,
+                IdxT n_rows,
+                IdxT n_cols,
+                IdxT n_clusters,
+                cudaStream_t stream,
+                bool row_major                 = true,
+                const DataT* centers           = nullptr,
+                const DataT* cluster_std       = nullptr,
+                const DataT cluster_std_scalar = (DataT)1.0,
+                bool shuffle                   = true,
+                DataT center_box_min           = (DataT)-10.0,
+                DataT center_box_max           = (DataT)10.0,
+                uint64_t seed                  = 0ULL,
+                GeneratorType type             = GenPC)
+{
+  make_blobs(out,
+             labels,
+             n_rows,
+             n_cols,
+             n_clusters,
+             stream,
+             row_major,
+             centers,
+             cluster_std,
+             cluster_std_scalar,
+             shuffle,
+             center_box_min,
+             center_box_max,
+             seed,
+             type,
+             static_cast<DataT*>(nullptr));
 }
 
 /**
@@ -136,20 +172,19 @@ void make_blobs(DataT* out,
  *                                be absent when centers is provided.
  */
 template <typename DataT, typename IdxT, typename layout>
-void make_blobs(
-  raft::resources const& handle,
-  raft::device_matrix_view<DataT, IdxT, layout> out,
-  raft::device_vector_view<IdxT, IdxT> labels,
-  IdxT n_clusters                                                                = 5,
-  std::optional<raft::device_matrix_view<DataT, IdxT, layout>> centers           = std::nullopt,
-  std::optional<raft::device_vector_view<DataT, IdxT>> const cluster_std         = std::nullopt,
-  const DataT cluster_std_scalar                                                 = (DataT)1.0,
-  bool shuffle                                                                   = true,
-  DataT center_box_min                                                           = (DataT)-10.0,
-  DataT center_box_max                                                           = (DataT)10.0,
-  uint64_t seed                                                                  = 0ULL,
-  GeneratorType type                                                             = GenPC,
-  std::optional<raft::device_matrix_view<DataT, IdxT, layout>> generated_centers = std::nullopt)
+void make_blobs(raft::resources const& handle,
+                raft::device_matrix_view<DataT, IdxT, layout> out,
+                raft::device_vector_view<IdxT, IdxT> labels,
+                IdxT n_clusters,
+                std::optional<raft::device_matrix_view<DataT, IdxT, layout>> centers,
+                std::optional<raft::device_vector_view<DataT, IdxT>> const cluster_std,
+                const DataT cluster_std_scalar,
+                bool shuffle,
+                DataT center_box_min,
+                DataT center_box_max,
+                uint64_t seed,
+                GeneratorType type,
+                std::optional<raft::device_matrix_view<DataT, IdxT, layout>> generated_centers)
 {
   RAFT_EXPECTS(!centers.has_value() || !generated_centers.has_value(),
                "generated_centers requires centers to be absent");
@@ -199,6 +234,37 @@ void make_blobs(
                             seed,
                             type,
                             prm_generated_centers);
+}
+
+/** @brief Preserve the existing make_blobs resource signature and defaults. */
+template <typename DataT, typename IdxT, typename layout>
+void make_blobs(
+  raft::resources const& handle,
+  raft::device_matrix_view<DataT, IdxT, layout> out,
+  raft::device_vector_view<IdxT, IdxT> labels,
+  IdxT n_clusters                                                        = 5,
+  std::optional<raft::device_matrix_view<DataT, IdxT, layout>> centers   = std::nullopt,
+  std::optional<raft::device_vector_view<DataT, IdxT>> const cluster_std = std::nullopt,
+  const DataT cluster_std_scalar                                         = (DataT)1.0,
+  bool shuffle                                                           = true,
+  DataT center_box_min                                                   = (DataT)-10.0,
+  DataT center_box_max                                                   = (DataT)10.0,
+  uint64_t seed                                                          = 0ULL,
+  GeneratorType type                                                     = GenPC)
+{
+  make_blobs(handle,
+             out,
+             labels,
+             n_clusters,
+             centers,
+             cluster_std,
+             cluster_std_scalar,
+             shuffle,
+             center_box_min,
+             center_box_max,
+             seed,
+             type,
+             std::optional<raft::device_matrix_view<DataT, IdxT, layout>>{});
 }
 
 /** @} */  // end group make_blobs
