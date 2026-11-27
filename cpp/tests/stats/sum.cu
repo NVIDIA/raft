@@ -15,6 +15,12 @@
 
 #include <gtest/gtest.h>
 
+#include <array>
+#include <cmath>
+#include <limits>
+#include <type_traits>
+#include <vector>
+
 namespace raft {
 namespace stats {
 
@@ -110,6 +116,60 @@ class SumTest : public ::testing::TestWithParam<SumInputs<T>> {
   int rows, cols;
   rmm::device_uvector<T> data, sum_act;
 };
+
+template <typename T, typename Layout>
+void check_sum_nonfinite(int rows)
+{
+  constexpr int cols = 7;
+  const T inf        = std::numeric_limits<T>::infinity();
+  const T max        = std::numeric_limits<T>::max();
+  std::vector<T> input(rows * cols, T{1});
+  auto at = [&](int row, int col) -> T& {
+    return input[std::is_same_v<Layout, raft::row_major> ? row * cols + col : col * rows + row];
+  };
+  at(0, 0)        = inf;
+  at(0, 1)        = -inf;
+  at(0, 2)        = inf;
+  at(rows - 1, 2) = -inf;
+  at(0, 3)        = std::numeric_limits<T>::quiet_NaN();
+  at(0, 4) = at(1, 4) = max;
+  at(0, 5) = at(1, 5) = -max;
+
+  raft::resources handle;
+  auto stream = raft::resource::get_cuda_stream(handle);
+  rmm::device_uvector<T> data(input.size(), stream);
+  rmm::device_uvector<T> output(cols, stream);
+  raft::update_device(data.data(), input.data(), input.size(), stream);
+  sum(handle,
+      raft::make_device_matrix_view<const T, int, Layout>(data.data(), rows, cols),
+      raft::make_device_vector_view(output.data(), cols));
+  std::array<T, cols> actual;
+  raft::update_host(actual.data(), output.data(), actual.size(), stream);
+  raft::resource::sync_stream(handle);
+  EXPECT_EQ(actual[0], inf);
+  EXPECT_EQ(actual[1], -inf);
+  EXPECT_TRUE(std::isnan(actual[2]));
+  EXPECT_TRUE(std::isnan(actual[3]));
+  EXPECT_EQ(actual[4], inf);
+  EXPECT_EQ(actual[5], -inf);
+  EXPECT_EQ(actual[6], T(rows));
+}
+
+template <typename T>
+class NonfiniteSumTest : public ::testing::Test {};
+
+using SumTypes = ::testing::Types<float, double>;
+TYPED_TEST_SUITE(NonfiniteSumTest, SumTypes);
+
+TYPED_TEST(NonfiniteSumTest, ColumnSums)
+{
+  // The contiguous layout selects different kernels for short, medium, and long columns.
+  for (int rows : {32, 1024, 131072}) {
+    SCOPED_TRACE(rows);
+    check_sum_nonfinite<TypeParam, raft::row_major>(rows);
+    check_sum_nonfinite<TypeParam, raft::col_major>(rows);
+  }
+}
 
 const std::vector<SumInputs<float>> inputsf = {
   {0.0001f, 4, 5, true, 1},          {0.0001f, 1024, 32, true, 1},
