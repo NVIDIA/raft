@@ -397,7 +397,7 @@ void gather_if(const raft::resources& handle,
  * map[i]. For example, the matrix [[1, 2, 3], [4, 5, 6], [7, 8, 9]] with the
  * map [2, 0, 1] will be transformed to [[7, 8, 9], [1, 2, 3], [4, 5, 6]].
  * Batching is done on columns and an additional scratch space of
- * shape n_rows * cols_batch_size is created. For each batch, chunks
+ * shape map_length * col_batch_size is created. For each batch, chunks
  * of columns from each row are copied into the appropriate location
  * in the scratch space and copied back to the corresponding locations
  * in the input matrix.
@@ -413,7 +413,7 @@ void gather_if(const raft::resources& handle,
  * @param[in] map Pointer to the input sequence of gather locations
  * @param[in] col_batch_size (optional) column batch size. Determines the shape of the scratch space
  * (map_length, col_batch_size). When set to zero (default), no batching is done and an additional
- * scratch space of shape (map_lengthm, n_cols) is created.
+ * scratch space of shape (map_length, n_cols) is created.
  * @param[in]  transform_op  (optional) Transformation to apply to map values
  */
 template <typename matrix_t,
@@ -437,7 +437,7 @@ void gather(raft::resources const& handle,
  * map[i]. For example, the matrix [[1, 2, 3], [4, 5, 6], [7, 8, 9]] with the
  * map [2, 0, 1] will be transformed to [[7, 8, 9], [1, 2, 3], [4, 5, 6]].
  * Batching is done on columns and an additional scratch space of
- * shape n_rows * cols_batch_size is created. For each batch, chunks
+ * shape map_length * col_batch_size is created. For each batch, chunks
  * of columns from each row are copied into the appropriate location
  * in the scratch space and copied back to the corresponding locations
  * in the input matrix.
@@ -453,7 +453,7 @@ void gather(raft::resources const& handle,
  * @param[in] map Pointer to the input sequence of gather locations
  * @param[in] col_batch_size (optional) column batch size. Determines the shape of the scratch space
  * (map_length, col_batch_size). When set to zero (default), no batching is done and an additional
- * scratch space of shape (map_lengthm, n_cols) is created.
+ * scratch space of shape (map_length, n_cols) is created.
  * @param[in]  transform_op  (optional) Transformation to apply to map values
  */
 template <typename matrix_t,

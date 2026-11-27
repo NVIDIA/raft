@@ -106,10 +106,9 @@ void mean_center(raft::resources const& handle,
  * @brief Add the input matrix wrt its mean
  * @tparam apply whether the broadcast of vector needs to happen along
  * the rows of the matrix or columns using enum class raft::Apply
- * @tparam Type the data type
+ * @tparam value_t the data type
  * @tparam idx_t index type
  * @tparam layout_t Layout type of the input matrix.
- * @tparam TPB threads per block of the cuda kernel launched
  * @param[in]  handle the raft handle
  * @param[in]  data input matrix of size nrows * ncols
  * @param[in]  mu the mean vector of size ncols if bcast_along_rows else nrows

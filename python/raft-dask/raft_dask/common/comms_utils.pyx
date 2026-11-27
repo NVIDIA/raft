@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 # cython: profile=False
@@ -81,7 +81,7 @@ def perform_test_comms_allreduce(handle, root):
 
 def perform_test_comms_reduce(handle, root):
     """
-    Performs an allreduce on the current worker
+    Performs a reduce on the current worker
 
     Parameters
     ----------
@@ -95,7 +95,7 @@ def perform_test_comms_reduce(handle, root):
 
 def perform_test_comms_reducescatter(handle, root):
     """
-    Performs an allreduce on the current worker
+    Performs a reducescatter on the current worker
 
     Parameters
     ----------
@@ -109,7 +109,7 @@ def perform_test_comms_reducescatter(handle, root):
 
 def perform_test_comms_bcast(handle, root):
     """
-    Performs an broadcast on the current worker
+    Performs a broadcast on the current worker
 
     Parameters
     ----------
@@ -123,7 +123,7 @@ def perform_test_comms_bcast(handle, root):
 
 def perform_test_comms_allgather(handle, root):
     """
-    Performs an broadcast on the current worker
+    Performs an allgather on the current worker
 
     Parameters
     ----------

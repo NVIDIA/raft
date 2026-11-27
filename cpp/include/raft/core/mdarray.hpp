@@ -1,6 +1,6 @@
 /*
  * SPDX-FileCopyrightText: Copyright (2019) Sandia Corporation
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0 AND BSD-3-Clause
  */
 /*
@@ -64,7 +64,7 @@ template <typename T>
 using is_array_interface_t = is_array_interface<std::remove_const_t<T>>;
 
 /**
- * @\brief Boolean to determine if template type T is raft::array_interface or derived type
+ * @brief Boolean to determine if template type T is raft::array_interface or derived type
  *         or any type that has a member function `view()` that returns either
  *         raft::host_mdspan or raft::device_mdspan
  */
@@ -83,7 +83,7 @@ struct is_array_interface<T1, Tn...> : std::conditional_t<detail::is_array_inter
                                                           is_array_interface<Tn...>,
                                                           std::false_type> {};
 /**
- * @\brief Boolean to determine if variadic template types Tn are raft::array_interface
+ * @brief Boolean to determine if variadic template types Tn are raft::array_interface
  *         or derived type or any type that has a member function `view()` that returns either
  *         raft::host_mdspan or raft::device_mdspan
  */

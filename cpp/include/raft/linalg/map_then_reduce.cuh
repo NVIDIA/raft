@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __MAP_THEN_REDUCE_H
@@ -16,7 +16,7 @@ namespace linalg {
 
 /**
  * @brief CUDA version of map and then sum reduction operation
- * @tparam Type data-type upon which the math operation will be performed
+ * @tparam InType data-type upon which the math operation will be performed
  * @tparam MapOp the device-lambda performing the actual operation
  * @tparam TPB threads-per-block in the final kernel launched
  * @tparam Args additional parameters
@@ -43,7 +43,7 @@ void mapThenSumReduce(
 
 /**
  * @brief CUDA version of map and then generic reduction operation
- * @tparam Type data-type upon which the math operation will be performed
+ * @tparam InType data-type upon which the math operation will be performed
  * @tparam MapOp the device-lambda performing the actual map operation
  * @tparam ReduceLambda the device-lambda performing the actual reduction
  * @tparam TPB threads-per-block in the final kernel launched

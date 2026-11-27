@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2019-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #ifndef __SPARSE_ADD_H
@@ -47,8 +47,8 @@ size_t csr_add_calc_inds(const int* a_ind,
 }
 
 /**
- * @brief Calculate the CSR row_ind array that would result
- * from summing together two CSR matrices
+ * @brief Compute the column indices and values of the CSR matrix that
+ * results from summing together two CSR matrices
  * @param a_ind: left hand row_ind array
  * @param a_indptr: left hand index_ptr array
  * @param a_val: left hand data array
@@ -58,7 +58,7 @@ size_t csr_add_calc_inds(const int* a_ind,
  * @param b_val: right hand data array
  * @param nnz2: size of right hand index_ptr and val arrays
  * @param m: size of output array (number of rows in final matrix)
- * @param c_ind: output row_ind array
+ * @param c_ind: output row_ind array, as computed by csr_add_calc_inds
  * @param c_indptr: output ind_ptr array
  * @param c_val: output data array
  * @param stream: cuda stream to use

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -71,7 +71,7 @@ DI T warpReduce(T val)
  * @brief 1-D block-level reduction
  * @param val input value
  * @param smem shared memory region needed for storing intermediate results. It
- *             must alteast be of size: `sizeof(T) * nWarps`
+ *             must at least be of size: `sizeof(T) * nWarps`
  * @param reduce_op a binary reduction operation.
  * @return only the thread0 will contain valid reduced result
  * @note Why not cub? Because cub doesn't seem to allow working with arbitrary
@@ -118,7 +118,7 @@ DI void warpRankedReduce(T& val, i_t& idx, ReduceLambda reduce_op = raft::min_op
  * thread 0 will have valid result and rank(idx).
  * @param val input value
  * @param shbuf shared memory region needed for storing intermediate results. It
- *             must alteast be of size: `(sizeof(T) + sizeof(i_t)) * WarpSize`
+ *             must at least be of size: `(sizeof(T) + sizeof(i_t)) * WarpSize`
  * @param idx index to be used as rank
  * @param reduce_op binary min or max operation.
  * @return only the thread0 will contain valid reduced result

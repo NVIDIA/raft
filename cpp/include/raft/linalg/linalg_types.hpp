@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -10,8 +10,7 @@ namespace raft {
 namespace linalg {
 
 /**
- * @brief Enum for reduction/broadcast where an operation is to be performed along
- *        a matrix's rows or columns
+ * @brief Enum to select the upper or lower triangular part of a matrix
  *
  */
 enum class FillMode { UPPER, LOWER };

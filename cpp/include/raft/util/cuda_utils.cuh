@@ -568,7 +568,7 @@ struct Max {
  * @defgroup Sign Obtain sign value
  * @brief Obtain sign of x
  * @param x input
- * @return +1 if x >= 0 and -1 otherwise
+ * @return +1 if x >= 0 and -1 otherwise (the float and double overloads return -1 for -0.0)
  * @{
  */
 template <typename T>

@@ -38,13 +38,16 @@ void csr_row_normalize_l1(const indT* ia,  // csr row ex_scan (sorted by row)
 }
 
 /**
- * @brief Perform L_inf normalization on a given CSR-formatted sparse matrix
+ * @brief Divide each row of a CSR-formatted sparse matrix by its largest value
+ *
+ * The divisor is the largest signed value in the row, not the largest absolute value, so this is
+ * L_inf normalization only for non-negative data. Rows whose values are all <= 0 are set to zero.
  *
  * @param ia: row_ind array
  * @param vals: data array
  * @param nnz: size of data array
  * @param m: size of row_ind array
- * @param result: l1 normalized data array
+ * @param result: normalized data array
  * @param stream: cuda stream to use
  */
 template <typename T>

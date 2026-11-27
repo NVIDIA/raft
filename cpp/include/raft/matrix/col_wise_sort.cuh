@@ -125,11 +125,11 @@ void sort_cols_per_row(raft::resources const& handle,
 }
 
 /**
- * @brief Overload of `sort_keys_per_row` to help the
+ * @brief Overload of `sort_cols_per_row` to help the
  *   compiler find the above overload, in case users pass in
  *   `std::nullopt` for one or both of the optional arguments.
  *
- * Please see above for documentation of `sort_keys_per_row`.
+ * Please see above for documentation of `sort_cols_per_row`.
  */
 template <typename... Args, typename = std::enable_if_t<sizeof...(Args) == 3>>
 void sort_cols_per_row(Args... args)

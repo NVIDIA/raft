@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -94,7 +94,7 @@ template <typename... Extents>
 using ensure_integral_extents = std::enable_if_t<std::conjunction_v<std::is_integral<Extents>...>>;
 
 /**
- * @\brief Template checks and helpers to determine if type T is an std::mdspan
+ * @brief Template checks and helpers to determine if type T is an std::mdspan
  *         or a derived type
  */
 
@@ -129,7 +129,7 @@ template <typename T>
 using is_output_mdspan_t = is_output_mdspan<T>;
 
 /**
- * @\brief Boolean to determine if variadic template types Tn are either
+ * @brief Boolean to determine if variadic template types Tn are either
  *          raft::host_mdspan/raft::device_mdspan or their derived types
  */
 template <typename... Tn>

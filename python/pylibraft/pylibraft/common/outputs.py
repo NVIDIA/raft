@@ -1,4 +1,4 @@
-# SPDX-FileCopyrightText: Copyright (c) 2022, NVIDIA CORPORATION.
+# SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
 # SPDX-License-Identifier: Apache-2.0
 #
 
@@ -10,7 +10,7 @@ import pylibraft.config
 
 def import_warn_(lib):
     warnings.warn(
-        "%s is not available and output cannot be converted."
+        "%s is not available and output cannot be converted. "
         "Returning original output instead." % lib
     )
 

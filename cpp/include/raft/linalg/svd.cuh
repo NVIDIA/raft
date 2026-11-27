@@ -154,7 +154,7 @@ void svdReconstruction(raft::resources const& handle,
  * @param V: right singular vectors of size n_cols x k
  * @param n_rows: number rows of output matrix
  * @param n_cols: number columns of output matrix
- * @param k: number of singular values to be computed, 1.0 for normal SVD
+ * @param k: number of singular values to be computed
  * @param tol: tolerance for the evaluation
  * @param stream cuda stream
  */

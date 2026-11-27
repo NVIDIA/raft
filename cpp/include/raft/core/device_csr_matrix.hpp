@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -128,7 +128,7 @@ constexpr bool is_device_csr_sparsity_preserving_v =
  * int n_cols = 10000;
  *
  * raft::resources handle;
- * csr_matrix = raft::make_device_csr_matrix(handle, n_rows, n_cols);
+ * auto csr_matrix = raft::make_device_csr_matrix<float>(handle, n_rows, n_cols);
  * ...
  * // compute expected sparsity
  * ...
@@ -173,12 +173,13 @@ auto make_device_csr_matrix(raft::resources const& handle,
  * int n_cols = 10000;
  *
  * raft::resources handle;
- * coo_structure = raft::make_device_compressed_structure(handle, n_rows, n_cols);
+ * auto csr_structure = raft::make_device_compressed_structure(handle, n_rows, n_cols);
  * ...
  * // compute expected sparsity
  * ...
+ * int nnz = 5000;
  * csr_structure.initialize_sparsity(nnz);
- * csr_matrix = raft::make_device_csr_matrix(handle, csr_structure.view());
+ * auto csr_matrix = raft::make_device_csr_matrix<float>(handle, csr_structure.view());
  * @endcode
  *
  * @tparam ElementType
@@ -202,9 +203,9 @@ auto make_device_csr_matrix(
 }
 
 /**
- * Create a non-owning sparse matrix view in the coordinate format. This is sparsity-preserving,
- * meaning that the underlying sparsity is known and cannot be changed. Use the sparsity-owning
- * coo_matrix if sparsity needs to be mutable.
+ * Create a non-owning sparse matrix view in the compressed-sparse row format. This is
+ * sparsity-preserving, meaning that the underlying sparsity is known and cannot be changed. Use the
+ * sparsity-owning csr_matrix if sparsity needs to be mutable.
  *
  * @code{.cpp}
  * #include <raft/core/resources.hpp>
@@ -218,8 +219,8 @@ auto make_device_csr_matrix(
  * float* d_elm_ptr = ...;
  *
  * raft::resources handle;
- * csr_structure = raft::make_device_compressed_structure(handle, n_rows, n_cols, nnz);
- * csr_matrix_view = raft::make_device_csr_matrix_view(handle, d_elm_ptr, csr_structure.view());
+ * auto csr_structure = raft::make_device_compressed_structure(handle, n_rows, n_cols, nnz);
+ * auto csr_matrix_view = raft::make_device_csr_matrix_view(d_elm_ptr, csr_structure.view());
  * @endcode
  *
  * @tparam ElementType
@@ -244,7 +245,7 @@ auto make_device_csr_matrix_view(
 /**
  * Create a non-owning sparse matrix view in the compressed-sparse row format. This is
  * sparsity-preserving, meaning that the underlying sparsity is known and cannot be changed. Use the
- * sparsity-owning coo_matrix if sparsity needs to be mutable.
+ * sparsity-owning csr_matrix if sparsity needs to be mutable.
  *
  * @code{.cpp}
  * #include <raft/core/resources.hpp>
@@ -259,8 +260,8 @@ auto make_device_csr_matrix_view(
  * raft::device_span<float> d_elm_ptr;
  *
  * raft::resources handle;
- * csr_structure = raft::make_device_compressed_structure(handle, n_rows, n_cols, nnz);
- * csr_matrix_view = raft::make_device_csr_matrix_view(handle, d_elm_ptr, csr_structure.view());
+ * auto csr_structure = raft::make_device_compressed_structure(handle, n_rows, n_cols, nnz);
+ * auto csr_matrix_view = raft::make_device_csr_matrix_view(d_elm_ptr, csr_structure.view());
  * @endcode
  *
  * @tparam ElementType
@@ -298,7 +299,7 @@ auto make_device_csr_matrix_view(
  * int nnz = 5000;
  *
  * raft::resources handle;
- * csr_structure = raft::make_device_compressed_structure(handle, n_rows, n_cols, nnz);
+ * auto csr_structure = raft::make_device_compressed_structure(handle, n_rows, n_cols, nnz);
  * ...
  * // compute expected sparsity
  * ...
@@ -343,11 +344,10 @@ auto make_device_compressed_structure(raft::resources const& handle,
  * int *indices = ...;
  *
  * raft::resources handle;
- * csr_structure = raft::make_device_compressed_structure_view(handle, indptr, indices, n_rows,
- * n_cols, nnz);
- * @endcode *
+ * auto csr_structure =
+ *   raft::make_device_compressed_structure_view(indptr, indices, n_rows, n_cols, nnz);
+ * @endcode
  *
- * @tparam ElementType
  * @tparam IndptrType
  * @tparam IndicesType
  * @tparam NZType
@@ -381,15 +381,14 @@ auto make_device_compressed_structure_view(
  * int n_cols = 10000;
  * int nnz = 5000;
  *
- * // The following device spans is assumed to be of size n_rows+1
+ * // The following device span is assumed to be of size n_rows+1
  * raft::device_span<int> indptr;
  *
  * // The following device span is assumed to be of size nnz
  * raft::device_span<int> indices;
  *
  * raft::resources handle;
- * csr_structure = raft::make_device_compressed_structure_view(handle, indptr, indices, n_rows,
- * n_cols);
+ * auto csr_structure = raft::make_device_compressed_structure_view(indptr, indices, n_cols);
  * @endcode
  *
  * @tparam IndptrType

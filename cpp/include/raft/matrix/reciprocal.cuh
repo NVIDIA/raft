@@ -25,9 +25,9 @@ namespace matrix {
  * @tparam math_t data-type upon which the math operation will be performed
  * @tparam idx_t integer type used for indexing
  * @param handle: raft handle
- * @param in: input matrix and also the result is stored
+ * @param in: input matrix
  * @param out: output matrix. The result is stored in the out matrix
- * @param scalar: every element is multiplied with scalar
+ * @param scalar: numerator of the reciprocal, i.e. out = scalar / in
  * @param setzero round down to zero if the input is less the threshold
  * @param thres the threshold used to forcibly set inputs to zero
  * @{
@@ -58,7 +58,7 @@ void reciprocal(raft::resources const& handle,
  * @tparam layout layout of the matrix data (must be row or col major)
  * @param[in] handle: raft handle to manage resources
  * @param[inout] inout: input matrix with in-place results
- * @param[in] scalar: every element is multiplied with scalar
+ * @param[in] scalar: numerator of the reciprocal, i.e. inout = scalar / inout
  * @param[in] setzero round down to zero if the input is less the threshold
  * @param[in] thres the threshold used to forcibly set inputs to zero
  * @{

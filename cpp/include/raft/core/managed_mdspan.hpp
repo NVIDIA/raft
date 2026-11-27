@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2022-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -33,7 +33,7 @@ struct is_managed_mdspan<T, true>
   : std::bool_constant<T::accessor_type::mem_type == memory_type::managed> {};
 
 /**
- * @\brief Boolean to determine if template type T is either raft::managed_mdspan or a derived type
+ * @brief Boolean to determine if template type T is either raft::managed_mdspan or a derived type
  */
 template <typename T>
 using is_managed_mdspan_t = is_managed_mdspan<T, is_mdspan_v<T>>;
@@ -45,7 +45,7 @@ template <typename T>
 using is_output_managed_mdspan_t = is_managed_mdspan<T, is_output_mdspan_v<T>>;
 
 /**
- * @\brief Boolean to determine if variadic template types Tn are either raft::managed_mdspan or a
+ * @brief Boolean to determine if variadic template types Tn are either raft::managed_mdspan or a
  * derived type
  */
 template <typename... Tn>

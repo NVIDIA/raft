@@ -157,7 +157,7 @@ void vars(raft::resources const& handle,
   static_assert(is_row_major || is_col_major,
                 "vars: Layout must be either "
                 "raft::row_major or raft::col_major (or one of their aliases)");
-  RAFT_EXPECTS(mu.size() == var.size(), "Size mismatch between mu and std");
+  RAFT_EXPECTS(mu.size() == var.size(), "Size mismatch between mu and var");
   RAFT_EXPECTS(mu.extent(0) == data.extent(1), "Size mismatch between data and mu");
   detail::vars<is_row_major>(resource::get_dry_run_flag(handle),
                              var.data_handle(),

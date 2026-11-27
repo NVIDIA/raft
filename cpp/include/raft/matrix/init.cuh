@@ -52,7 +52,7 @@ void fill(raft::resources const& handle,
  * @brief set values to scalar in matrix
  * @tparam math_t data-type upon which the math operation will be performed
  * @tparam extents dimension and indexing type used for the input
- * @tparam layout_t layout of the matrix data (must be row or col major)
+ * @tparam layout layout of the matrix data (must be row or col major)
  * @param[in] handle: raft handle
  * @param[inout] inout input matrix
  * @param[in] scalar scalar value to fill matrix elements

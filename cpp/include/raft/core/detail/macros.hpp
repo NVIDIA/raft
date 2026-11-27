@@ -61,7 +61,7 @@
 #define RAFT_INLINE_CONDITIONAL inline
 #endif  // RAFT_COMPILED
 
-// The RAFT_WEAK_FUNCTION specificies that:
+// The RAFT_WEAK_FUNCTION specifies that:
 //
 // 1. A function may be defined in multiple translation units (like inline)
 //
@@ -92,7 +92,7 @@
 #define RAFT_HIDDEN
 #endif
 
-// The RAFT_KERNEL specificies that a kernel has hidden visibility
+// The RAFT_KERNEL specifies that a kernel has hidden visibility
 //
 // Raft needs to ensure that the visibility of its __global__ function
 // templates have hidden visibility ( default is weak visibility).

@@ -144,8 +144,8 @@ void matrix_vector_op(raft::resources const& handle,
                       raft::device_matrix_view<MatValueType, IndexType, LayoutPolicy> out,
                       Lambda op)
 {
-  RAFT_EXPECTS(raft::is_row_or_column_major(matrix), "Output must be contiguous");
-  RAFT_EXPECTS(raft::is_row_or_column_major(out), "Input must be contiguous");
+  RAFT_EXPECTS(raft::is_row_or_column_major(matrix), "Input must be contiguous");
+  RAFT_EXPECTS(raft::is_row_or_column_major(out), "Output must be contiguous");
   RAFT_EXPECTS(out.size() == matrix.size(), "Size mismatch between Output and Input");
 
   auto constexpr rowMajor = std::is_same_v<typename decltype(out)::layout_type, raft::row_major>;

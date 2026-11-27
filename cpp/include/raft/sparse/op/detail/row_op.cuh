@@ -40,13 +40,14 @@ RAFT_KERNEL csr_row_op_kernel(const T* row_ind, T n_rows, T nnz, Lambda op)
 
 /**
  * @brief Perform a custom row operation on a CSR matrix in batches.
- * @tparam T numerical type of row_ind array
+ * @tparam Index_ integer type of row_ind array
  * @tparam TPB_X number of threads per block to use for underlying kernel
  * @tparam Lambda type of custom operation function
  * @param row_ind the CSR row_ind array to perform parallel operations over
  * @param n_rows total number vertices in graph
  * @param nnz number of non-zeros
- * @param op custom row operation functor accepting the row and beginning index.
+ * @param op custom row operation functor accepting the row, its start index and its stop
+ *           index (one past the last non-zero of the row).
  * @param stream cuda stream to use
  */
 template <typename Index_, int TPB_X = 256, typename Lambda = auto(Index_, Index_, Index_)->void>

@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -95,9 +95,9 @@ auto static constexpr is_callable_for_memory_type =
  * auto device_data = raft::make_device_matrix<double>(res, rows, cols);
  * functor{}(device_data.view()); // Functor accepts device mdspan
  * auto managed_data = raft::make_managed_matrix<double>(res, rows, cols);
- * // functor{}(managed_data.view()); // Functor accepts managed mdspan
- * auto pinned_data = raft::make_managed_matrix<double>(res, rows, cols);
- * functor{}(pinned_data.view()); // This would fail to compile
+ * functor{}(managed_data.view()); // Functor accepts managed mdspan
+ * auto pinned_data = raft::make_pinned_matrix<double>(res, rows, cols);
+ * // functor{}(pinned_data.view()); // This would fail to compile
  * auto float_data = raft::make_device_matrix<float>(res, rows, cols);
  * // functor{}(float_data.view()); // This would fail to compile
  * auto f_data = raft::make_device_matrix<double, int, raft::layout_f_contiguous>(res, rows, cols);

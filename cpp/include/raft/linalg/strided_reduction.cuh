@@ -29,7 +29,7 @@ namespace linalg {
  * @tparam OutType the data type of the output (as well as the data type for
  *  which reduction is performed)
  * @tparam IdxType data type of the indices of the array
- * @tparam MainLambda Unary lambda applied while acculumation (eg: L1 or L2 norm)
+ * @tparam MainLambda Unary lambda applied while accumulating (eg: L1 or L2 norm)
  * It must be a 'callable' supporting the following input and output:
  * <pre>OutType (*MainLambda)(InType, IdxType);</pre>
  * @tparam ReduceLambda Binary lambda applied for reduction (eg: addition(+) for L2 norm)
@@ -95,7 +95,7 @@ void stridedReduction(OutType* dots,
  * @tparam LayoutPolicy The layout of Input/Output (row or col major)
  * @tparam OutValueType the output data-type of underlying raft::matrix_view and reduction
  * @tparam IndexType Integer type used to for addressing
- * @tparam MainLambda Unary lambda applied while acculumation (eg: L1 or L2 norm)
+ * @tparam MainLambda Unary lambda applied while accumulating (eg: L1 or L2 norm)
  * It must be a 'callable' supporting the following input and output:
  * <pre>OutType (*MainLambda)(InType, IdxType);</pre>
  * @tparam ReduceLambda Binary lambda applied for reduction (eg: addition(+) for L2 norm)

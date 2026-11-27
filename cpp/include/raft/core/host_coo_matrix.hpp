@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 #pragma once
@@ -120,7 +120,7 @@ constexpr bool is_host_coo_sparsity_preserving_v =
  * int n_cols = 10000;
  *
  * raft::resources handle;
- * coo_matrix = raft::make_host_coo_matrix(handle, n_rows, n_cols);
+ * auto coo_matrix = raft::make_host_coo_matrix<float, int, int, int>(handle, n_rows, n_cols);
  * ...
  * // compute expected sparsity
  * ...
@@ -162,12 +162,14 @@ auto make_host_coo_matrix(raft::resources const& handle,
  * int n_cols = 10000;
  *
  * raft::resources handle;
- * coo_structure = raft::make_host_coordinate_structure(handle, n_rows, n_cols);
+ * auto coo_structure =
+ *   raft::make_host_coordinate_structure<int, int, int>(handle, n_rows, n_cols);
  * ...
  * // compute expected sparsity
  * ...
+ * int nnz = 5000;
  * coo_structure.initialize_sparsity(nnz);
- * coo_matrix = raft::make_host_coo_matrix(handle, coo_structure.view());
+ * auto coo_matrix = raft::make_host_coo_matrix<float>(handle, coo_structure.view());
  * @endcode
  *
  * @tparam ElementType
@@ -203,8 +205,8 @@ auto make_host_coo_matrix(raft::resources const& handle,
  * float* h_elm_ptr = ...;
  *
  * raft::resources handle;
- * coo_structure = raft::make_host_coordinate_structure(handle, n_rows, n_cols, nnz);
- * coo_matrix_view = raft::make_host_coo_matrix_view(handle, h_elm_ptr, coo_structure.view());
+ * auto coo_structure = raft::make_host_coordinate_structure(handle, n_rows, n_cols, nnz);
+ * auto coo_matrix_view = raft::make_host_coo_matrix_view(h_elm_ptr, coo_structure.view());
  * @endcode
  *
  * @tparam ElementType
@@ -241,8 +243,8 @@ auto make_host_coo_matrix_view(ElementType* ptr,
  * raft::host_span<float> h_elm_ptr;
  *
  * raft::resources handle;
- * coo_structure = raft::make_host_coordinate_structure(handle, n_rows, n_cols, nnz);
- * coo_matrix_view = raft::make_host_coo_matrix_view(handle, h_elm_ptr, coo_structure.view());
+ * auto coo_structure = raft::make_host_coordinate_structure(handle, n_rows, n_cols, nnz);
+ * auto coo_matrix_view = raft::make_host_coo_matrix_view(h_elm_ptr, coo_structure.view());
  * @endcode
  *
  * @tparam ElementType
@@ -251,7 +253,7 @@ auto make_host_coo_matrix_view(ElementType* ptr,
  * @tparam NZType
  * @param[in] elements a host span containing nonzero matrix elements (size nnz)
  * @param[in] structure a sparsity-preserving coordinate structural view
- * @return
+ * @return a sparsity-preserving sparse matrix view in coordinate (coo) format
  */
 template <typename ElementType, typename RowType, typename ColType, typename NZType>
 auto make_host_coo_matrix_view(raft::host_span<ElementType> elements,
@@ -276,8 +278,8 @@ auto make_host_coo_matrix_view(raft::host_span<ElementType> elements,
  * int nnz = 5000;
  *
  * raft::resources handle;
- * coo_structure = raft::make_host_coordinate_structure(handle, n_rows, n_cols, nnz);
- *  * ...
+ * auto coo_structure = raft::make_host_coordinate_structure(handle, n_rows, n_cols, nnz);
+ * ...
  * // compute expected sparsity
  * ...
  * coo_structure.initialize_sparsity(nnz);
@@ -319,8 +321,8 @@ auto make_host_coordinate_structure(raft::resources const& handle,
  * int *cols = ...;
  *
  * raft::resources handle;
- * coo_structure = raft::make_host_coordinate_structure_view(handle, rows, cols, n_rows, n_cols,
- * nnz);
+ * auto coo_structure =
+ *   raft::make_host_coordinate_structure_view(rows, cols, n_rows, n_cols, nnz);
  * @endcode
  *
  * @tparam RowType
@@ -359,7 +361,8 @@ auto make_host_coordinate_structure_view(
  * raft::host_span<int> cols;
  *
  * raft::resources handle;
- * coo_structure = raft::make_host_coordinate_structure_view(handle, rows, cols, n_rows, n_cols);
+ * auto coo_structure =
+ *   raft::make_host_coordinate_structure_view<int, int, int>(rows, cols, n_rows, n_cols);
  * @endcode
  *
  * @tparam RowType

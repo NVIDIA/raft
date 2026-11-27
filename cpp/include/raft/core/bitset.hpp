@@ -274,7 +274,7 @@ struct bitset_view {
  * This structure encapsulates a bitset in device memory. It provides a view() method to get a
  * device-usable lightweight view of the bitset.
  * Each index is represented by a single bit in the bitset. The total number of bytes used is
- * ceil(bitset_len / 8).
+ * ceil(bitset_len / (sizeof(bitset_t) * 8)) * sizeof(bitset_t).
  * @tparam bitset_t Underlying type of the bitset array. Default is uint32_t.
  * @tparam index_t Indexing type used. Default is uint32_t.
  */
