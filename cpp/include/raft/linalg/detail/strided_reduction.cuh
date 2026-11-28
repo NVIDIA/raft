@@ -10,6 +10,7 @@
 #include <raft/linalg/unary_op.cuh>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/kernel_launch.hpp>
+#include <raft/util/reduction.cuh>
 
 #include <type_traits>
 
@@ -83,7 +84,9 @@ RAFT_KERNEL stridedSummationKernel(
 
   // Grid reduction
   if (colStart < D && (threadIdx.y == 0))
-    raft::myAtomicAdd(out + colStart, block_sum[threadIdx.x] + block_c[threadIdx.x]);
+    raft::myAtomicAdd(out + colStart,
+                      block_sum[threadIdx.x] +
+                        raft::detail::sum_correction(block_sum[threadIdx.x], block_c[threadIdx.x]));
 }
 
 // Kernel to perform reductions along the strided dimension

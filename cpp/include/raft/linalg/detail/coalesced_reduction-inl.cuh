@@ -10,6 +10,7 @@
 #include <raft/core/operators.hpp>
 #include <raft/util/cuda_utils.cuh>
 #include <raft/util/kernel_launch.hpp>
+#include <raft/util/reduction.cuh>
 
 #include <rmm/device_uvector.hpp>
 
@@ -213,14 +214,18 @@ RAFT_KERNEL __launch_bounds__(Policy::ThreadsPerBlock) coalescedSumThinKernel(Ou
       for (int k = 0; k < reducOutVecWidth; k++) {
         const int reductionId = k * reducNumGroups + groupId;
         const IdxType i       = i0 + reductionId * Policy::NumLogicalWarps;
-        if (i < N) { dots[i] = final_op(dots[i] + acc[k] + thread_c[k]); }
+        if (i < N) {
+          dots[i] = final_op(dots[i] + acc[k] + raft::detail::sum_correction(acc[k], thread_c[k]));
+        }
       }
     } else {
 #pragma unroll
       for (int k = 0; k < reducOutVecWidth; k++) {
         const int reductionId = k * reducNumGroups + groupId;
         const IdxType i       = i0 + reductionId * Policy::NumLogicalWarps;
-        if (i < N) { dots[i] = final_op(acc[k] + thread_c[k]); }
+        if (i < N) {
+          dots[i] = final_op(acc[k] + raft::detail::sum_correction(acc[k], thread_c[k]));
+        }
       }
     }
   }
@@ -392,9 +397,10 @@ RAFT_KERNEL __launch_bounds__(TPB) coalescedSumMediumKernel(OutType* dots,
 
   if (threadIdx.x == 0) {
     if (inplace) {
-      dots[blockIdx.x] = final_op(dots[blockIdx.x] + block_acc + block_c);
+      dots[blockIdx.x] =
+        final_op(dots[blockIdx.x] + block_acc + raft::detail::sum_correction(block_acc, block_c));
     } else {
-      dots[blockIdx.x] = final_op(block_acc + block_c);
+      dots[blockIdx.x] = final_op(block_acc + raft::detail::sum_correction(block_acc, block_c));
     }
   }
 }
@@ -528,7 +534,8 @@ RAFT_KERNEL __launch_bounds__(Policy::ThreadsPerBlock) coalescedSumThickKernel(
   OutType block_c   = BlockReduce(temp_storage2).Sum(thread_c);
 
   if (threadIdx.x == 0) {
-    buffer[Policy::BlocksPerRow * blockIdx.x + blockIdx.y] = block_acc + block_c;
+    buffer[Policy::BlocksPerRow * blockIdx.x + blockIdx.y] =
+      block_acc + raft::detail::sum_correction(block_acc, block_c);
   }
 }
 

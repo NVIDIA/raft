@@ -1,5 +1,5 @@
 /*
- * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION.
+ * SPDX-FileCopyrightText: Copyright (c) 2023-2026, NVIDIA CORPORATION & AFFILIATES. All rights reserved.
  * SPDX-License-Identifier: Apache-2.0
  */
 
@@ -11,9 +11,25 @@
 #include <raft/util/cudart_utils.hpp>
 #include <raft/util/warp_primitives.cuh>
 
+#include <cuda/std/cmath>
+#include <cuda/std/limits>
+
 #include <stdint.h>
 
 namespace raft {
+namespace detail {
+
+template <typename T>
+DI T sum_correction(T sum, T correction)
+{
+  // The rounding error is only defined for a finite sum. For example, inf - inf is NaN.
+  if constexpr (::cuda::std::numeric_limits<T>::has_infinity) {
+    return ::cuda::std::isfinite(sum) ? correction : T{0};
+  }
+  return correction;
+}
+
+}  // namespace detail
 
 /**
  * @brief Logical-warp-level reduction
